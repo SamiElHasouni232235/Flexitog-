@@ -15,6 +15,8 @@ from flexitog import batch as B
 from flexitog import parameters as P
 from flexitog.engine import Data, compare_to_baseline, evaluate
 from flexitog.report import build_html
+from flexitog.dashboard import apply_changes as apply_dashboard_changes
+from flexitog.dashboard import build_html as dashboard_html
 from flexitog.orders import order_values, summarise
 from flexitog.schema import (
     DC_TYPE_LABELS, DTYPES, ENTITIES, IMPORTED_PREFIX, MANUAL, PLACEHOLDER, PRIMARY_IMPORTS, SOURCE_COL,
@@ -263,6 +265,17 @@ def page_parameters():
     st.caption("Every value carries a source flag. 🟡 placeholder = default from general supply-chain "
                "knowledge. 🟢 real = confirmed by a FlexiTog quote, invoice or broker. "
                "The engine (phase 2) reads these tables.")
+    with st.expander("Apply changes from the interactive dashboard"):
+        st.caption("In the dashboard, open Parameters and press 'Copy changes'. Paste the text here. Changed "
+                   "parameters are saved and marked real, with a note that they came from the dashboard.")
+        pasted = st.text_area("Dashboard changes (JSON)", key="dash_json", height=140)
+        if st.button("Apply dashboard changes") and pasted.strip():
+            try:
+                for line in apply_dashboard_changes(ws, pasted):
+                    st.write("• " + line)
+                st.success("Applied.")
+            except (ValueError, KeyError) as exc:
+                st.error(f"Could not read the pasted text: {exc}")
     name = st.selectbox("Table", list(P.DEFAULT_TABLES), format_func=lambda n: P.DEFAULT_TABLES[n][0])
     df = ws.load_params(name)
     n_ph = int((df["source"] == P.PLACEHOLDER).sum())
@@ -729,6 +742,10 @@ def page_batch():
         c3.download_button("Download HTML report", report.encode("utf-8"), file_name="flexitog_route_report.html",
                            mime="text/html", help="Self-contained page with the scorecard, one sample order and "
                                                   "the data request list. Opens in any browser.")
+        st.download_button("Download interactive dashboard (HTML)", dashboard_html(ws).encode("utf-8"),
+                           file_name="flexitog_dashboard.html", mime="text/html",
+                           help="The whole simulator in one page: map with routes and issues, parameters you can "
+                                "change, live scorecard. Runs in any browser without Python.")
 
 
 def _with_customers(data: Data, extra: pd.DataFrame) -> Data:

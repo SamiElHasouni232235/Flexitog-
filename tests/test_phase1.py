@@ -91,6 +91,16 @@ def test_dates_and_duplicate_keys():
     assert (res.row_issues["issue"] == "duplicate key").sum() == 2
 
 
+def test_mixed_date_formats_all_parse():
+    raw = pd.DataFrame({"Order No": ["1", "2", "3", "4", "5"],
+                        "Date": ["2025-09-01", "2025-09-13", "13-09-2025", "13/9/2025", "2025-09-13 00:00:00"],
+                        "Customer": ["C"] * 5, "Item": ["A"] * 5, "Qty": ["1"] * 5})
+    entity = ENTITIES["sales_history"]
+    res = imp.apply_mapping(raw, imp.guess_mapping(list(raw.columns), entity), entity, "s.csv")
+    assert [str(d) for d in res.frame["order_date"]] == ["2025-09-01"] + ["2025-09-13"] * 4
+    assert not res.warnings
+
+
 def test_merge_modes():
     entity = ENTITIES["customers"]
     a = pd.DataFrame({"customer_id": ["1", "2"], "name": ["a", "b"]})

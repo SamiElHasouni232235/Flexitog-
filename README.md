@@ -18,7 +18,8 @@ Out of scope: US and UK operations, DAP direct.
 pip install -r requirements.txt
 streamlit run app.py
 python -m pytest -q
-python tools/build_report.py              # HTML report from the current workspace
+python tools/build_dashboard.py           # interactive HTML dashboard from the current workspace
+python tools/build_report.py              # static HTML report from the current workspace
 python tools/build_request_pack.py        # Excel data request pack
 ```
 
@@ -115,3 +116,25 @@ margin, minimum order value, handoffs) and owned warehouse fixed cost. All ship 
   on the Overview sheet. Partner sheets take per-partner margin and 3PL rates (`margin_pct`,
   `inbound_eur_per_pallet`, `storage_eur_per_pallet_month`, `outbound_eur_per_order`), which override
   the scenario defaults.
+
+## Interactive dashboard
+
+`python tools/build_dashboard.py` (or Batch and scorecard > Download interactive dashboard) writes one
+HTML file that runs the whole simulator in the browser, with no Python and no server:
+
+- Map of Europe, North Africa and the Middle East: lanes from Helmond scaled by pallets, distributor /
+  3PL / owned-warehouse nodes (faded = not signed), customers, and issue markers by severity.
+  Colour countries by cheapest scenario, cost per unit, customer cost, lead time, FlexiTog paperwork or
+  issue count. Click a country for its scenario comparison, serving nodes and issues.
+- Parameters drawer: what-if switches (Red Sea reopens, all SKUs EU-made), scenario defaults, partners
+  (use/remove, status, MOV, margin, storage, served countries), freight, duty and VAT, compliance, SKUs
+  (price, units per pallet, EU-made), general and risk, lead times, owned-warehouse fixed cost. Every
+  change reruns the batch. Changes stay in the viewer's browser. "Copy changes" gives JSON that
+  Parameters > Apply changes from the interactive dashboard writes back into the workspace.
+- Region cards, scorecard small multiples, order explorer with route override, issues list and the
+  data request table.
+
+The browser engine (`flexitog/assets/engine.js`) is a port of `engine.py`/`batch.py`.
+`tests/test_dashboard_engine.py` runs both on the same batch and requires identical results, so change
+both together. Issues are in `flexitog/issues.py` (briefing notes to verify) plus rules computed in the
+page. The basemap is Natural Earth 1:50m, rebuilt with `tools/build_basemap.mjs`.

@@ -1,0 +1,745 @@
+<title>FlexiTog Route Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root{
+  --ground:#f2f4f6; --surface:#ffffff; --surface-2:#f7f9fa; --ink:#14212c; --muted:#56636f; --faint:#8a95a0; --rule:#d9dfe4;
+  --accent:#1f3a55; --accent-ink:#ffffff; --accent-soft:#e2e9f0; --band:#fff4d6; --band-edge:#d9a400;
+  --sea:#e8eef3; --land:#dfe4e8; --land-edge:#ffffff; --land-study:#cfd6dc;
+  --s-cif_baseline:#8a8984; --s-distributor:#2a78d6; --s-3pl:#eb6834; --s-owned_warehouse:#1baf7a;
+  --p-flexitog:#4a3aa7; --p-partner:#eda100; --p-customer:#e87ba4;
+  --q1:#cde2fb; --q2:#86b6ef; --q3:#3987e5; --q4:#1c5cab; --q5:#0d366b;
+  --st-critical:#d03b3b; --st-serious:#ec835a; --st-warning:#fab219; --st-info:#6f8193;
+  --display:"IBM Plex Sans Condensed","Arial Narrow",Arial,sans-serif;
+  --body:"IBM Plex Sans",-apple-system,"Segoe UI",Arial,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  color-scheme:dark;
+  --ground:#0d1318; --surface:#141c23; --surface-2:#18212a; --ink:#e6edf3; --muted:#a3b0bc; --faint:#6d7b88; --rule:#26323c;
+  --accent:#9cc0e3; --accent-ink:#0d1318; --accent-soft:#1b2a38; --band:#2d2616; --band-edge:#c98500;
+  --sea:#0f171e; --land:#1f2a33; --land-edge:#0d1318; --land-study:#2a3742;
+  --s-cif_baseline:#8f8e89; --s-distributor:#3987e5; --s-3pl:#d95926; --s-owned_warehouse:#199e70;
+  --p-flexitog:#9085e9; --p-partner:#c98500; --p-customer:#d55181;
+  --q1:#184f95; --q2:#256abf; --q3:#3987e5; --q4:#6da7ec; --q5:#b7d3f6;
+}}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --ground:#0d1318; --surface:#141c23; --surface-2:#18212a; --ink:#e6edf3; --muted:#a3b0bc; --faint:#6d7b88; --rule:#26323c;
+  --accent:#9cc0e3; --accent-ink:#0d1318; --accent-soft:#1b2a38; --band:#2d2616; --band-edge:#c98500;
+  --sea:#0f171e; --land:#1f2a33; --land-edge:#0d1318; --land-study:#2a3742;
+  --s-cif_baseline:#8f8e89; --s-distributor:#3987e5; --s-3pl:#d95926; --s-owned_warehouse:#199e70;
+  --p-flexitog:#9085e9; --p-partner:#c98500; --p-customer:#d55181;
+  --q1:#184f95; --q2:#256abf; --q3:#3987e5; --q4:#6da7ec; --q5:#b7d3f6;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{background:var(--ground);color:var(--ink);font:14px/1.5 var(--body);margin:0}
+h1,h2,h3{font-family:var(--display);margin:0;text-wrap:balance}
+h1{font-size:24px;font-weight:700;letter-spacing:.005em}
+h2{font-size:19px;font-weight:600}
+h3{font-size:15px;font-weight:600}
+p{margin:0}
+button,select,input{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.eyebrow{font:500 11px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.app{max-width:1400px;margin:0 auto;padding-inline:18px;padding-block:14px 60px;display:flex;flex-direction:column;gap:18px}
+
+/* top bar */
+.top{display:flex;flex-wrap:wrap;gap:12px 24px;align-items:flex-end;justify-content:space-between;border-bottom:2px solid var(--ink);padding-bottom:12px}
+.brand{display:flex;flex-direction:column;gap:6px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font:500 11px/1 var(--mono);padding:5px 8px;border-radius:999px;background:var(--accent-soft);color:var(--ink);white-space:nowrap}
+.chip.demo{background:var(--band);box-shadow:inset 0 0 0 1px var(--band-edge)}
+.controls{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:flex-end}
+.ctl{display:flex;flex-direction:column;gap:4px;min-width:0}
+#orderSel,#ovSel{width:100%}
+.ctl label{font:500 11px var(--mono);color:var(--muted);letter-spacing:.04em;text-transform:uppercase}
+select{background:var(--surface);border:1px solid var(--rule);border-radius:6px;padding:6px 8px;min-width:0;max-width:100%}
+.seg{display:inline-flex;border:1px solid var(--rule);border-radius:6px;overflow:hidden;background:var(--surface)}
+.seg button{border:0;background:transparent;padding:6px 10px;font-size:13px}
+.seg button+button{border-left:1px solid var(--rule)}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.btn{border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink);border-radius:6px;padding:7px 12px;font-weight:600;display:inline-flex;gap:8px;align-items:center}
+.btn.ghost{background:transparent;color:var(--accent)}
+.badge{font:600 11px/1 var(--mono);background:var(--accent-ink);color:var(--accent);border-radius:999px;padding:3px 6px}
+.btn.ghost .badge{background:var(--accent);color:var(--accent-ink)}
+
+/* region cards */
+.regions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.rcard{background:var(--surface);border:1px solid var(--rule);border-radius:8px;padding:14px;display:flex;flex-direction:column;gap:10px;cursor:pointer;text-align:left}
+.rcard[aria-pressed="true"]{box-shadow:inset 0 0 0 2px var(--accent)}
+.rcard .rh{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.rcard ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.rcard li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;font-size:13px;align-items:baseline}
+.rcard li .k{color:var(--muted)}
+.rcard li .v{display:inline-flex;align-items:center;gap:6px;justify-content:flex-end;text-align:right}
+.rcard .base{font:12px var(--mono);color:var(--faint)}
+.sw{width:10px;height:10px;border-radius:2px;display:inline-block;flex:none}
+
+/* map area */
+.maprow{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:14px;align-items:start}
+.card{background:var(--surface);border:1px solid var(--rule);border-radius:8px;padding:14px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.cardhead{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;align-items:baseline}
+.mapbox{position:relative;border-radius:6px;overflow:hidden;background:var(--sea);border:1px solid var(--rule)}
+#map{display:block;width:100%;height:auto;aspect-ratio:1000/620}
+#map .country{fill:var(--land);stroke:var(--land-edge);stroke-width:.6;vector-effect:non-scaling-stroke}
+#map .country.study{cursor:pointer}
+#map .country.study:hover{stroke:var(--ink);stroke-width:1.2}
+#map .country.sel{stroke:var(--ink);stroke-width:2}
+#map .lane{fill:none;stroke-linecap:round;stroke-linejoin:round;opacity:.85;vector-effect:non-scaling-stroke}
+#map .lane.road{stroke-dasharray:6 4}
+#map .last{fill:none;stroke:var(--muted);opacity:.5;stroke-width:1;vector-effect:non-scaling-stroke}
+#map .cust{fill:var(--muted);stroke:var(--surface);stroke-width:.8;vector-effect:non-scaling-stroke}
+#map .node{stroke:var(--surface);stroke-width:1.4;vector-effect:non-scaling-stroke;cursor:default}
+#map .node.cand{fill-opacity:.35;stroke-dasharray:2 2}
+#map .issue path{stroke:var(--surface);stroke-width:1;vector-effect:non-scaling-stroke}
+#map .issue text{font:700 9px var(--mono);fill:#14212c;pointer-events:none}
+#map .hub{fill:var(--ink);stroke:var(--surface);stroke-width:1.2;vector-effect:non-scaling-stroke}
+#map .clabel{font:500 10px var(--mono);fill:var(--ink);paint-order:stroke;stroke:var(--land);stroke-width:3px;pointer-events:none}
+.maplegend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12px;color:var(--muted);align-items:center}
+.maplegend span{display:inline-flex;gap:6px;align-items:center}
+.ramp{display:inline-flex;gap:0;border-radius:3px;overflow:hidden}
+.ramp i{width:22px;height:10px;display:block}
+.zoom{position:absolute;right:8px;top:8px;display:flex;flex-direction:column;gap:4px}
+.zoom button{width:28px;height:28px;border-radius:6px;border:1px solid var(--rule);background:var(--surface);font-weight:600}
+
+/* country panel */
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:13px}
+.kv dt{color:var(--muted)} .kv dd{margin:0}
+.tablewrap{overflow-x:auto;border:1px solid var(--rule);border-radius:6px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:12.5px}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--rule);vertical-align:top}
+th{font:600 11px var(--display);letter-spacing:.04em;text-transform:uppercase;color:var(--muted);background:var(--surface-2)}
+td.n{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+.issues{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.issues li{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px;font-size:13px}
+.sev{font:600 10px/1 var(--mono);text-transform:uppercase;letter-spacing:.05em;padding:4px 6px;border-radius:3px;color:#14212c;white-space:nowrap;height:max-content}
+.sev.critical{background:var(--st-critical);color:#fff}.sev.serious{background:var(--st-serious)}.sev.warning{background:var(--st-warning)}.sev.info{background:var(--st-info);color:#fff}
+.muted{color:var(--muted)} .faint{color:var(--faint)}
+.empty{color:var(--muted);font-size:13px;padding:8px 0}
+
+/* small multiples */
+.sm{display:grid;grid-template-columns:150px repeat(3,minmax(0,1fr));gap:0 16px;align-items:center}
+.sm .ch{font:600 13px var(--display);padding-bottom:6px;border-bottom:1px solid var(--rule)}
+.sm .ch.dim{opacity:.45}
+.sm .rh{font-size:12px;color:var(--muted);line-height:1.25;padding-right:6px}
+.sm .rh b{display:block;color:var(--ink);font-weight:600;font-size:13px}
+.sm .cell{padding:8px 0;border-bottom:1px solid var(--rule)}
+.sm .cell.dim{opacity:.45}
+.sm svg{width:100%;height:auto;display:block;overflow:visible}
+svg text{font-family:var(--mono);font-size:10.5px;fill:var(--muted)}
+svg text.v{fill:var(--ink)} svg text.best{fill:var(--ink);font-weight:600}
+
+/* order explorer */
+.explorer{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:14px}
+.rec{background:var(--accent-soft);border-radius:6px;padding:8px 10px;font-size:13px}
+.steps{list-style:none;margin:0;padding:0}
+.steps li{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:baseline;padding:6px 0;border-bottom:1px dashed var(--rule);font-size:12.5px}
+.steps li:last-child{border-bottom:0}
+.pay{font:500 10.5px/1 var(--mono);padding:3px 6px;border-radius:999px;white-space:nowrap}
+.pay.FlexiTog{background:color-mix(in srgb,var(--p-flexitog) 20%,transparent)}
+.pay.partner{background:color-mix(in srgb,var(--p-partner) 26%,transparent)}
+.pay.customer{background:color-mix(in srgb,var(--p-customer) 26%,transparent)}
+.cus{font:600 9.5px var(--mono);color:var(--st-critical);margin-left:6px}
+.bottom{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}
+.prio{font:600 10px/1 var(--mono);padding:4px 6px;border-radius:3px;text-transform:uppercase}
+.prio.High{background:var(--st-critical);color:#fff}.prio.Medium{background:var(--st-warning);color:#14212c}.prio.Low{background:var(--accent-soft)}
+
+/* drawer */
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(440px,100%);background:var(--surface);border-left:1px solid var(--rule);box-shadow:-12px 0 32px rgba(0,0,0,.18);z-index:20;display:flex;flex-direction:column;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+.dhead{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:14px 16px;border-bottom:1px solid var(--rule)}
+.dbody{overflow-y:auto;padding:10px 16px 24px;display:flex;flex-direction:column;gap:8px}
+.dfoot{display:flex;flex-wrap:wrap;gap:8px;padding:12px 16px;border-top:1px solid var(--rule)}
+details.grp{border:1px solid var(--rule);border-radius:6px;background:var(--surface-2)}
+details.grp>summary{list-style:none;cursor:pointer;padding:9px 12px;display:flex;justify-content:space-between;gap:8px;font-weight:600}
+details.grp>summary::-webkit-details-marker{display:none}
+details.grp>summary::after{content:"+";font-family:var(--mono);color:var(--muted)}
+details.grp[open]>summary::after{content:"–"}
+details.grp .gbody{padding:0 12px 12px;display:flex;flex-direction:column;gap:8px;overflow-x:auto}
+.ptable{width:100%;border-collapse:collapse;font-size:12px}
+.ptable th,.ptable td{padding:4px 4px;border-bottom:1px solid var(--rule);background:transparent}
+.ptable td.lbl{color:var(--ink);min-width:96px}
+.ptable td.lbl small{display:block;color:var(--faint);font-size:10.5px}
+.ptable input[type=number],.ptable input[type=text],.ptable select{width:100%;min-width:54px;background:var(--surface);border:1px solid var(--rule);border-radius:4px;padding:3px 5px;font:12px var(--mono)}
+.ptable input.chg,.ptable select.chg{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.src{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:5px;vertical-align:middle}
+.src.placeholder{background:var(--st-warning)} .src.real{background:#0ca30c}
+.toggle{display:flex;gap:10px;align-items:flex-start;font-size:13px}
+.toggle input{margin-top:3px}
+.toggle small{display:block;color:var(--muted)}
+.gcount{font:500 11px var(--mono);color:var(--accent)}
+.scrim{position:fixed;inset:0;background:rgba(10,16,22,.35);z-index:19}
+#tip{position:fixed;pointer-events:none;background:var(--ink);color:var(--ground);font:12px/1.4 var(--mono);padding:6px 9px;border-radius:4px;z-index:30;max-width:280px}
+#copyout{width:100%;min-height:90px;font:11px var(--mono)}
+@media (max-width:1100px){.maprow{grid-template-columns:minmax(0,1fr)}.explorer,.bottom{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:760px){.regions{grid-template-columns:minmax(0,1fr)}.sm{grid-template-columns:minmax(0,1fr);gap:0}.sm .ch.first,.sm .rh.sp{display:none}}
+@media (prefers-reduced-motion:no-preference){.drawer{animation:slide .18s ease-out}@keyframes slide{from{transform:translateX(24px);opacity:.6}}}
+</style>
+
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <span class="eyebrow">FlexiTog EU · Helmond hub · Türkiye, North Africa, Gulf/GCC</span>
+      <h1>FlexiTog Route Dashboard</h1>
+      <div class="chips" id="chips"></div>
+    </div>
+    <div class="controls">
+      <div class="ctl"><label>Region</label><div class="seg" id="regionSeg"></div></div>
+      <div class="ctl"><label for="mapScenario">Routes on map</label><select id="mapScenario"></select></div>
+      <div class="ctl"><label for="mapMetric">Colour countries by</label><select id="mapMetric"></select></div>
+      <div class="ctl"><label for="method">Hassle method</label><select id="method"></select></div>
+      <button class="btn" id="openParams" type="button">Parameters <span class="badge" id="chgCount">0</span></button>
+    </div>
+  </header>
+
+  <section class="regions" id="regions" aria-label="Region summary"></section>
+
+  <section class="maprow">
+    <div class="card">
+      <div class="cardhead"><h2 id="mapTitle">Routes and issues</h2><span class="faint" style="font-size:12px">Click a country for detail. Lines scale with pallets in the batch.</span></div>
+      <div class="mapbox">
+        <svg id="map" role="img" aria-label="Map of routes from Helmond"></svg>
+        <div class="zoom"><button type="button" id="zin" aria-label="Zoom in">+</button><button type="button" id="zout" aria-label="Zoom out">–</button></div>
+      </div>
+      <div class="maplegend" id="mapLegend"></div>
+    </div>
+    <aside class="card" id="countryPanel" aria-live="polite"></aside>
+  </section>
+
+  <section class="card">
+    <div class="cardhead"><h2>Scorecard by region</h2><span class="faint" style="font-size:12px">Lower is better on every row. Shared scale per row. Bold = best in-scope scenario.</span></div>
+    <div class="maplegend" id="smLegend"></div>
+    <div class="sm" id="sm"></div>
+  </section>
+
+  <section class="explorer">
+    <div class="card" id="orderCard"></div>
+    <div class="card" id="stepsCard"></div>
+  </section>
+
+  <section class="bottom">
+    <div class="card"><div class="cardhead"><h2>Issues</h2><span class="faint" style="font-size:12px" id="issueNote"></span></div><ul class="issues" id="issueList"></ul></div>
+    <div class="card"><div class="cardhead"><h2>Data that replaces the placeholders</h2></div>
+      <p class="muted" style="font-size:13px">Collect in this order. The Excel pack <span class="num">templates/FlexiTog_data_request_pack.xlsx</span> has one sheet per row.</p>
+      <div class="tablewrap"><table id="dataReq"></table></div></div>
+  </section>
+</div>
+
+<div class="scrim" id="scrim" hidden></div>
+<aside class="drawer" id="drawer" hidden aria-label="Parameters">
+  <div class="dhead"><div><span class="eyebrow">What-if</span><h2>Parameters</h2></div><button class="btn ghost" type="button" id="closeParams">Close</button></div>
+  <div class="dbody" id="dbody"></div>
+  <div class="dfoot"><button class="btn ghost" type="button" id="resetAll">Reset all</button><button class="btn ghost" type="button" id="copyChanges">Copy changes</button><span class="faint" style="font-size:12px;align-self:center" id="copyNote"></span>
+    <textarea id="copyout" hidden readonly aria-label="Changed parameters"></textarea></div>
+</aside>
+<div id="tip" hidden></div>
+
+<script>/*ENGINE*/</script>
+<script>
+"use strict";
+const PAYLOAD = /*PAYLOAD*/null;
+const E = window.FlexEngine;
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fmt = (v, dp = 0) => v == null || Number.isNaN(v) ? "n/a" : Number(v).toLocaleString("en-GB", {minimumFractionDigits: dp, maximumFractionDigits: dp});
+const pct = v => v == null ? "n/a" : Math.round(v * 100) + "%";
+const clone = o => JSON.parse(JSON.stringify(o));
+const SC = E.SCENARIOS, INS = E.IN_SCOPE;
+const SHORT = {cif_baseline: "Baseline CIF", distributor: "Distributor", "3pl": "3PL", owned_warehouse: "Owned WH"};
+const REGIONS = E.STUDY_REGIONS;
+const CNAME = c => PAYLOAD.names.countries[c] || c;
+const GCC = ["SA", "AE", "QA", "KW", "BH", "OM"];
+const STORE_KEY = "flexitog-dashboard-v1";
+
+// ============================================================ state
+const BASE = {params: clone(PAYLOAD.data.params), dcs: clone(PAYLOAD.data.dcs), products: clone(PAYLOAD.data.products)};
+let W = clone(BASE);                      // working copy the drawer edits
+let whatIf = {redSea: false, euAll: false};
+let excluded = new Set();
+const ui = {region: "All", mapScenario: "best", mapMetric: "best", method: "customer_first", country: null,
+            orderId: null, override: "auto", zoom: 1, center: null};
+let R = null;                             // latest results
+
+function tableRef(t){ return t.startsWith("p:") ? W.params[t.slice(2)] : W[t]; }
+function baseRef(t){ return t.startsWith("p:") ? BASE.params[t.slice(2)] : BASE[t]; }
+function diff(){
+  const out = [];
+  ["products", "dcs", ...Object.keys(W.params).map(k => "p:" + k)].forEach(t => {
+    const w = tableRef(t), b = baseRef(t);
+    w.forEach((row, i) => Object.keys(row).forEach(f => { if (JSON.stringify(row[f]) !== JSON.stringify(b[i]?.[f])) out.push({t, i, f, v: row[f], was: b[i]?.[f]}); }));
+  });
+  return out;
+}
+function save(){
+  try { localStorage.setItem(STORE_KEY, JSON.stringify({gen: PAYLOAD.meta.generated, edits: diff().map(({t,i,f,v}) => ({t,i,f,v})), whatIf, excluded: [...excluded]})); } catch (e) {}
+}
+function load(){
+  try {
+    const s = JSON.parse(localStorage.getItem(STORE_KEY) || "null");
+    if (!s || s.gen !== PAYLOAD.meta.generated) return;
+    (s.edits || []).forEach(({t, i, f, v}) => { const tb = tableRef(t); if (tb && tb[i] && f in tb[i]) tb[i][f] = v; });
+    whatIf = Object.assign(whatIf, s.whatIf || {});
+    excluded = new Set(s.excluded || []);
+  } catch (e) {}
+}
+
+// ============================================================ compute
+function effectiveRaw(){
+  const raw = Object.assign({}, PAYLOAD.data);
+  raw.params = clone(W.params);
+  raw.dcs = W.dcs.filter(d => !excluded.has(d.dc_id));
+  raw.products = W.products.map(p => whatIf.euAll ? Object.assign({}, p, {country_of_origin: "NL"}) : p);
+  if (whatIf.redSea) raw.params.freight.forEach(r => {
+    if (r.leg === "main" && r.mode === "sea" && GCC.includes(r.dest_country)) r.transit_days = Math.max(8, Number(r.transit_days) - 10);
+  });
+  return raw;
+}
+function compute(){
+  const data = E.makeData(effectiveRaw());
+  const rows = E.runBatch(PAYLOAD.batch.orders, PAYLOAD.batch.lines, data);
+  // "best in-scope per order": the available in-scope row with the lowest risk-adjusted score
+  const byOrder = {};
+  rows.forEach(r => (byOrder[r.order_id] = byOrder[r.order_id] || []).push(r));
+  const best = [];
+  Object.values(byOrder).forEach(g => {
+    const cand = g.filter(r => r.scenario !== "cif_baseline" && r.available);
+    if (!cand.length) return;
+    const b = cand.reduce((a, r) => (E.M.score(r.route) < E.M.score(a.route) ? r : a));
+    best.push(Object.assign({}, b, {bestOf: b.scenario, scenario: "best"}));
+  });
+  R = {data, rows, best, byOrder};
+}
+function rowsFor(scenario){ return scenario === "best" ? R.best : R.rows.filter(r => r.scenario === scenario); }
+function regionCard(){ return E.scorecard(R.rows, ui.method, r => r.region); }
+function countryCard(scenario){
+  const rows = rowsFor(scenario);
+  const out = {};
+  rows.forEach(r => (out[r.country] = out[r.country] || []).push(r));
+  Object.keys(out).forEach(c => { out[c] = E.scorecard(out[c].map(r => Object.assign({}, r, {scenario: "cif_baseline"})), ui.method, () => c)[0]; });
+  return out;
+}
+
+// ============================================================ issues
+function issuesAll(){
+  const list = PAYLOAD.issues.map(i => Object.assign({kind: "briefing"}, i,
+    i.id === "red-sea" && whatIf.redSea ? {severity: "info", title: "Red Sea reopened (what-if)",
+      detail: "What-if active: Gulf sea transit runs 10 days shorter via Suez. Switch it off in Parameters to return to Cape routing."} : {}));
+  const byC = {};
+  R.rows.forEach(r => (byC[r.country] = byC[r.country] || []).push(r));
+  Object.entries(byC).forEach(([c, g]) => {
+    if (!REGIONS.includes(R.data.regionFor(c))) return;
+    INS.forEach(s => {
+      const sg = g.filter(r => r.scenario === s);
+      const cov = sg.filter(r => r.available).length / (sg.length || 1);
+      const none = sg.every(r => !r.route);
+      if (none) list.push({kind: "computed", severity: "warning", countries: [c], title: `No ${SHORT[s].toLowerCase()} option in ${CNAME(c)}`,
+        detail: `${sg.length} batch order(s) cannot use ${E.LABELS[s].toLowerCase()}: no node serves ${CNAME(c)}. Add a partner or extend a node's served countries.`, lever: "Parameters > Partners"});
+      else if (cov < 0.75) list.push({kind: "computed", severity: "info", countries: [c], title: `${E.LABELS[s]} misses ${pct(1 - cov)} of orders in ${CNAME(c)}`,
+        detail: "Orders fall below the node's minimum order value.", lever: "Parameters > Partners / Scenario defaults (MOV)"});
+    });
+    const base = g.filter(r => r.scenario === "cif_baseline" && r.available);
+    if (base.length) {
+      const duty = base.reduce((a, r) => a + r.route.steps.filter(s => s.category === "duty").reduce((x, s) => x + s.cost_eur, 0), 0);
+      const val = base.reduce((a, r) => a + r.order_value_eur, 0);
+      if (val && duty / val > 0.1) list.push({kind: "computed", severity: "serious", countries: [c], title: `Duty ${fmt(100 * duty / val, 0)}% of order value in ${CNAME(c)}`,
+        detail: "Most SKUs are of non-EU origin. EU-made goods would enter at the preferential rate.", lever: "What-if: all SKUs EU-made"});
+      const lead = base.reduce((a, r) => a + r.lead_time_days, 0) / base.length;
+      if (lead > 30) list.push({kind: "computed", severity: "warning", countries: [c], title: `Baseline lead time ${fmt(lead, 0)} days to ${CNAME(c)}`,
+        detail: "Sea transit plus clearance on the CIF baseline. Regional stock cuts this to days.", lever: "What-if: Red Sea reopens"});
+    }
+  });
+  return list;
+}
+const SEV_RANK = {critical: 0, serious: 1, warning: 2, info: 3};
+
+// ============================================================ map
+const BM = PAYLOAD.geo.basemap;
+const rad = d => d * Math.PI / 180;
+function proj(lat, lon){ return [BM.k * rad(lon - BM.view.lonMin), BM.k * (BM.yTop - Math.log(Math.tan(Math.PI / 4 + rad(Math.max(-80, Math.min(80, lat))) / 2)))]; }
+const REGION_BOX = {All: [-14, 62, 12, 56], "Türkiye": [14, 46, 33, 52.5], "North Africa": [-14, 36, 20, 43], "Gulf/GCC": [32, 62, 12, 33]};
+function viewBox(){
+  const [lo0, lo1, la0, la1] = REGION_BOX[ui.region];
+  const [x0, y1] = proj(la0, lo0), [x1, y0] = proj(la1, lo1);
+  let w = x1 - x0, h = y1 - y0;
+  const ratio = 1000 / 620;
+  if (w / h > ratio) { const nh = w / ratio; return [x0, y0 - (nh - h) / 2, w, nh]; }
+  const nw = h * ratio; return [x0 - (nw - w) / 2, y0, nw, h];
+}
+function applyZoom(vb){
+  const z = ui.zoom, cx = vb[0] + vb[2] / 2, cy = vb[1] + vb[3] / 2;
+  const w = vb[2] / z, h = vb[3] / z;
+  return [cx - w / 2, cy - h / 2, w, h];
+}
+const loc = (kind, id) => PAYLOAD.geo.locations[`${kind}:${id}`] || null;
+const city = name => PAYLOAD.geo.cities[String(name || "").toLowerCase()] || null;
+function metricDefs(){
+  return [
+    {key: "best", label: "Cheapest in-scope scenario", kind: "cat"},
+    {key: "cost_per_unit_eur", label: "Cost to serve per unit (€)", kind: "seq", dp: 2},
+    {key: "customer_cost_per_unit_eur", label: "Customer pays per unit (€)", kind: "seq", dp: 2},
+    {key: "lead_time_days", label: "Lead time (days)", kind: "seq", dp: 1},
+    {key: "flexitog_paperwork", label: "FlexiTog paperwork per order", kind: "seq", dp: 1},
+    {key: "issues", label: "Number of issues", kind: "seq", dp: 0},
+  ];
+}
+function drawMap(){
+  const svg = $("map");
+  const vb = applyZoom(viewBox());
+  svg.setAttribute("viewBox", vb.map(v => v.toFixed(1)).join(" "));
+  const scale = vb[2] / 1000;
+  const metric = metricDefs().find(m => m.key === ui.mapMetric);
+  const studyCountries = new Set(Object.keys(PAYLOAD.data.country_region).filter(c => REGIONS.includes(PAYLOAD.data.country_region[c])));
+  const issues = issuesAll();
+  const issueCount = {}; issues.forEach(i => (i.countries || []).forEach(c => issueCount[c] = (issueCount[c] || 0) + 1));
+
+  // country values
+  let values = {}, cats = {};
+  if (metric.kind === "cat") {
+    const per = {};
+    INS.forEach(s => { const cc = countryCard(s); Object.entries(cc).forEach(([c, a]) => { if (a && a.cost_per_unit_eur != null && (!per[c] || a.cost_per_unit_eur < per[c].v)) per[c] = {v: a.cost_per_unit_eur, s}; }); });
+    Object.entries(per).forEach(([c, x]) => cats[c] = x.s);
+  } else if (metric.key === "issues") values = issueCount;
+  else { const cc = countryCard(ui.mapScenario); Object.entries(cc).forEach(([c, a]) => { if (a && a[metric.key] != null) values[c] = a[metric.key]; }); }
+  const vals = Object.entries(values).filter(([c]) => studyCountries.has(c) && (ui.region === "All" || R.data.regionFor(c) === ui.region)).map(([, v]) => v);
+  const vmin = Math.min(...vals), vmax = Math.max(...vals);
+  const bin = v => vmax === vmin ? 3 : 1 + Math.max(0, Math.min(4, Math.floor(5 * (v - vmin) / (vmax - vmin + 1e-9))));
+
+  let h = "";
+  BM.countries.forEach(c => {
+    const study = studyCountries.has(c.iso);
+    let fill = study ? "var(--land-study)" : "var(--land)";
+    if (study && metric.kind === "cat" && cats[c.iso]) fill = `var(--s-${cats[c.iso]})`;
+    if (study && metric.kind === "seq" && values[c.iso] != null) fill = `var(--q${bin(values[c.iso])})`;
+    const tipv = metric.kind === "cat" ? (cats[c.iso] ? E.LABELS[cats[c.iso]] : "no data") : (values[c.iso] != null ? fmt(values[c.iso], metric.dp) : "no data");
+    h += `<path class="country${study ? " study" : ""}${c.iso && ui.country === c.iso ? " sel" : ""}" d="${c.d}" style="fill:${fill}" data-iso="${c.iso || ""}"` +
+         (study ? ` data-tip="${esc(CNAME(c.iso))}: ${esc(metric.label)} ${esc(tipv)}"` : "") + `/>`;
+  });
+
+  // lanes
+  const rows = rowsFor(ui.mapScenario).filter(r => r.available && (ui.region === "All" || r.region === ui.region));
+  const lanes = {}, lasts = {}, custs = {};
+  rows.forEach(r => {
+    const rt = r.route, sc = r.scenario === "best" ? r.bestOf : r.scenario;
+    const ml = rt.main_leg; if (!ml) return;
+    const key = sc + "|" + ml.port + "|" + ml.country;
+    const lp = PAYLOAD.geo.lanes[ml.port.toLowerCase()];
+    if (!lanes[key]) lanes[key] = {sc, mode: lp ? lp.mode : ml.mode, pts: lp ? lp.points : null, port: ml.port, country: ml.country, pallets: 0, orders: 0, dc: rt.dc_id};
+    if (!lanes[key].pts) { const a = PAYLOAD.geo.cities.helmond, b = rt.dc_id ? loc("dc", rt.dc_id) : city(ml.port); lanes[key].pts = b ? [a, b] : null; }
+    lanes[key].pallets += r.pallets; lanes[key].orders += 1;
+    const end = rt.dc_id ? loc("dc", rt.dc_id) : (lp ? lp.points[lp.points.length - 1] : null);
+    const cl = loc("cust", r.customer_id);
+    if (end && cl) { const k2 = end.join() + "|" + cl.join(); lasts[k2] = lasts[k2] || {a: end, b: cl, pallets: 0}; lasts[k2].pallets += r.pallets; }
+    if (cl) { const k3 = cl.join(); custs[k3] = custs[k3] || {p: cl, pallets: 0, id: r.customer_id}; custs[k3].pallets += r.pallets; }
+  });
+  const maxP = Math.max(1, ...Object.values(lanes).map(l => l.pallets));
+  const path = pts => pts.map((p, i) => { const [x, y] = proj(p[0], p[1]); return (i ? "L" : "M") + x.toFixed(1) + "," + y.toFixed(1); }).join("");
+  Object.values(lasts).forEach(l => { h += `<path class="last" d="${path([l.a, l.b])}"/>`; });
+  Object.values(lanes).sort((a, b) => b.pallets - a.pallets).forEach(l => {
+    if (!l.pts) return;
+    const w = 1.5 + 6 * Math.sqrt(l.pallets / maxP);
+    const t = `${E.LABELS[l.sc]}: Helmond → ${l.port || l.country} (${l.mode}) · ${fmt(l.pallets)} pallets, ${l.orders} orders`;
+    h += `<path class="lane ${l.mode === "road" ? "road" : ""}" d="${path(l.pts)}" style="stroke:var(--s-${l.sc});stroke-width:${w.toFixed(1)}px" data-tip="${esc(t)}"/>`;
+    h += `<path d="${path(l.pts)}" style="fill:none;stroke:transparent;stroke-width:12px;vector-effect:non-scaling-stroke" data-tip="${esc(t)}"/>`;
+  });
+  Object.values(custs).forEach(c => {
+    const [x, y] = proj(c.p[0], c.p[1]);
+    h += `<circle class="cust" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${((1.8 + Math.sqrt(c.pallets) * .35) * scale).toFixed(2)}" data-tip="${esc(c.id)} · ${fmt(c.pallets)} pallets in batch"/>`;
+  });
+  // nodes
+  R.data.dcs.filter(d => d.dc_type !== "helmond_hub").forEach(d => {
+    const p = loc("dc", d.dc_id); if (!p) return;
+    const [x, y] = proj(p[0], p[1]); const s = 5.5 * scale;
+    const cls = `node${d.status === "existing" ? "" : " cand"}`, st = `fill:var(--s-${d.dc_type});stroke:var(--s-${d.dc_type})`;
+    const t = `${d.name} · ${d.status} · serves ${String(d.serves_countries || d.country).split(";").join(", ")}`;
+    const dx = d.dc_type === "3pl" ? -s * .9 : d.dc_type === "owned_warehouse" ? s * .9 : 0;
+    const X = x + dx;
+    if (d.dc_type === "distributor") h += `<circle class="${cls}" cx="${X}" cy="${y}" r="${s}" style="${st}" data-tip="${esc(t)}"/>`;
+    else if (d.dc_type === "3pl") h += `<rect class="${cls}" x="${X - s}" y="${y - s}" width="${2 * s}" height="${2 * s}" style="${st}" data-tip="${esc(t)}"/>`;
+    else h += `<path class="${cls}" d="M${X},${y - s * 1.3}L${X + s * 1.3},${y}L${X},${y + s * 1.3}L${X - s * 1.3},${y}Z" style="${st}" data-tip="${esc(t)}"/>`;
+  });
+  const hub = proj(...PAYLOAD.geo.cities.helmond), hs = 7 * scale;
+  h += `<path class="hub" d="${star(hub[0], hub[1], hs)}" data-tip="Helmond EU hub · origin of every flow"/>`;
+  // issues
+  issues.filter(i => i.lat != null && (ui.region === "All" || (i.countries || []).some(c => R.data.regionFor(c) === ui.region)))
+    .forEach(i => {
+      const [x, y] = proj(i.lat, i.lon), s = 8 * scale;
+      h += `<g class="issue" data-tip="${esc(i.severity.toUpperCase())}: ${esc(i.title)}"><path d="M${x},${y - s}L${x + s},${y + s * .8}L${x - s},${y + s * .8}Z" style="fill:var(--st-${i.severity})"/>` +
+           `<text x="${x}" y="${y + s * .6}" text-anchor="middle" style="font-size:${(9 * scale).toFixed(2)}px">!</text></g>`;
+    });
+  // ISO labels on study countries
+  BM.countries.filter(c => studyCountries.has(c.iso) && c.c).forEach(c => {
+    h += `<text class="clabel" x="${c.c[0]}" y="${c.c[1]}" text-anchor="middle" style="font-size:${(10 * scale).toFixed(2)}px">${esc(c.iso)}</text>`;
+  });
+  svg.innerHTML = h;
+  bindTips(svg);
+  svg.querySelectorAll(".country.study").forEach(el => el.addEventListener("click", () => { ui.country = el.dataset.iso; renderCountry(); drawMap(); }));
+
+  // legend
+  let lg = "";
+  if (metric.kind === "cat") lg += INS.map(s => `<span><i class="sw" style="background:var(--s-${s})"></i>${esc(SHORT[s])} cheapest</span>`).join("");
+  else lg += `<span>${esc(metric.label)} <span class="ramp">${[1,2,3,4,5].map(i => `<i style="background:var(--q${i})"></i>`).join("")}</span> <span class="num">${fmt(vmin, metric.dp)} → ${fmt(vmax, metric.dp)}</span></span>`;
+  lg += `<span><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" style="stroke:var(--muted);stroke-width:3"/></svg>sea</span>`;
+  lg += `<span><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" style="stroke:var(--muted);stroke-width:3;stroke-dasharray:6 4"/></svg>road</span>`;
+  lg += `<span><svg width="12" height="12"><circle cx="6" cy="6" r="5" style="fill:var(--muted)"/></svg>distributor</span><span><svg width="12" height="12"><rect x="1" y="1" width="10" height="10" style="fill:var(--muted)"/></svg>3PL</span><span><svg width="14" height="14"><path d="M7,0L14,7L7,14L0,7Z" style="fill:var(--muted)"/></svg>owned</span><span class="faint">faded = not yet signed</span>`;
+  lg += ["critical","serious","warning","info"].map(s => `<span><svg width="12" height="11"><path d="M6,0L12,11L0,11Z" style="fill:var(--st-${s})"/></svg>${s}</span>`).join("");
+  $("mapLegend").innerHTML = lg;
+  $("mapTitle").textContent = `Routes: ${ui.mapScenario === "best" ? "best in-scope option per order" : E.LABELS[ui.mapScenario]}`;
+}
+function star(cx, cy, r){ let d = ""; for (let i = 0; i < 10; i++) { const a = Math.PI / 5 * i - Math.PI / 2, rr = i % 2 ? r * .45 : r; d += (i ? "L" : "M") + (cx + rr * Math.cos(a)).toFixed(1) + "," + (cy + rr * Math.sin(a)).toFixed(1); } return d + "Z"; }
+
+// ============================================================ tooltips
+const tip = $("tip");
+function bindTips(root){
+  root.querySelectorAll("[data-tip]").forEach(el => {
+    el.addEventListener("mouseenter", e => { tip.textContent = el.dataset.tip; tip.hidden = false; move(e); });
+    el.addEventListener("mousemove", move);
+    el.addEventListener("mouseleave", () => { tip.hidden = true; });
+  });
+}
+function move(e){ tip.style.left = Math.min(e.clientX + 12, innerWidth - 290) + "px"; tip.style.top = (e.clientY + 14) + "px"; }
+
+// ============================================================ region cards
+function winners(region){
+  const sc = regionCard().filter(r => r.group === region);
+  const base = sc.find(r => r.scenario === "cif_baseline");
+  const ins = sc.filter(r => r.scenario !== "cif_baseline" && r.coverage > 0);
+  const pick = k => { const v = ins.filter(r => r[k] != null); if (!v.length) return null; const lo = Math.min(...v.map(r => r[k])); return {v: lo, s: v.filter(r => Math.abs(r[k] - lo) <= Math.max(1e-9, Math.abs(lo) * .005)).map(r => r.scenario), base: base ? base[k] : null}; };
+  return {orders: base ? base.orders : 0, cost: pick("cost_per_unit_eur"), cust: pick("customer_cost_per_unit_eur"), lead: pick("lead_time_days"), paper: pick("flexitog_paperwork"), hassle: pick("hassle")};
+}
+function renderRegions(){
+  $("regions").innerHTML = REGIONS.map(rg => {
+    const w = winners(rg);
+    const line = (k, x, unit, dp) => x ? `<li><span class="k">${k}</span><span class="v">${x.s.map(s => `<i class="sw" style="background:var(--s-${s})"></i>`).join("")}<b>${x.s.map(s => SHORT[s]).join(" = ")}</b> <span class="num">${unit}${fmt(x.v, dp)}</span></span></li>` +
+      `<li class="base"><span></span><span>baseline ${unit}${fmt(x.base, dp)}</span></li>` : "";
+    return `<button type="button" class="rcard" data-region="${esc(rg)}" aria-pressed="${ui.region === rg}"><div class="rh"><h3>${esc(rg)}</h3><span class="faint num">${w.orders} orders</span></div><ul>` +
+      line("Lowest cost/unit", w.cost, "€", 2) + line("Customer pays least", w.cust, "€", 2) + line("Fastest", w.lead, "", 1) + line("Least FlexiTog paperwork", w.paper, "", 1) + `</ul></button>`;
+  }).join("");
+  $("regions").querySelectorAll(".rcard").forEach(b => b.addEventListener("click", () => setRegion(ui.region === b.dataset.region ? "All" : b.dataset.region)));
+}
+
+// ============================================================ country panel
+function renderCountry(){
+  const el = $("countryPanel");
+  const c = ui.country;
+  if (!c) {
+    el.innerHTML = `<h2>Country detail</h2><p class="empty">Click a country on the map to compare the four scenarios for its orders and see its issues.</p>` +
+      `<dl class="kv"><dt>Batch</dt><dd>${PAYLOAD.batch.orders.length} orders from ${esc(PAYLOAD.meta.source)}</dd><dt>Countries</dt><dd>${[...new Set(R.rows.map(r => r.country))].length}</dd></dl>`;
+    return;
+  }
+  const rows = SC.map(s => ({s, a: countryCard(s)[c]}));
+  const nodes = R.data.dcs.filter(d => d.dc_type !== "helmond_hub" && (d.country === c || String(d.serves_countries || "").split(";").includes(c)));
+  const iss = issuesAll().filter(i => (i.countries || []).includes(c)).sort((a, b) => SEV_RANK[a.severity] - SEV_RANK[b.severity]);
+  el.innerHTML = `<div class="cardhead"><h2>${esc(CNAME(c))}</h2><span class="faint num">${esc(R.data.regionFor(c))}</span></div>` +
+    (rows[0].a ? `<div class="tablewrap"><table><thead><tr><th>Scenario</th><th>€/unit</th><th>Cust €/unit</th><th>Days</th><th>Cover</th></tr></thead><tbody>` +
+      rows.map(({s, a}) => a ? `<tr><td><i class="sw" style="background:var(--s-${s})"></i> ${esc(SHORT[s])}</td><td class="n">${fmt(a.cost_per_unit_eur, 2)}</td><td class="n">${fmt(a.customer_cost_per_unit_eur, 2)}</td><td class="n">${fmt(a.lead_time_days, 1)}</td><td class="n">${pct(a.coverage)}</td></tr>` : "").join("") +
+      `</tbody></table></div><p class="faint" style="font-size:12px">${rows[0].a.orders} batch order(s), ${fmt(rows[0].a.pallets)} pallets.</p>` : `<p class="empty">No batch orders to ${esc(CNAME(c))}.</p>`) +
+    `<h3>Nodes serving ${esc(CNAME(c))}</h3>` +
+    (nodes.length ? `<ul class="issues">${nodes.map(d => `<li><i class="sw" style="background:var(--s-${d.dc_type});margin-top:4px"></i><span><b>${esc(d.name)}</b> <span class="faint">${esc(d.status)}${d.country !== c ? ", cross-border from " + esc(d.country) : ""}</span></span></li>`).join("")}</ul>` : `<p class="empty">None. Only the CIF baseline serves this country.</p>`) +
+    `<h3>Issues</h3>` + (iss.length ? `<ul class="issues">${iss.map(issueLi).join("")}</ul>` : `<p class="empty">No issues recorded.</p>`);
+}
+const issueLi = i => `<li><span class="sev ${i.severity}">${i.severity === "info" ? "i" : "▲"} ${esc(i.severity)}</span><span><b>${esc(i.title)}</b><br><span class="muted">${esc(i.detail)}</span>${i.lever ? `<br><span class="faint">Lever: ${esc(i.lever)}</span>` : ""}${i.kind === "briefing" ? ` <span class="faint">· briefing note, verify</span>` : ""}</span></li>`;
+
+// ============================================================ small multiples
+const SM_ROWS = [["cost_per_unit_eur","Cost to serve per unit","€",2],["customer_cost_per_unit_eur","Customer pays per unit","€",2],["lead_time_days","Lead time","days",1],["hassle","Hassle score","pts",1],["flexitog_paperwork","FlexiTog paperwork","steps / order",1]];
+function renderSM(){
+  const sc = regionCard(); const by = {}; sc.forEach(r => by[r.group + "|" + r.scenario] = r);
+  $("smLegend").innerHTML = SC.map(s => `<span><i class="sw" style="background:var(--s-${s})"></i>${esc(E.LABELS[s])}</span>`).join("");
+  let h = `<div class="ch first"></div>` + REGIONS.map(r => `<div class="ch${ui.region !== "All" && ui.region !== r ? " dim" : ""}">${esc(r)}</div>`).join("");
+  SM_ROWS.forEach(([k, label, unit, dp]) => {
+    const vals = sc.map(r => r[k]).filter(v => v != null); const max = Math.max(...vals, 0) || 1;
+    h += `<div class="rh sp"><b>${esc(label)}</b>${esc(unit)}</div>`;
+    REGIONS.forEach(rg => {
+      const Wd = 300, L = 78, Rr = 46, bh = 12, gap = 7, H = SC.length * (bh + gap);
+      const ins = INS.map(s => by[rg + "|" + s]?.[k]).filter(v => v != null); const best = ins.length ? Math.min(...ins) : null;
+      let svg = `<svg viewBox="0 0 ${Wd} ${H}" role="img" aria-label="${esc(label)}, ${esc(rg)}"><line x1="${L}" x2="${L}" y1="0" y2="${H - gap}" style="stroke:var(--rule)"/>`;
+      SC.forEach((s, i) => {
+        const r = by[rg + "|" + s], v = r ? r[k] : null, y = i * (bh + gap);
+        svg += `<text x="${L - 6}" y="${y + bh - 2}" text-anchor="end">${esc(SHORT[s])}</text>`;
+        if (v == null) { svg += `<text x="${L + 4}" y="${y + bh - 2}">not served</text>`; return; }
+        const w = Math.max((Wd - L - Rr) * v / max, v > 0 ? 2 : 0);
+        const isB = s !== "cif_baseline" && best != null && Math.abs(v - best) <= Math.max(1e-9, Math.abs(best) * .005);
+        const t = `${E.LABELS[s]} · ${rg}: ${fmt(v, dp)} ${unit}${r.coverage < 1 ? `, covers ${pct(r.coverage)}` : ""}`;
+        svg += `<rect x="${L}" y="${y}" width="${w}" height="${bh}" rx="3" style="fill:var(--s-${s})"/><rect x="${L}" y="${y - 3}" width="${Wd - L}" height="${bh + 6}" fill="transparent" data-tip="${esc(t)}"/>`;
+        svg += `<text class="${isB ? "best" : "v"}" x="${L + w + 5}" y="${y + bh - 2}">${fmt(v, dp)}${isB ? " ◂" : ""}</text>`;
+      });
+      h += `<div class="cell${ui.region !== "All" && ui.region !== rg ? " dim" : ""}">${svg}</svg></div>`;
+    });
+  });
+  $("sm").innerHTML = h; bindTips($("sm"));
+}
+
+// ============================================================ order explorer
+function orderList(){
+  const t = PAYLOAD.tests.orders.map(o => ({o, lines: PAYLOAD.tests.lines.filter(l => l.order_id === o.order_id), group: "Test orders"}));
+  const inRegion = o => { const c = R.data.customers.find(x => x.customer_id === o.customer_id); return ui.region === "All" || (c && R.data.regionFor(c.country) === ui.region); };
+  const b = PAYLOAD.batch.orders.filter(inRegion).slice(0, 300).map(o => ({o, lines: PAYLOAD.batch.lines.filter(l => l.order_id === o.order_id), group: "Batch orders"}));
+  return [...t, ...b];
+}
+function renderOrder(){
+  const list = orderList();
+  if (!ui.orderId || !list.some(x => x.o.order_id === ui.orderId)) ui.orderId = list[0]?.o.order_id;
+  const cur = list.find(x => x.o.order_id === ui.orderId);
+  if (!cur) { $("orderCard").innerHTML = "<p class='empty'>No orders.</p>"; $("stepsCard").innerHTML = ""; return; }
+  const ev = E.evaluate(cur.o, cur.lines, R.data, ui.override === "auto" ? null : ui.override);
+  const cust = R.data.customers.find(c => c.customer_id === cur.o.customer_id) || {};
+  const groups = ["Test orders", "Batch orders"].map(g => `<optgroup label="${g}">` + list.filter(x => x.group === g).map(x => `<option value="${esc(x.o.order_id)}"${x.o.order_id === ui.orderId ? " selected" : ""}>${esc(x.o.order_id)} · ${esc(x.o.customer_id)} · ${fmt(x.o.pallet_count)} pal</option>`).join("") + "</optgroup>").join("");
+  const opts = [`<option value="auto">Recommended</option>`, ...ev.routes.map(r => `<option value="${esc(E.M.key(r))}"${E.M.key(r) === ui.override ? " selected" : ""}>${esc(E.M.label(r))}</option>`)].join("");
+  const maxT = Math.max(1, ...ev.routes.map(r => E.M.cost(r)));
+  const Wd = 460, L = 150, bh = 15, gap = 10, H = ev.routes.length * (bh + gap);
+  let svg = `<svg viewBox="0 0 ${Wd} ${H}" style="width:100%;height:auto" role="img" aria-label="Cost per route split by payer">`;
+  ev.routes.forEach((r, i) => {
+    const y = i * (bh + gap); let x = L; const isRec = r === ev.recommended, isSel = r === ev.selected;
+    svg += `<text x="${L - 8}" y="${y + bh - 3}" text-anchor="end" class="${isSel ? "best" : ""}">${esc(SHORT[r.scenario] + (r.dc_id ? " · " + r.dc_id : ""))}${isRec ? " ★" : ""}</text>`;
+    [["flexitog", E.FLEXITOG], ["partner", E.PARTNER], ["customer", E.CUSTOMER]].forEach(([k, who]) => {
+      const v = E.M.paid(r, who), w = (Wd - L - 64) * v / maxT; if (w <= 0) return;
+      svg += `<rect x="${x}" y="${y}" width="${Math.max(w - 2, 1)}" height="${bh}" rx="2" style="fill:var(--p-${k})" data-tip="${esc(E.M.label(r))}: ${who} pays €${fmt(v)}"/>`; x += w;
+    });
+    svg += `<text class="v" x="${x + 4}" y="${y + bh - 3}">€${fmt(E.M.cost(r))}${E.M.feasible(r) ? "" : " ✕"}</text>`;
+  });
+  svg += "</svg>";
+  const rec = ev.recommended;
+  $("orderCard").innerHTML = `<div class="cardhead"><h2>Order explorer</h2></div>
+    <div class="controls"><div class="ctl" style="flex:1 1 220px"><label for="orderSel">Order</label><select id="orderSel">${groups}</select></div>
+    <div class="ctl" style="flex:1 1 220px"><label for="ovSel">Route</label><select id="ovSel">${opts}</select></div></div>
+    <p class="muted num" style="font-size:12px">${esc(cust.name || cur.o.customer_id)} · ${esc(cust.city || "")} ${esc(CNAME(cust.country))} · €${fmt(ev.ctx.value)} · ${fmt(ev.ctx.units)} units · ${fmt(ev.ctx.pallets)} pallet(s)</p>
+    <div class="rec">${rec ? `<b>Recommended: ${esc(E.M.label(rec))}.</b> €${fmt(E.M.cost(rec))} + ${fmt(rec.risk_premium_pct)}% risk premium (${esc(rec.lane_status)} lane, ${esc(rec.dc_status)} node).` : "No feasible in-scope route."} ${ev.notes.map(esc).join(" ")}</div>
+    <div class="maplegend"><span><i class="sw" style="background:var(--p-flexitog)"></i>FlexiTog pays</span><span><i class="sw" style="background:var(--p-partner)"></i>Partner pays</span><span><i class="sw" style="background:var(--p-customer)"></i>Customer pays</span></div>${svg}`;
+  bindTips($("orderCard"));
+  $("orderSel").addEventListener("change", e => { ui.orderId = e.target.value; ui.override = "auto"; renderOrder(); });
+  $("ovSel").addEventListener("change", e => { ui.override = e.target.value; renderOrder(); });
+  const s = ev.selected;
+  if (!s) { $("stepsCard").innerHTML = "<h2>Steps</h2><p class='empty'>No route selected.</p>"; return; }
+  const b = ev.baseline;
+  const delta = s !== b ? `<p class="num" style="font-size:12px">vs baseline: cost ${sign(E.M.cost(s) - E.M.cost(b))} € · customer ${sign(E.M.paid(s, E.CUSTOMER) - E.M.paid(b, E.CUSTOMER))} € · lead ${sign(E.M.lead(s) - E.M.lead(b))} d · customer steps ${sign(E.M.customerSteps(s) - E.M.customerSteps(b))}</p>` : "";
+  $("stepsCard").innerHTML = `<div class="cardhead"><h2>${esc(E.M.label(s))}</h2><span class="num faint">€${fmt(E.M.cost(s))} · ${fmt(E.M.lead(s))} days</span></div>${delta}
+    ${s.warnings.concat(s.issues).map(w => `<p class="muted" style="font-size:12px">⚠ ${esc(w)}</p>`).join("")}
+    <ul class="steps">${s.steps.filter(x => x.category !== "receipt").map(x => `<li><span>${esc(x.step)}${x.customs ? '<span class="cus">CUSTOMS</span>' : ""}<br><span class="faint" style="font-size:11.5px">${esc(x.party)}${x.days ? " · " + fmt(x.days) + " d" : ""}${x.source === "placeholder" ? " · placeholder" : ""}</span></span><span class="pay ${esc(x.paid_by)}">${esc(x.paid_by)}</span><span class="num" style="text-align:right;min-width:56px">€${fmt(x.cost_eur)}</span></li>`).join("")}</ul>`;
+}
+const sign = v => (v > 0 ? "+" : "") + fmt(v);
+
+// ============================================================ issues + data request
+function renderIssues(){
+  const all = issuesAll().filter(i => ui.region === "All" || (i.countries || []).some(c => R.data.regionFor(c) === ui.region))
+    .sort((a, b) => SEV_RANK[a.severity] - SEV_RANK[b.severity]);
+  $("issueList").innerHTML = all.map(issueLi).join("") || `<li class="empty">No issues in this region.</li>`;
+  $("issueNote").textContent = `${all.length} issue(s). Briefing notes are general trade knowledge to verify; the rest are computed from the run.`;
+  $("dataReq").innerHTML = `<thead><tr><th>Priority</th><th>Dataset</th><th>Why</th><th>Source</th></tr></thead><tbody>` +
+    PAYLOAD.datasets.map(d => `<tr><td><span class="prio ${esc(d.priority)}">${esc(d.priority)}</span></td><td><b>${esc(d.sheet)}</b><br><span class="faint">${esc(d.target)}</span></td><td>${esc(d.why)}</td><td>${esc(d.where)}</td></tr>`).join("") + "</tbody>";
+}
+
+// ============================================================ chips + controls
+function renderChips(){
+  const ph = R.rows.filter(r => r.available).reduce((a, r, _, arr) => a + r.placeholder_cost_share / arr.length, 0);
+  const n = diff().length + (whatIf.redSea ? 1 : 0) + (whatIf.euAll ? 1 : 0) + excluded.size;
+  $("chips").innerHTML = (PAYLOAD.meta.demo ? `<span class="chip demo">Dummy data · read the tool, not the numbers</span>` : "") +
+    `<span class="chip">${PAYLOAD.batch.orders.length} orders · ${esc(PAYLOAD.meta.source)}</span><span class="chip">${pct(ph)} of cost on placeholders</span><span class="chip">built ${esc(PAYLOAD.meta.generated)}</span>` +
+    (n ? `<span class="chip" style="background:var(--accent);color:var(--accent-ink)">${n} what-if change(s)</span>` : "");
+  $("chgCount").textContent = n;
+}
+function setRegion(r){ ui.region = r; ui.zoom = 1; if (ui.country && r !== "All" && R.data.regionFor(ui.country) !== r) ui.country = null; renderView(); }
+function initControls(){
+  $("regionSeg").innerHTML = ["All", ...REGIONS].map(r => `<button type="button" data-r="${esc(r)}" aria-pressed="${ui.region === r}">${esc(r === "All" ? "All" : r)}</button>`).join("");
+  $("regionSeg").querySelectorAll("button").forEach(b => b.addEventListener("click", () => setRegion(b.dataset.r)));
+  $("mapScenario").innerHTML = [`<option value="best">Best in-scope per order</option>`, ...SC.map(s => `<option value="${s}">${esc(E.LABELS[s])}</option>`)].join("");
+  $("mapMetric").innerHTML = metricDefs().map(m => `<option value="${m.key}">${esc(m.label)}</option>`).join("");
+  $("method").innerHTML = [["customer_first","Customer-first paperwork"],["customs_touchpoints","Customs touchpoints"],["handoffs","Handoffs"],["doc_steps","Documentation steps"]].map(([k,l]) => `<option value="${k}">${l}</option>`).join("");
+  $("mapScenario").addEventListener("change", e => { ui.mapScenario = e.target.value; drawMap(); });
+  $("mapMetric").addEventListener("change", e => { ui.mapMetric = e.target.value; drawMap(); });
+  $("method").addEventListener("change", e => { ui.method = e.target.value; renderView(); });
+  $("zin").addEventListener("click", () => { ui.zoom = Math.min(4, ui.zoom * 1.4); drawMap(); });
+  $("zout").addEventListener("click", () => { ui.zoom = Math.max(1, ui.zoom / 1.4); drawMap(); });
+}
+
+// ============================================================ parameter drawer
+const GROUPS = [
+  {id: "scen", title: "Scenario defaults", t: "p:scenarios", matrix: true, fields: [
+    ["margin_pct", "Distributor margin %"], ["min_order_value_eur", "Minimum order value €"], ["inbound_eur_per_pallet", "Inbound €/pallet"],
+    ["storage_eur_per_pallet_month", "Storage €/pallet/month"], ["avg_storage_months", "Months of stock held"], ["outbound_eur_per_order", "Pick + dispatch €/order"],
+    ["replenishment_freight_factor", "Refill freight factor"], ["replenishment_pallets_per_shipment", "Pallets per refill"]]},
+  {id: "dcs", title: "Partners and nodes", t: "dcs"},
+  {id: "freight", title: "Freight rates", t: "p:freight", label: r => `${r.leg} · ${r.dest_country} · ${r.mode}`, sub: r => r.port_or_border, filter: r => r.mode !== "air",
+    fields: [["eur_per_pallet", "€/pal"], ["min_charge_eur", "Min €"], ["transit_days", "Days"]]},
+  {id: "duties", title: "Duty and VAT", t: "p:duties", label: r => CNAME(r.country), sub: r => r.preference_document,
+    fields: [["duty_pct_eu_origin", "EU %"], ["duty_pct_standard", "Std %"], ["vat_pct", "VAT %"], ["clearance_broker_eur", "Broker €"]]},
+  {id: "comp", title: "Compliance costs", t: "p:compliance", label: r => `${r.country} · ${r.item}`, sub: r => r.basis, fields: [["cost_eur", "€"], ["doc_steps", "Docs"]]},
+  {id: "prod", title: "SKUs", t: "products", label: r => r.sku, sub: r => r.description, fields: [["unit_price_eur", "€/unit"], ["units_per_pallet", "Units/pal"]], origin: true},
+  {id: "gen", title: "General and risk", t: "p:general", label: r => r.parameter.replaceAll("_", " "), sub: r => r.unit, fields: [["value", "Value"]]},
+  {id: "lead", title: "Lead times", t: "p:lead_times", label: r => r.step.replaceAll("_", " "), fields: [["days", "Days"]]},
+  {id: "own", title: "Owned warehouse fixed cost", t: "p:owned_fixed", label: r => CNAME(r.location), fields: [["fixed_cost_eur_per_year", "€/year"], ["expected_pallets_per_year", "Pallets/yr"]]},
+];
+function inputFor(t, i, f, val, type = "number"){
+  const b = baseRef(t)[i]?.[f];
+  const chg = JSON.stringify(val) !== JSON.stringify(b);
+  if (type === "number") return `<input type="number" step="any" id="in-${t}-${i}-${f}" data-t="${t}" data-i="${i}" data-f="${f}" value="${val ?? ""}" class="${chg ? "chg" : ""}" aria-label="${esc(f)}">`;
+  return `<input type="text" id="in-${t}-${i}-${f}" data-t="${t}" data-i="${i}" data-f="${f}" value="${esc(val ?? "")}" class="${chg ? "chg" : ""}" aria-label="${esc(f)}">`;
+}
+function renderDrawer(){
+  const open = new Set([...document.querySelectorAll("details.grp[open]")].map(d => d.dataset.g));
+  let h = `<details class="grp" data-g="whatif" ${open.size === 0 || open.has("whatif") ? "open" : ""}><summary>What-if switches</summary><div class="gbody">
+    <label class="toggle"><input type="checkbox" id="wRed" ${whatIf.redSea ? "checked" : ""}><span><b>Red Sea reopens</b><small>Gulf sea transit 10 days shorter (Suez instead of the Cape).</small></span></label>
+    <label class="toggle"><input type="checkbox" id="wEu" ${whatIf.euAll ? "checked" : ""}><span><b>All SKUs EU-made</b><small>Every SKU gets EU origin, so preferential duty applies in Türkiye and North Africa.</small></span></label></div></details>`;
+  GROUPS.forEach(g => {
+    const tb = tableRef(g.t);
+    const nChg = diff().filter(d => d.t === g.t).length + (g.id === "dcs" ? excluded.size : 0);
+    h += `<details class="grp" data-g="${g.id}" ${open.has(g.id) ? "open" : ""}><summary>${esc(g.title)} ${nChg ? `<span class="gcount">${nChg} changed</span>` : ""}</summary><div class="gbody">`;
+    if (g.matrix) {
+      h += `<table class="ptable"><thead><tr><th></th>${tb.map(r => `<th>${esc(SHORT[r.scenario] || r.scenario)}</th>`).join("")}</tr></thead><tbody>` +
+        g.fields.map(([f, l]) => `<tr><td class="lbl">${esc(l)}</td>${tb.map((r, i) => `<td>${(r.scenario === "cif_baseline" && f !== "min_order_value_eur") || (f === "margin_pct" && r.scenario !== "distributor") ? '<span class="faint">–</span>' : inputFor(g.t, i, f, r[f])}</td>`).join("")}</tr>`).join("") + `</tbody></table>`;
+    } else if (g.id === "dcs") {
+      h += `<p class="faint" style="font-size:12px">Untick a node to remove it. Blank rates use the scenario defaults.</p><table class="ptable"><thead><tr><th>Node</th><th>Use</th><th>Status</th><th>MOV €</th><th>Margin %</th><th>Storage €</th><th>Serves</th></tr></thead><tbody>` +
+        tb.map((r, i) => r.dc_type === "helmond_hub" ? "" : `<tr><td class="lbl"><i class="sw" style="background:var(--s-${r.dc_type})"></i> ${esc(r.dc_id)}<small>${esc(r.name)}</small></td>
+          <td><input type="checkbox" data-ex="${esc(r.dc_id)}" ${excluded.has(r.dc_id) ? "" : "checked"} aria-label="Use ${esc(r.dc_id)}"></td>
+          <td><select data-t="dcs" data-i="${i}" data-f="status" class="${r.status !== BASE.dcs[i].status ? "chg" : ""}" aria-label="status">${["existing","potential","candidate"].map(s => `<option${s === r.status ? " selected" : ""}>${s}</option>`).join("")}</select></td>
+          <td>${inputFor("dcs", i, "min_order_value_eur", r.min_order_value_eur)}</td><td>${r.dc_type === "distributor" ? inputFor("dcs", i, "margin_pct", r.margin_pct) : '<span class="faint">–</span>'}</td>
+          <td>${r.dc_type === "distributor" ? '<span class="faint">–</span>' : inputFor("dcs", i, "storage_eur_per_pallet_month", r.storage_eur_per_pallet_month)}</td><td>${inputFor("dcs", i, "serves_countries", r.serves_countries, "text")}</td></tr>`).join("") + `</tbody></table>`;
+    } else {
+      h += `<table class="ptable"><thead><tr><th></th>${g.origin ? "<th>EU-made</th>" : ""}${g.fields.map(f => `<th>${esc(f[1])}</th>`).join("")}</tr></thead><tbody>` +
+        tb.map((r, i) => g.filter && !g.filter(r) ? "" : `<tr><td class="lbl"><span class="src ${esc(r.source || r.data_source || "placeholder") === "real" || (r.data_source && r.data_source !== "placeholder") ? "real" : "placeholder"}"></span>${esc(g.label(r))}${g.sub ? `<small>${esc(g.sub(r) || "")}</small>` : ""}</td>` +
+          (g.origin ? `<td><input type="checkbox" data-origin="${i}" ${PAYLOAD.data.eu27.includes(String(r.country_of_origin).toUpperCase()) ? "checked" : ""} ${whatIf.euAll ? "disabled" : ""} aria-label="EU-made ${esc(r.sku)}"></td>` : "") +
+          g.fields.map(([f]) => `<td>${inputFor(g.t, i, f, r[f])}</td>`).join("") + `</tr>`).join("") + `</tbody></table>`;
+    }
+    h += `</div></details>`;
+  });
+  $("dbody").innerHTML = h;
+  $("dbody").querySelectorAll("input[data-t], select[data-t]").forEach(el => el.addEventListener("change", e => {
+    const {t, i, f} = el.dataset; const row = tableRef(t)[+i];
+    if (el.type === "number") row[f] = el.value === "" ? null : Number(el.value); else row[f] = el.value;
+    el.classList.toggle("chg", JSON.stringify(row[f]) !== JSON.stringify(baseRef(t)[+i][f]));
+    changed();
+  }));
+  $("dbody").querySelectorAll("input[data-ex]").forEach(el => el.addEventListener("change", () => { el.checked ? excluded.delete(el.dataset.ex) : excluded.add(el.dataset.ex); changed(); }));
+  $("dbody").querySelectorAll("input[data-origin]").forEach(el => el.addEventListener("change", () => {
+    const i = +el.dataset.origin; W.products[i].country_of_origin = el.checked ? (PAYLOAD.data.eu27.includes(String(BASE.products[i].country_of_origin).toUpperCase()) ? BASE.products[i].country_of_origin : "NL") : (PAYLOAD.data.eu27.includes(String(BASE.products[i].country_of_origin).toUpperCase()) ? "CN" : BASE.products[i].country_of_origin); changed();
+  }));
+  $("wRed").addEventListener("change", e => { whatIf.redSea = e.target.checked; changed(); });
+  $("wEu").addEventListener("change", e => { whatIf.euAll = e.target.checked; changed(true); });
+}
+let timer = null;
+function changed(redrawDrawer){ save(); clearTimeout(timer); timer = setTimeout(() => { compute(); renderView(); if (redrawDrawer) renderDrawer(); }, 120); }
+function openDrawer(){ renderDrawer(); $("drawer").hidden = false; $("scrim").hidden = false; }
+function closeDrawer(){ $("drawer").hidden = true; $("scrim").hidden = true; }
+$("openParams").addEventListener("click", openDrawer);
+$("closeParams").addEventListener("click", closeDrawer);
+$("scrim").addEventListener("click", closeDrawer);
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("drawer").hidden) closeDrawer(); });
+$("resetAll").addEventListener("click", () => { W = clone(BASE); whatIf = {redSea: false, euAll: false}; excluded = new Set(); $("copyout").hidden = true; changed(true); });
+$("copyChanges").addEventListener("click", () => {
+  const d = diff();
+  const text = JSON.stringify({generated: PAYLOAD.meta.generated, whatIf, excluded_nodes: [...excluded], changes: d.map(x => ({table: x.t.replace("p:", ""), row: x.i, field: x.f, from: x.was, to: x.v}))}, null, 2);
+  const out = $("copyout"); out.value = text; out.hidden = false;
+  const done = ok => { $("copyNote").textContent = ok ? "Copied. Paste it into the tool's Parameters page." : "Select the text below and copy it."; if (!ok) out.select(); };
+  try { navigator.clipboard.writeText(text).then(() => done(true), () => done(false)); } catch (e) { done(false); }
+});
+
+// ============================================================ render
+function renderView(){
+  $("regionSeg").querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.r === ui.region)));
+  renderChips(); renderRegions(); drawMap(); renderCountry(); renderSM(); renderOrder(); renderIssues();
+}
+load(); initControls(); compute(); renderView();
+</script>

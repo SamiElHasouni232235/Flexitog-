@@ -146,6 +146,27 @@ def _to_float(series: pd.Series, decimal: str = "auto") -> pd.Series:
     return series.map(parse).astype("float64")
 
 
+def _to_date(series: pd.Series) -> pd.Series:
+    """ISO dates (2025-09-13, with or without time) first, then day-first formats (13-09-2025, 13/9/25).
+
+    Parsing each value on its own avoids pandas inferring one format from the first row and
+    silently dropping the rest.
+    """
+    def parse(v):
+        if v is None or (isinstance(v, float) and pd.isna(v)):
+            return pd.NaT
+        if isinstance(v, (pd.Timestamp,)) or hasattr(v, "year"):
+            return pd.Timestamp(v)
+        s = str(v).strip()
+        if not s or s.lower() in ("nan", "nat", "none"):
+            return pd.NaT
+        iso = pd.to_datetime(s, format="ISO8601", errors="coerce")
+        if pd.notna(iso):
+            return iso
+        return pd.to_datetime(s, dayfirst=True, errors="coerce")
+    return pd.to_datetime(series.map(parse), errors="coerce")
+
+
 def _to_bool(series: pd.Series) -> pd.Series:
     truthy = {"1", "true", "yes", "y", "ja", "j", "x", "required"}
     falsy = {"0", "false", "no", "n", "nee", "", "nan", "none"}
@@ -192,7 +213,7 @@ def coerce_frame(df: pd.DataFrame, entity: Entity, decimal: str = "auto") -> tup
             parsed[bad] = None
             out[f.name] = parsed.round().astype("Int64") if f.dtype == "int" else parsed
         elif f.dtype == "date":
-            parsed = pd.to_datetime(raw, errors="coerce", dayfirst=True)
+            parsed = _to_date(raw)
             bad = present & parsed.isna()
             if bad.any():
                 warnings.append(f"{f.name}: {int(bad.sum())} value(s) not a date, left blank "
