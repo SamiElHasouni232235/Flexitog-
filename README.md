@@ -29,7 +29,8 @@ On first run the tool fills every table with generic placeholder rows.
    master data and parameters, test order builder.
 2. **Single-order engine** (done): route per scenario and node, cost breakdown by category and payer,
    lead time, lane-aware recommendation, forced override, delta versus the CIF baseline.
-3. Batch mode and scorecard per region.
+3. **Batch mode and scorecard** (done): synthetic, saved or sales-history batches per region, all
+   scenarios per order, scorecard with winners per dimension, hassle method check.
 
 ## Data model
 
@@ -85,3 +86,17 @@ margin, minimum order value, handoffs) and owned warehouse fixed cost. All ship 
 - Air freight is never used as a fallback. A country with no surface rate is infeasible.
 - Hassle metrics per route: customs touchpoints, handoffs between parties, documentation steps,
   steps the customer handles itself. Phase 3 lets you pick the scoring method.
+
+## Batch and scorecard (phase 3)
+
+- Batch sources: synthetic test batch (reproducible seed, size mix 50% 1 pallet / 35% 2-4 / 15% 6-10),
+  saved test orders, or sales history (one batch order per historical order). Upload sales history on
+  the Batch page or the Import page. A profile table compares the test batch with history per region.
+- Each order runs through the baseline and the best node per in-scope scenario.
+- Scorecard per region x scenario: coverage, cost to serve per unit, cost % of order value, customer
+  cost per unit, FlexiTog cost per unit, lead time, hassle score, customer paperwork steps,
+  FlexiTog paperwork, proven-lane share, placeholder share. Winners per dimension, ties marked.
+- Hassle methods: customer-first (default), customs touchpoints, handoffs, documentation steps.
+  Customer-first scores the paperwork left with the customer (weights in General parameters). FlexiTog
+  paperwork shows what FlexiTog takes on to cover it. The method check table shows which methods
+  separate the scenarios.

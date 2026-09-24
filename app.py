@@ -11,6 +11,7 @@ import pandas as pd
 import streamlit as st
 
 from flexitog import importer as imp
+from flexitog import batch as B
 from flexitog import parameters as P
 from flexitog.engine import Data, compare_to_baseline, evaluate
 from flexitog.orders import order_values, summarise
@@ -87,7 +88,7 @@ def page_overview():
     c1, c2, c3 = st.columns(3)
     c1.success("Phase 1: data model + import (done)")
     c2.success("Phase 2: single-order engine (done)")
-    c3.info("Phase 3: batch mode + scorecard (next)")
+    c3.success("Phase 3: batch mode + scorecard (done)")
 
     st.subheader("Data health: placeholder vs real")
     prov = ws.provenance()
@@ -143,7 +144,13 @@ def page_import():
                 ws.remove_custom_field(key, rm)
                 st.rerun()
 
-    up = st.file_uploader("File", type=["csv", "txt", "xlsx", "xlsm", "xls"], key=f"upload_{key}")
+    import_flow(key)
+
+
+def import_flow(key: str, prefix: str = "") -> None:
+    """Upload, map, validate and commit one file into an entity table."""
+    entity = ws.entity(key)
+    up = st.file_uploader("File", type=["csv", "txt", "xlsx", "xlsm", "xls"], key=f"{prefix}upload_{key}")
     if not up:
         return
     data = up.getvalue()
@@ -170,7 +177,7 @@ def page_import():
         "maps to": list(guessed.values()),
     })
     edited = st.data_editor(
-        map_df, hide_index=True, width="stretch", key=f"map_{key}_{up.name}",
+        map_df, hide_index=True, width="stretch", key=f"{prefix}map_{key}_{up.name}",
         column_config={
             "source column": st.column_config.TextColumn(disabled=True),
             "sample": st.column_config.TextColumn(disabled=True),
@@ -519,6 +526,200 @@ def page_engine():
         st.caption(f"Lane: {r.lane_status} ({r.lane_basis}). Parties: {' → '.join(r.parties)}")
 
 
+# Baseline is the reference, so it takes a neutral grey. In-scope scenarios take categorical slots 1-3.
+SCENARIO_COLORS = {"Baseline: CIF to port": "#8a8984", "Distributor-held stock": "#2a78d6",
+                   "3PL presence": "#eb6834", "Owned non-EU warehouse": "#1baf7a"}
+SCORE_METRICS = {**B.METRICS, "cost_pct_of_value": ("Cost to serve, % of order value", True),
+                 "coverage": ("Coverage (share of orders servable)", False)}
+
+
+def scorecard_chart(sc: pd.DataFrame, metric: str) -> alt.Chart:
+    label = SCORE_METRICS[metric][0]
+    df = sc[["region", "scenario_label", metric]].rename(columns={metric: "value"}).dropna()
+    order = list(SCENARIO_COLORS)
+    base = alt.Chart(df).encode(
+        y=alt.Y("scenario_label:N", title=None, sort=order, axis=alt.Axis(labelLimit=200)),
+        x=alt.X("value:Q", title=label),
+        tooltip=[alt.Tooltip("region:N"), alt.Tooltip("scenario_label:N", title="scenario"),
+                 alt.Tooltip("value:Q", title=label, format=",.2f")],
+    )
+    bars = base.mark_bar(cornerRadiusEnd=4, height=16).encode(
+        color=alt.Color("scenario_label:N", title="Scenario",
+                        scale=alt.Scale(domain=order, range=list(SCENARIO_COLORS.values())),
+                        legend=alt.Legend(orient="top")))
+    text = base.mark_text(align="left", dx=4, fontSize=11).encode(text=alt.Text("value:Q", format=",.2f"))
+    return (bars + text).properties(width=260, height=alt.Step(24)).facet(
+        column=alt.Column("region:N", title=None, sort=B.STUDY_REGIONS + ["Middle East (other)", "Other"]))
+
+
+def page_batch():
+    st.title("Batch simulation and scorecard")
+    st.caption("Builds a representative batch of orders per region, runs every order through the CIF baseline "
+               "and the three in-scope scenarios (best node per scenario), and scores each region.")
+    data = Data.from_workspace(ws)
+    ss = st.session_state
+    t_build, t_hist, t_score = st.tabs(["1. Build batch", "2. Sales history", "3. Scorecard"])
+
+    # ------------------------------------------------------------ build
+    with t_build:
+        source = st.radio("Batch source", ["Synthetic test batch", "Saved test orders", "Sales history"],
+                          horizontal=True,
+                          help="Use the synthetic batch until real sales history is imported.")
+        extra_customers = pd.DataFrame()
+        if source == "Synthetic test batch":
+            c1, c2, c3 = st.columns([1, 1, 2])
+            per_region = c1.number_input("Orders per region", 1, 500, 15)
+            seed = c2.number_input("Random seed", 0, 10_000, 42)
+            regions = c3.multiselect("Regions", B.STUDY_REGIONS, default=B.STUDY_REGIONS)
+            st.caption("Size mix: 50% single pallet, 35% 2-4 pallets, 15% 6-10 pallets. 1-4 SKUs per order, "
+                       "customers drawn from the customer table.")
+        elif source == "Saved test orders":
+            orders_all = ws.load("orders")
+            labels = sorted(orders_all["batch"].fillna("(no label)").astype(str).unique())
+            chosen = st.multiselect("Batch labels", labels, default=labels)
+        else:
+            n_hist = ws.load("sales_history")["order_id"].nunique()
+            st.write(f"Sales history holds {n_hist} order(s). Import more on tab 2.")
+            c1, c2 = st.columns(2)
+            per_region_h = c1.number_input("Max orders per region (0 = all)", 0, 100_000, 0)
+            since = c2.date_input("Orders since", value=None)
+
+        if st.button("Build batch", type="primary"):
+            notes: list[str] = []
+            if source == "Synthetic test batch":
+                o, l, notes = B.synthetic_batch(data, int(per_region), int(seed), regions)
+            elif source == "Saved test orders":
+                orders_all = ws.load("orders")
+                o = orders_all[orders_all["batch"].fillna("(no label)").astype(str).isin(chosen)]
+                l = ws.load("order_lines")
+                l = l[l["order_id"].isin(o["order_id"])]
+            else:
+                o, l, extra_customers, notes = B.history_batch(data, int(per_region_h) or None, since=since)
+            ss["batch"] = {"orders": o, "lines": l, "customers": extra_customers, "source": source}
+            ss.pop("results", None)
+            for n in notes:
+                st.info(n)
+
+        b = ss.get("batch")
+        if b and len(b["orders"]):
+            d2 = _with_customers(data, b["customers"])
+            prof = B.profile(b["orders"], b["lines"], d2, b["source"])
+            st.markdown(f"**Current batch:** {len(b['orders'])} orders from {b['source'].lower()}")
+            st.dataframe(prof.round(1), hide_index=True, width="stretch")
+            with st.expander("Orders in batch"):
+                st.dataframe(order_values(b["orders"], b["lines"], data.products), hide_index=True,
+                             width="stretch")
+            if b["source"] == "Synthetic test batch" and st.button("Save batch as test orders"):
+                orders_all, lines_all = ws.load("orders"), ws.load("order_lines")
+                keep = ~orders_all["order_id"].isin(b["orders"]["order_id"])
+                ws.save("orders", pd.concat([orders_all[keep], b["orders"]], ignore_index=True))
+                ws.save("order_lines", pd.concat([lines_all[~lines_all["order_id"].isin(b["orders"]["order_id"])],
+                                                  b["lines"].assign(data_source="synthetic")], ignore_index=True))
+                st.success("Saved. Edit them on the Test orders page.")
+        elif b:
+            st.warning("The batch is empty.")
+
+    # ------------------------------------------------------------ sales history
+    with t_hist:
+        sh = ws.load("sales_history")
+        if len(sh):
+            dates = pd.to_datetime(sh["order_date"], errors="coerce")
+            st.write(f"{sh['order_id'].nunique()} orders, {len(sh)} lines, "
+                     f"{dates.min():%d %b %Y} to {dates.max():%d %b %Y}.")
+        else:
+            st.info("No sales history yet. Upload an export below. Minimum columns: order number, date, "
+                    "customer, SKU, quantity. Country, value, pallets and shipped-via improve the results.")
+        import_flow("sales_history", prefix="batch_")
+
+        if len(sh) and ss.get("batch") and ss["batch"]["source"] != "Sales history":
+            st.subheader("Test batch versus sales history")
+            ho, hl, hc, _ = B.history_batch(data)
+            b = ss["batch"]
+            d2 = _with_customers(data, pd.concat([b["customers"], hc], ignore_index=True))
+            both = pd.concat([B.profile(b["orders"], b["lines"], d2, "test batch"),
+                              B.profile(ho, hl, d2, "sales history")], ignore_index=True)
+            st.dataframe(both.sort_values(["region", "source"]).round(1), hide_index=True, width="stretch")
+            st.caption("If the test batch differs a lot from history on order value or pallets, build the batch "
+                       "from sales history instead, or change the synthetic size mix.")
+            if len(sh) and "shipped_via" in sh:
+                st.markdown("**Lanes proven by history** (orders in the last 12 months)")
+                via, direct = data.history_counts()
+                st.dataframe(pd.DataFrame(
+                    [{"lane": f"Helmond -> {k or '(direct)'}", "orders": v} for k, v in via.items()] +
+                    [{"lane": f"Helmond direct -> {k}", "orders": v} for k, v in direct.items()]),
+                    hide_index=True)
+
+    # ------------------------------------------------------------ scorecard
+    with t_score:
+        b = ss.get("batch")
+        if not b or b["orders"].empty:
+            st.info("Build a batch on tab 1 first.")
+            return
+        keys = list(B.HASSLE_METHODS)
+        method = st.selectbox("Hassle method", keys, format_func=lambda k: B.HASSLE_METHODS[k][0])
+        st.caption(B.HASSLE_METHODS[method][1])
+        if st.button("Run batch", type="primary") or "results" not in ss:
+            bar = st.progress(0.0, text="Running orders")
+            d2 = _with_customers(data, b["customers"])
+            ss["results"] = B.run_batch(b["orders"], b["lines"], d2, progress=lambda p: bar.progress(p))
+            bar.empty()
+        res = ss["results"]
+        sc = B.scorecard(res, method)
+        if sc.empty:
+            st.warning("No results.")
+            return
+
+        ph = res.loc[res["available"], "placeholder_cost_share"].mean()
+        if ph > 0.5:
+            st.warning(f"{ph:.0%} of simulated cost rests on placeholder parameters. Treat winners as indicative.")
+
+        st.subheader("Winners per region")
+        st.caption("Best in-scope scenario per dimension, with the CIF baseline for reference. Lower is better. "
+                   "'=' marks a tie.")
+        st.dataframe(B.winners(sc), hide_index=True, width="stretch")
+
+        metric = st.selectbox("Chart metric", list(SCORE_METRICS), format_func=lambda m: SCORE_METRICS[m][0])
+        st.altair_chart(scorecard_chart(sc, metric))
+
+        st.subheader("Scorecard")
+        view = sc.drop(columns=["scenario"]).rename(columns={"hassle": f"hassle ({method})"})
+        st.dataframe(view, hide_index=True, width="stretch", column_config={
+            "coverage": st.column_config.ProgressColumn("coverage", min_value=0, max_value=1, format="percent"),
+            "proven_lane_share": st.column_config.NumberColumn("proven lanes", format="percent"),
+            "placeholder_cost_share": st.column_config.NumberColumn("placeholder share", format="percent"),
+            **{c: st.column_config.NumberColumn(c, format="%.2f") for c in view.columns
+               if view[c].dtype.kind == "f" and c not in ("coverage", "proven_lane_share",
+                                                          "placeholder_cost_share")},
+        })
+        st.caption("Coverage = share of batch orders the scenario serves (a node covers the country and the "
+                   "order meets its minimum order value). Averages use covered orders only. Customer cost = "
+                   "what the customer pays on top of the goods, including distributor margin. FlexiTog "
+                   "paperwork = customs touchpoints plus document steps FlexiTog or its contracted broker/3PL "
+                   "handles.")
+
+        st.subheader("Does the hassle method differentiate?")
+        mc = B.method_check(res)
+        st.dataframe(mc.round(2), hide_index=True, width="stretch")
+        st.caption("Customer-first separates every in-scope scenario from the baseline, but scores all three at "
+                   "0 when they take over the paperwork. FlexiTog paperwork then shows the cost of covering it "
+                   "on your side, and it does separate them.")
+
+        c1, c2 = st.columns(2)
+        c1.download_button("Download order results (CSV)", res.to_csv(index=False).encode(),
+                           file_name="batch_results.csv")
+        c2.download_button("Download scorecard (CSV)", sc.to_csv(index=False).encode(), file_name="scorecard.csv")
+
+
+def _with_customers(data: Data, extra: pd.DataFrame) -> Data:
+    """Data with customers added that exist only in sales history."""
+    if extra is None or extra.empty:
+        return data
+    from dataclasses import replace
+    merged = pd.concat([data.customers, extra[~extra["customer_id"].isin(data.customers["customer_id"])]],
+                       ignore_index=True)
+    return replace(data, customers=merged, _history=None)
+
+
 PAGES = {
     "Overview": page_overview,
     "Import data": page_import,
@@ -526,6 +727,7 @@ PAGES = {
     "Parameters": page_parameters,
     "Test orders": page_orders,
     "Route engine": page_engine,
+    "Batch and scorecard": page_batch,
 }
 
 with st.sidebar:

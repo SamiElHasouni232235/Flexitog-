@@ -34,6 +34,7 @@ LANE_RANK = {"proven": 0, "occasional": 1, "unproven": 2}
 HELMOND_IDS = {"HLM", "HELMOND", "NL"}
 
 FLEXITOG, PARTNER, CUSTOMER = "FlexiTog", "partner", "customer"
+PAPERWORK_CATEGORIES = {"export_docs", "clearance", "duty", "import_fees", "compliance"}
 
 
 def num(value, default: float = 0.0) -> float:
@@ -73,6 +74,27 @@ class Data:
             dcs=ws.load("distribution_centers"), lanes=ws.load("lanes"), sales_history=ws.load("sales_history"),
             **{name: ws.load_params(name) for name in P.DEFAULT_TABLES},
         )
+
+    _history: tuple | None = field(default=None, repr=False)
+
+    def history_counts(self) -> tuple[dict[str, int], dict[str, int]]:
+        """Distinct orders in the last 12 months of sales history: per shipped_via node, and per
+        destination country for orders shipped direct from Helmond. Computed once."""
+        if self._history is None:
+            via_counts: dict[str, int] = {}
+            direct_counts: dict[str, int] = {}
+            sh = self.sales_history
+            if len(sh) and {"order_date", "order_id"} <= set(sh.columns):
+                dates = pd.to_datetime(sh["order_date"], errors="coerce")
+                recent = sh[dates >= dates.max() - pd.Timedelta(days=365)] if dates.notna().any() else sh
+                via = (recent["shipped_via"] if "shipped_via" in recent else pd.Series("", index=recent.index))
+                via = via.fillna("").astype(str).str.upper()
+                via_counts = recent.groupby(via)["order_id"].nunique().to_dict()
+                if "country" in recent:
+                    direct = recent[via.isin(HELMOND_IDS | {""})]
+                    direct_counts = direct.groupby(direct["country"].astype(str))["order_id"].nunique().to_dict()
+            self._history = (via_counts, direct_counts)
+        return self._history
 
     # ---- parameter lookups. Each returns (value or row, source).
     def g(self, name: str) -> tuple[float, str]:
@@ -241,6 +263,20 @@ class Route:
         """Steps the customer arranges or pays for itself (price margin excluded)."""
         return sum(1 for s in self.steps if s.paid_by == CUSTOMER and s.category not in ("margin", "receipt"))
 
+    def paperwork(self, who: str) -> int:
+        """Customs and document actions a party carries: one per customs touchpoint plus its doc steps."""
+        return sum(int(s.customs) + s.doc_steps for s in self.steps
+                   if s.paid_by == who and s.category in PAPERWORK_CATEGORIES)
+
+    @property
+    def customer_paperwork_steps(self) -> int:
+        """Clearance, duty, levies and compliance steps the customer handles itself."""
+        return sum(1 for s in self.steps if s.paid_by == CUSTOMER and s.category in PAPERWORK_CATEGORIES)
+
+    @property
+    def customer_other_steps(self) -> int:
+        return self.customer_steps - self.customer_paperwork_steps
+
     @property
     def placeholder_cost_share(self) -> float:
         total = self.cost_to_serve
@@ -266,6 +302,9 @@ class Route:
             "risk_premium_pct": self.risk_premium_pct, "score": round(self.score, 2),
             "customs_touchpoints": self.customs_touchpoints, "handoffs": self.handoffs,
             "doc_steps": self.doc_steps, "customer_steps": self.customer_steps,
+            "customer_paperwork_steps": self.customer_paperwork_steps,
+            "flexitog_paperwork": self.paperwork(FLEXITOG), "partner_paperwork": self.paperwork(PARTNER),
+            "customer_paperwork": self.paperwork(CUSTOMER),
             "placeholder_cost_share": round(self.placeholder_cost_share, 2),
             "issues": "; ".join(self.issues), "warnings": "; ".join(self.warnings),
         }
@@ -355,21 +394,12 @@ def lane_status(data: Data, origins: set[str], dests: set[str], via_dc: str | No
             if basis == "no lane record" or LANE_RANK[st] < LANE_RANK[best]:
                 best, basis = st, f"lane {r.lane_id}"
 
-    sh = data.sales_history
-    if len(sh) and "order_date" in sh.columns:
-        dates = pd.to_datetime(sh["order_date"], errors="coerce")
-        recent = sh[dates >= dates.max() - pd.Timedelta(days=365)] if dates.notna().any() else sh
-        via = recent["shipped_via"].fillna("").astype(str).str.upper() if "shipped_via" in recent else None
-        if via is not None:
-            if via_dc:
-                mask = via == via_dc.upper()
-            else:
-                mask = via.isin(HELMOND_IDS | {""}) & (recent["country"].astype(str) == country)
-            n = recent.loc[mask, "order_id"].nunique()
-            threshold, _ = data.g("proven_lane_min_orders_12m")
-            derived = "proven" if n >= threshold else "occasional" if n >= 1 else None
-            if derived and LANE_RANK[derived] < LANE_RANK[best]:
-                best, basis = derived, f"{n} order(s) in sales history, last 12 months"
+    via_counts, direct_counts = data.history_counts()
+    n = via_counts.get(via_dc.upper(), 0) if via_dc else direct_counts.get(country, 0)
+    threshold, _ = data.g("proven_lane_min_orders_12m")
+    derived = "proven" if n >= threshold else "occasional" if n >= 1 else None
+    if derived and LANE_RANK[derived] < LANE_RANK[best]:
+        best, basis = derived, f"{n} order(s) in sales history, last 12 months"
     return best, basis
 
 

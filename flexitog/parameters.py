@@ -54,6 +54,10 @@ GENERAL = _rows([
      "source_note": "Routing score penalty for a hypothetical node"},
     {"parameter": "proven_lane_min_orders_12m", "value": 6, "unit": "orders",
      "source_note": "Sales history orders via a DC in 12 months that make its lane proven"},
+    {"parameter": "hassle_weight_customer_paperwork", "value": 3, "unit": "points/step",
+     "source_note": "Customer-first hassle score: clearance, duty or compliance step the customer handles"},
+    {"parameter": "hassle_weight_customer_other", "value": 1, "unit": "points/step",
+     "source_note": "Customer-first hassle score: other step the customer arranges (e.g. inland transport)"},
 ])
 
 
