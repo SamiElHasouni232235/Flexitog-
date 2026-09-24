@@ -6,11 +6,13 @@ from __future__ import annotations
 
 import io
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 
 from flexitog import importer as imp
 from flexitog import parameters as P
+from flexitog.engine import Data, compare_to_baseline, evaluate
 from flexitog.orders import order_values, summarise
 from flexitog.schema import (
     DC_TYPE_LABELS, DTYPES, ENTITIES, IMPORTED_PREFIX, MANUAL, PLACEHOLDER, PRIMARY_IMPORTS, SOURCE_COL,
@@ -83,9 +85,9 @@ def page_overview():
 
     st.subheader("Build status")
     c1, c2, c3 = st.columns(3)
-    c1.success("Phase 1: data model + import (this build)")
-    c2.info("Phase 2: single-order engine (next)")
-    c3.info("Phase 3: batch mode + scorecard")
+    c1.success("Phase 1: data model + import (done)")
+    c2.success("Phase 2: single-order engine (done)")
+    c3.info("Phase 3: batch mode + scorecard (next)")
 
     st.subheader("Data health: placeholder vs real")
     prov = ws.provenance()
@@ -377,12 +379,153 @@ def page_orders():
             st.rerun()
 
 
+PAYER_COLORS = {"FlexiTog": "#2a78d6", "partner": "#eb6834", "customer": "#1baf7a"}  # fixed order
+BAR_BLUE = "#2a78d6"
+
+
+def surface_color() -> str:
+    """Background colour, used for the 2px gap between stacked segments."""
+    try:
+        return "#0e1117" if st.context.theme.type == "dark" else "#ffffff"
+    except Exception:  # noqa: BLE001 - older Streamlit or no browser context
+        return "#ffffff"
+
+
+def payer_chart(ev) -> alt.Chart:
+    rows = []
+    for r in ev.routes:
+        if not r.feasible:
+            continue
+        for payer in PAYER_COLORS:
+            rows.append({"route": ("★ " if r is ev.recommended else "") + r.label, "payer": payer,
+                         "eur": round(r.paid(payer), 0), "order": list(PAYER_COLORS).index(payer)})
+    df = pd.DataFrame(rows)
+    return (
+        alt.Chart(df).mark_bar(cornerRadiusEnd=4, stroke=surface_color(), strokeWidth=2, height=18)
+        .encode(
+            y=alt.Y("route:N", title=None, sort=None, axis=alt.Axis(labelLimit=320)),
+            x=alt.X("sum(eur):Q", title="Cost to serve (EUR)", stack="zero"),
+            color=alt.Color("payer:N", title="Paid by",
+                            scale=alt.Scale(domain=list(PAYER_COLORS), range=list(PAYER_COLORS.values())),
+                            legend=alt.Legend(orient="top")),
+            order=alt.Order("order:Q"),
+            tooltip=[alt.Tooltip("route:N"), alt.Tooltip("payer:N"), alt.Tooltip("eur:Q", format=",.0f")],
+        )
+        .properties(height=alt.Step(30))
+    )
+
+
+def category_chart(route) -> alt.Chart:
+    df = pd.DataFrame([{"category": k.replace("_", " "), "eur": round(v, 0)}
+                       for k, v in route.by_category().items() if v > 0])
+    return (
+        alt.Chart(df).mark_bar(color=BAR_BLUE, cornerRadiusEnd=4, height=16)
+        .encode(y=alt.Y("category:N", sort="-x", title=None), x=alt.X("eur:Q", title="EUR"),
+                tooltip=[alt.Tooltip("category:N"), alt.Tooltip("eur:Q", format=",.0f")])
+        .properties(height=alt.Step(26))
+    )
+
+
+def page_engine():
+    st.title("Route engine")
+    st.caption("Runs one test order through the CIF baseline and every distributor, 3PL and owned-warehouse "
+               "node that serves the customer's country. Recommends the lowest risk-adjusted cost among the "
+               "three in-scope scenarios. Risk premiums favour proven lanes and signed partners.")
+    data = Data.from_workspace(ws)
+    orders = ws.load("orders")
+    lines = ws.load("order_lines")
+    if orders.empty:
+        st.info("Create a test order first.")
+        return
+    labels = {r.order_id: f"{r.order_id} | {r.customer_id} | {r.pallet_count:g} pallet(s)"
+              for r in orders.itertuples()}
+    c1, c2 = st.columns([2, 1])
+    oid = c1.selectbox("Test order", list(labels), format_func=labels.get)
+    include_base = c2.checkbox("Let baseline win the recommendation", value=False)
+    order = orders[orders["order_id"] == oid].iloc[0].to_dict()
+    olines = lines[lines["order_id"] == oid]
+
+    ev = evaluate(order, olines, data, include_baseline=include_base)
+    keys = ["auto"] + [r.key for r in ev.routes]
+    names = {"auto": "Auto (recommended)", **{r.key: r.label for r in ev.routes}}
+    default = str(order.get("dc_override") or "auto")
+    choice = st.selectbox("Route to inspect (override)", keys, format_func=names.get,
+                          index=keys.index(default) if default in keys else 0)
+    ev = evaluate(order, olines, data, override=None if choice == "auto" else choice,
+                  include_baseline=include_base)
+    for n in ev.notes:
+        st.info(n)
+
+    if ev.recommended:
+        st.success(f"Recommended: {ev.recommended.label}. {ev.reason}")
+    else:
+        st.error(ev.reason)
+
+    st.subheader("All routes")
+    st.altair_chart(payer_chart(ev), width="stretch")
+    table = ev.table()
+    st.dataframe(
+        table[["recommended", "route", "feasible", "below_mov", "cost_to_serve_eur", "cost_per_unit_eur",
+               "cost_pct_of_value", "flexitog_pays_eur", "partner_pays_eur", "customer_pays_eur",
+               "lead_time_days", "lane_status", "dc_status", "risk_premium_pct", "customs_touchpoints",
+               "handoffs", "doc_steps", "customer_steps", "placeholder_cost_share", "issues", "warnings"]],
+        hide_index=True, width="stretch",
+        column_config={"placeholder_cost_share": st.column_config.ProgressColumn(
+            "placeholder share", min_value=0, max_value=1, format="percent")},
+    )
+    st.caption("Cost to serve = everything between Helmond stock and goods at the customer, excluding the goods "
+               "themselves and recoverable import VAT. Hassle columns feed phase 3.")
+
+    r = ev.selected
+    if r is None:
+        return
+    st.subheader(f"Selected: {r.label}")
+    if r is not ev.recommended:
+        st.warning("Override active. This is not the recommended route.")
+    m = st.columns(5)
+    m[0].metric("Cost to serve", f"€ {r.cost_to_serve:,.0f}")
+    m[1].metric("Per unit", f"€ {r.cost_per_unit:,.2f}")
+    m[2].metric("% of order value", f"{r.cost_pct_of_value:.1f}%")
+    m[3].metric("Lead time", f"{r.lead_time_days:.0f} days")
+    m[4].metric("Import VAT (recoverable)", f"€ {r.vat_eur:,.0f}")
+    for w in r.warnings + r.issues:
+        st.warning(w)
+    if r.placeholder_cost_share > 0.5:
+        st.warning(f"{r.placeholder_cost_share:.0%} of this cost rests on placeholder parameters.")
+
+    if ev.baseline and r is not ev.baseline:
+        d = compare_to_baseline(r, ev.baseline)
+        st.markdown("**Versus the CIF baseline**")
+        b = st.columns(4)
+        b[0].metric("Cost to serve", f"€ {r.cost_to_serve:,.0f}", f"{d['cost_to_serve_delta_eur']:+,.0f} €",
+                    delta_color="inverse")
+        b[1].metric("Customer pays", f"€ {r.paid('customer'):,.0f}", f"{d['customer_pays_delta_eur']:+,.0f} €",
+                    delta_color="inverse")
+        b[2].metric("Lead time", f"{r.lead_time_days:.0f} d", f"{d['lead_time_delta_days']:+.0f} d",
+                    delta_color="inverse")
+        b[3].metric("Customer steps removed", d["customer_steps_removed"])
+
+    left, right = st.columns([3, 2])
+    with left:
+        st.markdown("**Steps**")
+        sf = r.steps_frame()
+        sf["cost_eur"] = sf["cost_eur"].round(2)
+        sf["source"] = sf["source"].map(lambda s: "🟡" if s == P.PLACEHOLDER else "🟢" if s == P.REAL else "")
+        st.dataframe(sf[["step", "category", "cost_eur", "days", "paid_by", "party", "customs", "doc_steps",
+                         "source", "note"]], hide_index=True, width="stretch")
+    with right:
+        st.markdown("**Cost by category**")
+        st.altair_chart(category_chart(r), width="stretch")
+        st.caption(f"Lane: {r.lane_status} ({r.lane_basis}). Parties: {' → '.join(r.parties)}")
+
+
 PAGES = {
     "Overview": page_overview,
     "Import data": page_import,
     "Master data": page_data,
     "Parameters": page_parameters,
     "Test orders": page_orders,
+    "Route engine": page_engine,
 }
 
 with st.sidebar:

@@ -38,6 +38,22 @@ GENERAL = _rows([
      "source_note": "Chamber of Commerce CoO or EUR.1/A.TR issuance"},
     {"parameter": "working_capital_rate_pct", "value": 8.0, "unit": "% per year",
      "source_note": "Cost of capital tied up in forward stock"},
+    {"parameter": "shipments_per_year_per_country", "value": 12, "unit": "shipments",
+     "source_note": "Spreads per-SKU-per-year and one-off compliance cost over shipments"},
+    {"parameter": "one_off_amortisation_years", "value": 3, "unit": "years",
+     "source_note": "Write-off period for one-off registrations"},
+    {"parameter": "free_zone_handling_eur_per_pallet", "value": 15, "unit": "EUR/pallet",
+     "source_note": "Free-zone entry/exit paperwork when a hub serves a neighbour country"},
+    {"parameter": "risk_premium_lane_occasional_pct", "value": 5, "unit": "% of cost",
+     "source_note": "Routing score penalty. Not a real cost, only steers the recommendation"},
+    {"parameter": "risk_premium_lane_unproven_pct", "value": 15, "unit": "% of cost",
+     "source_note": "Routing score penalty for lanes never or rarely used"},
+    {"parameter": "risk_premium_dc_potential_pct", "value": 5, "unit": "% of cost",
+     "source_note": "Routing score penalty for a partner not yet signed"},
+    {"parameter": "risk_premium_dc_candidate_pct", "value": 10, "unit": "% of cost",
+     "source_note": "Routing score penalty for a hypothetical node"},
+    {"parameter": "proven_lane_min_orders_12m", "value": 6, "unit": "orders",
+     "source_note": "Sales history orders via a DC in 12 months that make its lane proven"},
 ])
 
 
@@ -235,24 +251,28 @@ LEAD_TIMES = _rows([
 SCENARIOS = _rows([
     {"scenario": "cif_baseline", "label": "Baseline: CIF to port",
      "inbound_eur_per_pallet": 0, "storage_eur_per_pallet_month": 0, "avg_storage_months": 0,
-     "outbound_eur_per_order": 0, "margin_pct": 0, "min_order_value_eur": 1500, "handoffs": 4,
-     "customer_customs_steps": 1, "source_note": ("FlexiTog pays freight + insurance to port. "
-                                                  "Customer clears, pays duty and moves goods inland")},
+     "outbound_eur_per_order": 0, "margin_pct": 0, "min_order_value_eur": 1500,
+     "replenishment_freight_factor": 1.0, "replenishment_pallets_per_shipment": 0,
+     "source_note": ("FlexiTog pays freight + insurance to port. Customer clears, pays duty and moves "
+                     "goods inland. Each order ships on its own, so min charges and per-shipment fees apply")},
     {"scenario": "distributor", "label": "Distributor-held stock",
      "inbound_eur_per_pallet": 0, "storage_eur_per_pallet_month": 0, "avg_storage_months": 0,
-     "outbound_eur_per_order": 0, "margin_pct": 25, "min_order_value_eur": 250, "handoffs": 2,
-     "customer_customs_steps": 0, "source_note": ("Distributor buys stock, carries duty. Cost to the chain "
-                                                  "shows up as margin (20-35% typical for workwear)")},
+     "outbound_eur_per_order": 0, "margin_pct": 25, "min_order_value_eur": 250,
+     "replenishment_freight_factor": 0.75, "replenishment_pallets_per_shipment": 10,
+     "source_note": ("Distributor buys stock, carries duty. Its handling, storage and capital cost sit "
+                     "inside the margin (20-35% of goods value typical for workwear)")},
     {"scenario": "3pl", "label": "3PL presence",
      "inbound_eur_per_pallet": 18, "storage_eur_per_pallet_month": 14, "avg_storage_months": 2.5,
-     "outbound_eur_per_order": 35, "margin_pct": 0, "min_order_value_eur": 500, "handoffs": 3,
-     "customer_customs_steps": 0, "source_note": ("Jebel Ali FZ / Istanbul / Tanger Med 3PL rate cards: "
-                                                  "inbound EUR 10-25/pallet, storage EUR 10-20/pallet/month")},
+     "outbound_eur_per_order": 35, "margin_pct": 0, "min_order_value_eur": 500,
+     "replenishment_freight_factor": 0.75, "replenishment_pallets_per_shipment": 12,
+     "source_note": ("Jebel Ali FZ / Istanbul / Tanger Med 3PL rate cards: inbound EUR 10-25/pallet, "
+                     "storage EUR 10-20/pallet/month. Replenishment in consolidated loads")},
     {"scenario": "owned_warehouse", "label": "Owned non-EU warehouse",
      "inbound_eur_per_pallet": 8, "storage_eur_per_pallet_month": 9, "avg_storage_months": 2.5,
-     "outbound_eur_per_order": 25, "margin_pct": 0, "min_order_value_eur": 500, "handoffs": 2,
-     "customer_customs_steps": 0, "source_note": ("Variable cost only. Fixed cost (lease, staff, entity) "
-                                                  "in fixed_cost_eur_per_year, allocated by volume in phase 2")},
+     "outbound_eur_per_order": 25, "margin_pct": 0, "min_order_value_eur": 500,
+     "replenishment_freight_factor": 0.7, "replenishment_pallets_per_shipment": 20,
+     "source_note": ("Variable cost only. Fixed cost (lease, staff, entity) comes from the owned "
+                     "warehouse fixed cost table, spread per pallet")},
 ])
 
 OWNED_FIXED = _rows([
@@ -273,6 +293,11 @@ DEFAULT_TABLES: dict[str, tuple[str, pd.DataFrame]] = {
     "scenarios": ("Scenario defaults (handling, margin, MOV, handoffs)", SCENARIOS),
     "owned_fixed": ("Owned warehouse fixed cost", OWNED_FIXED),
 }
+
+
+# Unique key column per table, used to merge new defaults into saved files.
+TABLE_KEYS = {"general": "parameter", "scenarios": "scenario", "duties": "country",
+              "owned_fixed": "location", "lead_times": "step"}
 
 
 def default_table(name: str) -> pd.DataFrame:

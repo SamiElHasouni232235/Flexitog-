@@ -27,7 +27,8 @@ On first run the tool fills every table with generic placeholder rows.
 
 1. **Data model + import** (done): entity schemas, CSV/Excel import with column mapping, editable
    master data and parameters, test order builder.
-2. Single-order engine: routing, cost breakdown, lead time, forced DC override.
+2. **Single-order engine** (done): route per scenario and node, cost breakdown by category and payer,
+   lead time, lane-aware recommendation, forced override, delta versus the CIF baseline.
 3. Batch mode and scorecard per region.
 
 ## Data model
@@ -61,3 +62,26 @@ Every parameter row has `source`: `placeholder` or `real`, plus `source_note`.
 General, freight per leg, duty and VAT per country, compliance costs (SABER, legalisation,
 Egypt ACI/GOEIC and more), non-transport lead times, scenario defaults (handling, storage,
 margin, minimum order value, handoffs) and owned warehouse fixed cost. All ship as placeholders.
+
+## Engine rules (phase 2)
+
+- Cost to serve = all cost between Helmond stock and goods at the customer. Goods value and
+  recoverable import VAT are excluded. Each step records who pays: FlexiTog, partner or customer.
+- Baseline: one shipment per order, so minimum charges and per-shipment fees apply in full.
+  FlexiTog pays handling, export docs, freight and insurance to port. Customer pays clearance,
+  duty, compliance and inland delivery.
+- Stocked scenarios assume stock on hand in the region. Order lead time = local pick + delivery.
+  Replenishment freight is consolidated (`replenishment_freight_factor`) and per-shipment fees
+  are spread over `replenishment_pallets_per_shipment`.
+- A node in another country (for example Jebel Ali serving Saudi Arabia) is treated as a free zone:
+  duty-suspended storage, then a per-order re-export, regional freight and import in the customer country.
+- Duty = value-weighted rate per SKU origin. EU27 origin uses the preferential rate and adds a
+  preference document step.
+- Distributor margin (default 25% of goods value) counts as cost to the chain, paid by the customer
+  through price.
+- Recommendation = lowest cost x (1 + risk premium). Premiums for occasional/unproven lanes and
+  potential/candidate nodes steer toward proven lanes. Routes below minimum order value are excluded.
+- Lane status comes from the lanes table and from sales history (`shipped_via` order count, 12 months).
+- Air freight is never used as a fallback. A country with no surface rate is infeasible.
+- Hassle metrics per route: customs touchpoints, handoffs between parties, documentation steps,
+  steps the customer handles itself. Phase 3 lets you pick the scoring method.

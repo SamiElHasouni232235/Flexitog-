@@ -102,8 +102,27 @@ class Workspace:
             self.save_params(name, df)
             return df
         df = pd.read_csv(path, keep_default_na=False, na_values=[""])
+        df = self._merge_new_defaults(name, df)
         if "source_note" in df.columns:
             df["source_note"] = df["source_note"].fillna("")
+        return df
+
+    @staticmethod
+    def _merge_new_defaults(name: str, df: pd.DataFrame) -> pd.DataFrame:
+        """Add parameters and columns introduced after the file was saved, as placeholders."""
+        default = P.default_table(name)
+        key = P.TABLE_KEYS.get(name)
+        if key and key in df.columns:
+            new_rows = default[~default[key].isin(df[key])]
+            missing_cols = [c for c in default.columns if c not in df.columns]
+            if missing_cols:
+                df = df.merge(default[[key] + missing_cols], on=key, how="left")
+            if len(new_rows):
+                df = pd.concat([df, new_rows], ignore_index=True)
+        else:
+            for c in default.columns:
+                if c not in df.columns:
+                    df[c] = None
         return df
 
     def save_params(self, name: str, df: pd.DataFrame) -> None:

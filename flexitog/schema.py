@@ -95,6 +95,9 @@ COUNTRY_ALIASES = {
     "thenetherlands": "NL",
 }
 
+EU27 = {"AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IE", "IT", "LV",
+        "LT", "LU", "MT", "NL", "PL", "PT", "RO", "SK", "SI", "ES", "SE"}
+
 DC_TYPES = ["helmond_hub", "distributor", "3pl", "owned_warehouse"]
 DC_TYPE_LABELS = {
     "helmond_hub": "Helmond EU hub",
