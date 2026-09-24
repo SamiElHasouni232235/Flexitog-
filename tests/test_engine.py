@@ -93,6 +93,18 @@ def test_proven_lane_wins_over_cheaper_unproven(ws):
     assert ev.recommended.key == "DIST-SA"
 
 
+def test_partner_terms_override_scenario_defaults(ws):
+    dcs = ws.load("distribution_centers")
+    dcs.loc[dcs["dc_id"] == "DIST-SA", "margin_pct"] = 10
+    dcs.loc[dcs["dc_id"] == "DIST-SA", "data_source"] = "manual"
+    ws.save("distribution_centers", dcs)
+    order, lines = order_for(ws, "T-SA-001")
+    dist = by_key(evaluate(order, lines, Data.from_workspace(ws)))["DIST-SA"]
+    margin = next(s for s in dist.steps if s.category == "margin")
+    assert margin.cost_eur == pytest.approx(dist.order_value_eur * 0.10)
+    assert margin.source == "real"
+
+
 def test_sales_history_marks_lane_proven(ws):
     rows = [{"order_id": f"S{i}", "order_date": f"2026-0{1 + i % 8}-01", "customer_id": "C-SA-01",
              "sku": "FT-JKT-100", "quantity": 10, "shipped_via": "DIST-SA", "country": "SA"} for i in range(8)]

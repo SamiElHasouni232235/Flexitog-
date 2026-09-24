@@ -18,6 +18,8 @@ Out of scope: US and UK operations, DAP direct.
 pip install -r requirements.txt
 streamlit run app.py
 python -m pytest -q
+python tools/build_report.py              # HTML report from the current workspace
+python tools/build_request_pack.py        # Excel data request pack
 ```
 
 Data is stored as CSV under `workspace/` (git-ignored). Set `FLEXITOG_WORKSPACE` to use another folder.
@@ -100,3 +102,16 @@ margin, minimum order value, handoffs) and owned warehouse fixed cost. All ship 
   Customer-first scores the paperwork left with the customer (weights in General parameters). FlexiTog
   paperwork shows what FlexiTog takes on to cover it. The method check table shows which methods
   separate the scenarios.
+
+## Demo data, HTML report and data request pack
+
+- The tool ships with dummy data: 20 customers, 8 SKUs, candidate distributors/3PLs/warehouses and
+  12 months of dummy sales history (192 orders). Overview > Reset to demo data restores it.
+- HTML report: Batch and scorecard > Download HTML report, or `python tools/build_report.py`.
+  One self-contained page with findings, the regional scorecard, one order route by route, the
+  hassle method check and the data request list. `reports/demo_route_report.html` is the demo run.
+- Data request pack: `templates/FlexiTog_data_request_pack.xlsx`. One sheet per dataset with the
+  exact headers the importer reads, placeholders prefilled on parameter sheets, owner/status tracking
+  on the Overview sheet. Partner sheets take per-partner margin and 3PL rates (`margin_pct`,
+  `inbound_eur_per_pallet`, `storage_eur_per_pallet_month`, `outbound_eur_per_order`), which override
+  the scenario defaults.

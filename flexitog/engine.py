@@ -34,6 +34,8 @@ LANE_RANK = {"proven": 0, "occasional": 1, "unproven": 2}
 HELMOND_IDS = {"HLM", "HELMOND", "NL"}
 
 FLEXITOG, PARTNER, CUSTOMER = "FlexiTog", "partner", "customer"
+DC_RATE_OVERRIDES = ("margin_pct", "inbound_eur_per_pallet", "storage_eur_per_pallet_month",
+                     "outbound_eur_per_order")
 PAPERWORK_CATEGORIES = {"export_docs", "clearance", "duty", "import_fees", "compliance"}
 
 
@@ -480,6 +482,12 @@ def _import_block(data: Data, ctx: OrderContext, route: Route, country: str, cus
 def build_route(ctx: OrderContext, data: Data, scenario: str, dc: dict | None = None) -> Route:
     sc = data.scenario(scenario)
     sc_src = str(sc.get("source", P.PLACEHOLDER))
+    # Partner-specific terms on the DC row win over the scenario defaults.
+    if dc:
+        overrides = {k: dc.get(k) for k in DC_RATE_OVERRIDES if not blank(dc.get(k))}
+        if overrides:
+            sc = {**sc, **overrides}
+            sc_src = P.PLACEHOLDER if str(dc.get("data_source")) == P.PLACEHOLDER else P.REAL
     stocked = scenario in STOCKED
     country = ctx.country
     node_country = str(dc["country"]) if dc else country

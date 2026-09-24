@@ -93,3 +93,24 @@ def test_profile_compares_sources(data):
     p = B.profile(o, l, data, "test batch")
     assert set(p["region"]) == set(B.STUDY_REGIONS)
     assert (p["avg_order_value_eur"] > 0).all()
+
+
+def test_html_report_embeds_results(ws, data):
+    import json
+    import re
+
+    from flexitog.engine import evaluate
+    from flexitog.report import build_html
+
+    o, l, _ = B.synthetic_batch(data, per_region=3)
+    res = B.run_batch(o, l, data)
+    orders, lines = ws.load("orders"), ws.load("order_lines")
+    first = orders.iloc[0].to_dict()
+    ev = evaluate(first, lines[lines["order_id"] == first["order_id"]], data)
+    page = build_html(res, "customer_first", "synthetic test batch", ev, {"name": "x"}, demo=True)
+    assert page.startswith("<title>FlexiTog Route Simulator</title>")
+    payload = json.loads(re.search(r"const D = (\{.*?\});\n", page, re.S).group(1))
+    assert payload["meta"]["orders"] == len(o)
+    assert set(payload["regions"]) == set(B.STUDY_REGIONS)
+    assert len(payload["datasets"]) >= 10 and payload["sample"]["routes"]
+    assert "<li><b>Türkiye</b>" in page

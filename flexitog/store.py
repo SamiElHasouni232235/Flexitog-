@@ -91,6 +91,13 @@ class Workspace:
     def reset(self, key: str) -> None:
         self.save(key, seed_frame(key))
 
+    def reset_all(self) -> None:
+        """Every table and parameter back to the shipped demo data."""
+        for key in ENTITIES:
+            self.reset(key)
+        for name in P.DEFAULT_TABLES:
+            self.reset_params(name)
+
     # ------------------------------------------------------------ parameters
     def _param_path(self, name: str) -> Path:
         return self.root / "params" / f"{name}.csv"

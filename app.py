@@ -14,6 +14,7 @@ from flexitog import importer as imp
 from flexitog import batch as B
 from flexitog import parameters as P
 from flexitog.engine import Data, compare_to_baseline, evaluate
+from flexitog.report import build_html
 from flexitog.orders import order_values, summarise
 from flexitog.schema import (
     DC_TYPE_LABELS, DTYPES, ENTITIES, IMPORTED_PREFIX, MANUAL, PLACEHOLDER, PRIMARY_IMPORTS, SOURCE_COL,
@@ -99,6 +100,14 @@ def page_overview():
     )
     st.caption("🟡 placeholder = generic default shipped with the tool. 🟢 real = imported from a file, "
                "entered by hand, or a parameter you marked as real.")
+    with st.expander("Reset to demo data"):
+        st.write("Replaces every table and parameter with the shipped dummy data, including 12 months of "
+                 "dummy sales history. Your imported data is removed.")
+        if st.checkbox("I understand my imported data is removed") and st.button("Reset everything"):
+            ws.reset_all()
+            st.session_state.pop("batch", None)
+            st.session_state.pop("results", None)
+            st.rerun()
 
     st.subheader("Scenarios the engine will compare")
     st.markdown(
@@ -704,10 +713,22 @@ def page_batch():
                    "0 when they take over the paperwork. FlexiTog paperwork then shows the cost of covering it "
                    "on your side, and it does separate them.")
 
-        c1, c2 = st.columns(2)
+        c1, c2, c3 = st.columns(3)
         c1.download_button("Download order results (CSV)", res.to_csv(index=False).encode(),
                            file_name="batch_results.csv")
         c2.download_button("Download scorecard (CSV)", sc.to_csv(index=False).encode(), file_name="scorecard.csv")
+        tests, tlines = ws.load("orders"), ws.load("order_lines")
+        sample, cust = None, {}
+        if len(tests):
+            first = tests.iloc[0].to_dict()
+            sample = evaluate(first, tlines[tlines["order_id"] == first["order_id"]], data)
+            m = data.customers[data.customers["customer_id"] == first["customer_id"]]
+            cust = m.iloc[0].to_dict() if len(m) else {}
+        demo = all((ws.load(k)[SOURCE_COL] == PLACEHOLDER).all() for k in ("customers", "products"))
+        report = build_html(res, method, b["source"].lower(), sample, cust, demo=demo)
+        c3.download_button("Download HTML report", report.encode("utf-8"), file_name="flexitog_route_report.html",
+                           mime="text/html", help="Self-contained page with the scorecard, one sample order and "
+                                                  "the data request list. Opens in any browser.")
 
 
 def _with_customers(data: Data, extra: pd.DataFrame) -> Data:

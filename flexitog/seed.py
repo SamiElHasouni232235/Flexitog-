@@ -120,6 +120,60 @@ LANES = [
      "shipments_last_12m": 1, "notes": "Placeholder"},
 ]
 
+CUSTOMERS += [
+    {"customer_id": "C-TR-03", "name": "Sample meat processor Ankara", "country": "TR", "city": "Ankara",
+     "postal_code": "06000", "current_incoterm": "CIF", "destination_port": "Ambarlı"},
+    {"customer_id": "C-TR-04", "name": "Sample cold store Bursa", "country": "TR", "city": "Bursa",
+     "postal_code": "16000", "current_incoterm": "CIF", "destination_port": "Ambarlı"},
+    {"customer_id": "C-MA-02", "name": "Sample frozen foods Casablanca", "country": "MA", "city": "Casablanca",
+     "postal_code": "20000", "current_incoterm": "CIF", "destination_port": "Casablanca"},
+    {"customer_id": "C-MA-03", "name": "Sample logistics Tangier", "country": "MA", "city": "Tangier",
+     "postal_code": "90000", "current_incoterm": "CIF", "destination_port": "Tanger Med"},
+    {"customer_id": "C-EG-02", "name": "Sample cold chain Alexandria", "country": "EG", "city": "Alexandria",
+     "postal_code": "21500", "current_incoterm": "CIF", "destination_port": "Alexandria"},
+    {"customer_id": "C-TN-01", "name": "Sample seafood Sfax", "country": "TN", "city": "Sfax",
+     "postal_code": "3000", "current_incoterm": "CIF", "destination_port": "Radès"},
+    {"customer_id": "C-SA-03", "name": "Sample food logistics Dammam", "country": "SA", "city": "Dammam",
+     "postal_code": "32241", "current_incoterm": "CIF", "destination_port": "Dammam"},
+    {"customer_id": "C-AE-02", "name": "Sample catering Abu Dhabi", "country": "AE", "city": "Abu Dhabi",
+     "postal_code": "00000", "current_incoterm": "CIF", "destination_port": "Jebel Ali"},
+    {"customer_id": "C-OM-01", "name": "Sample fish export Muscat", "country": "OM", "city": "Muscat",
+     "postal_code": "100", "current_incoterm": "CIF", "destination_port": "Sohar"},
+    {"customer_id": "C-BH-01", "name": "Sample cold store Manama", "country": "BH", "city": "Manama",
+     "postal_code": "317", "current_incoterm": "CIF", "destination_port": "Khalifa Bin Salman"},
+]
+
+
+def _demo_sales_history(months: int = 12, seed: int = 7) -> list[dict]:
+    """Dummy sales history: CIF orders shipped direct from Helmond, weighted to bigger markets."""
+    import numpy as np
+
+    rng = np.random.default_rng(seed)
+    weight = {"SA": 3, "AE": 3, "TR": 3, "MA": 2, "EG": 2, "QA": 1, "KW": 1, "DZ": 1, "TN": 1, "OM": 1, "BH": 1}
+    custs = [c for c in CUSTOMERS if c["country"] in weight]
+    p = np.array([weight[c["country"]] for c in custs], dtype=float)
+    p /= p.sum()
+    skus = [pr["sku"] for pr in PRODUCTS]
+    upp = {pr["sku"]: pr["units_per_pallet"] for pr in PRODUCTS}
+    price = {pr["sku"]: pr["unit_price_eur"] for pr in PRODUCTS}
+    rows = []
+    start = pd.Timestamp("2025-09-01")
+    for i in range(months * 16):
+        cust = custs[rng.choice(len(custs), p=p)]
+        day = start + pd.Timedelta(days=int(rng.integers(0, months * 30)))
+        pallets = int(rng.choice([1, 1, 1, 2, 2, 3, 4, 6, 8]))
+        chosen = rng.choice(len(skus), size=int(rng.integers(1, 4)), replace=False)
+        shares = rng.dirichlet(np.ones(len(chosen)))
+        for idx, share in zip(chosen, shares):
+            sku = skus[idx]
+            qty = max(10, int(round(upp[sku] * pallets * share / 10)) * 10)
+            rows.append({"order_id": f"SO-{25000 + i}", "order_date": day.date().isoformat(),
+                         "customer_id": cust["customer_id"], "sku": sku, "quantity": qty,
+                         "net_value_eur": qty * price[sku], "country": cust["country"],
+                         "shipped_via": "HLM", "incoterm": "CIF"})
+    return rows
+
+
 ORDERS = [
     {"order_id": "T-SA-001", "customer_id": "C-SA-01", "pallet_count": 2, "pallet_type": "EUR",
      "batch": "sample", "notes": "Sample test order"},
@@ -142,7 +196,7 @@ SEED = {
     "lanes": LANES,
     "orders": ORDERS,
     "order_lines": ORDER_LINES,
-    "sales_history": [],
+    "sales_history": _demo_sales_history(),
     "demand_forecast": [],
 }
 
