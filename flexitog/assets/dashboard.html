@@ -1,4 +1,5 @@
 <title>FlexiTog Route Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
@@ -104,8 +105,60 @@ select{background:var(--surface);border:1px solid var(--rule);border-radius:6px;
 .maplegend span{display:inline-flex;gap:6px;align-items:center}
 .ramp{display:inline-flex;gap:0;border-radius:3px;overflow:hidden}
 .ramp i{width:22px;height:10px;display:block}
-.zoom{position:absolute;right:8px;top:8px;display:flex;flex-direction:column;gap:4px}
-.zoom button{width:28px;height:28px;border-radius:6px;border:1px solid var(--rule);background:var(--surface);font-weight:600}
+/* map navigation */
+#map{cursor:grab;touch-action:pan-y;user-select:none;-webkit-user-select:none}
+#map.dragging{cursor:grabbing}
+#map:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+#map .hit{fill:none;stroke:transparent;stroke-width:14px;vector-effect:non-scaling-stroke;cursor:pointer}
+#map .node,#map .cust,#map .issue,#map .hub{cursor:pointer}
+#map .lane.on{opacity:1;filter:drop-shadow(0 0 3px var(--ink))}
+#map .node.on,#map .cust.on{stroke:var(--ink);stroke-width:2.5}
+#map .issue.on path{stroke:var(--ink);stroke-width:2.5}
+.mtool{position:absolute;left:8px;right:8px;top:8px;display:flex;justify-content:space-between;align-items:flex-start;gap:8px;pointer-events:none;z-index:2}
+.mgroup{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;pointer-events:auto;background:color-mix(in srgb,var(--surface) 88%,transparent);border:1px solid var(--rule);border-radius:8px;padding:6px 8px;backdrop-filter:blur(4px)}
+.mgroup .ctl label{font-size:10px}
+.mgroup select{padding:4px 6px;font-size:12.5px}
+.mbtns{display:inline-flex;align-items:center;border:1px solid var(--rule);border-radius:6px;overflow:hidden;background:var(--surface)}
+.mbtns button{width:32px;height:30px;border:0;background:transparent;font-weight:600;font-size:15px}
+.mbtns button+button,.mbtns span+button{border-left:1px solid var(--rule)}
+.mbtns #zoomLvl{min-width:48px;text-align:center;font-size:11px;color:var(--muted);border-left:1px solid var(--rule);line-height:30px}
+.mgroup .btn{padding:5px 10px;font-size:13px}
+.mbrand{font:600 15px var(--display);align-self:center;margin-right:4px}
+body:not(.map-fs) .fs-only{display:none!important}
+.minfo{position:absolute;right:10px;bottom:10px;width:min(320px,calc(100% - 20px));max-height:calc(100% - 80px);overflow:auto;background:var(--surface);border:1px solid var(--rule);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.18);padding:12px 14px;display:flex;flex-direction:column;gap:8px;font-size:13px;z-index:3}
+.minfo.left{right:auto;left:10px;bottom:auto;top:64px}
+body.map-fs .minfo.left{top:72px}
+.minfo .ih{display:flex;flex-direction:column;gap:4px;padding-right:22px}
+.minfo .iclose{position:absolute;right:8px;top:6px;border:0;background:transparent;font-size:20px;line-height:1;color:var(--muted)}
+.minfo .it{font-size:12px}.minfo .it td,.minfo .it th{padding:3px 5px}
+.minfo .ilist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:12.5px}
+.minfo .iact{display:flex;flex-wrap:wrap;gap:6px}
+.minfo .iact .btn{flex:0 0 auto}
+.btn.sm{padding:4px 8px;font-size:12px;font-weight:500}
+.mhint{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);background:var(--ink);color:var(--ground);font:12px var(--mono);padding:6px 10px;border-radius:6px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:4;max-width:calc(100% - 24px);text-align:center}
+.mhint.show{opacity:.92}
+.mlegend{position:absolute;left:10px;bottom:10px;max-width:min(560px,calc(100% - 350px));background:color-mix(in srgb,var(--surface) 90%,transparent);border:1px solid var(--rule);border-radius:8px;padding:8px 10px;display:flex;flex-wrap:wrap;gap:6px 14px;font-size:11.5px;color:var(--muted);z-index:2}
+.mlegend > span{display:inline-flex;gap:5px;align-items:center;white-space:nowrap}
+/* full screen: the map box covers the viewport, native full screen when allowed */
+body.map-fs{overflow:hidden}
+body.map-fs .mapbox{position:fixed;inset:0;z-index:15;border-radius:0;border:0;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body.map-fs #map{width:100%;height:100%;aspect-ratio:auto;touch-action:none}
+@media (max-width:760px){
+  body:not(.map-fs) .mtool{position:static;padding:8px;flex-direction:column;align-items:stretch}
+  body:not(.map-fs) .mgroup{justify-content:space-between}
+  body.map-fs .mlegend{display:none!important}
+  body.map-fs .mtool{flex-direction:column;align-items:stretch;gap:6px}
+  body.map-fs .mgroup{gap:6px;padding:6px}
+  body.map-fs .mgroup .ctl label,body.map-fs .mbrand{display:none!important}
+  body.map-fs .mgroup .ctl{flex:1 1 45%}
+  body.map-fs .mgroup .ctl.fs-only{flex-basis:100%}
+  body.map-fs .mgroup select{width:100%}
+  body.map-fs .mgroup .seg{width:100%}
+  body.map-fs .mgroup .seg button{flex:1;padding:6px 4px;font-size:12px}
+  body.map-fs .mgroup .btn{flex:1;justify-content:center}
+  body.map-fs .minfo.left{top:auto;bottom:10px;left:10px}
+  .minfo{max-height:55%}
+}
 
 /* country panel */
 .kv{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:13px}
@@ -190,8 +243,6 @@ details.grp .gbody{padding:0 12px 12px;display:flex;flex-direction:column;gap:8p
     </div>
     <div class="controls">
       <div class="ctl"><label>Region</label><div class="seg" id="regionSeg"></div></div>
-      <div class="ctl"><label for="mapScenario">Routes on map</label><select id="mapScenario"></select></div>
-      <div class="ctl"><label for="mapMetric">Colour countries by</label><select id="mapMetric"></select></div>
       <div class="ctl"><label for="method">Hassle method</label><select id="method"></select></div>
       <button class="btn" id="openParams" type="button">Parameters <span class="badge" id="chgCount">0</span></button>
     </div>
@@ -201,10 +252,30 @@ details.grp .gbody{padding:0 12px 12px;display:flex;flex-direction:column;gap:8p
 
   <section class="maprow">
     <div class="card">
-      <div class="cardhead"><h2 id="mapTitle">Routes and issues</h2><span class="faint" style="font-size:12px">Click a country for detail. Lines scale with pallets in the batch.</span></div>
-      <div class="mapbox">
-        <svg id="map" role="img" aria-label="Map of routes from Helmond"></svg>
-        <div class="zoom"><button type="button" id="zin" aria-label="Zoom in">+</button><button type="button" id="zout" aria-label="Zoom out">–</button></div>
+      <div class="cardhead"><h2 id="mapTitle">Routes and issues</h2><span class="faint" style="font-size:12px">Drag to pan · Ctrl + scroll or pinch to zoom · click anything for detail</span></div>
+      <div class="mapbox" id="mapbox">
+        <div class="mtool">
+          <div class="mgroup">
+            <span class="fs-only mbrand">FlexiTog routes</span>
+            <div class="ctl"><label for="mapScenario">Routes on map</label><select id="mapScenario"></select></div>
+            <div class="ctl"><label for="mapMetric">Colour countries by</label><select id="mapMetric"></select></div>
+            <div class="ctl fs-only"><label>Region</label><div class="seg" id="regionSegFs"></div></div>
+          </div>
+          <div class="mgroup">
+            <div class="mbtns" role="group" aria-label="Map view">
+              <button type="button" id="zin" aria-label="Zoom in" title="Zoom in (+)">+</button>
+              <span id="zoomLvl" class="num" aria-live="polite">100%</span>
+              <button type="button" id="zout" aria-label="Zoom out" title="Zoom out (−)">–</button>
+              <button type="button" id="zreset" aria-label="Reset view" title="Reset view (0)">⟲</button>
+            </div>
+            <button type="button" class="btn ghost fs-only" id="fsParams">Parameters</button>
+            <button type="button" class="btn" id="fsBtn" aria-pressed="false" title="Full screen (F)">Full screen</button>
+          </div>
+        </div>
+        <svg id="map" role="application" aria-label="Map of routes from Helmond. Arrow keys pan, plus and minus zoom, 0 resets, F toggles full screen." tabindex="0"><g id="gCountries"></g><g id="gOver"></g></svg>
+        <div class="minfo" id="mapInfo" hidden aria-live="polite"></div>
+        <div class="mlegend fs-only" id="mapLegendFs"></div>
+        <div class="mhint" id="mapHint" role="status"></div>
       </div>
       <div class="maplegend" id="mapLegend"></div>
     </div>
@@ -359,24 +430,17 @@ const SEV_RANK = {critical: 0, serious: 1, warning: 2, info: 3};
 
 // ============================================================ map
 const BM = PAYLOAD.geo.basemap;
+const MAPW = BM.width, MAPH = BM.height;
 const rad = d => d * Math.PI / 180;
 function proj(lat, lon){ return [BM.k * rad(lon - BM.view.lonMin), BM.k * (BM.yTop - Math.log(Math.tan(Math.PI / 4 + rad(Math.max(-80, Math.min(80, lat))) / 2)))]; }
 const REGION_BOX = {All: [-14, 62, 12, 56], "Türkiye": [14, 46, 33, 52.5], "North Africa": [-14, 36, 20, 43], "Gulf/GCC": [32, 62, 12, 33]};
-function viewBox(){
-  const [lo0, lo1, la0, la1] = REGION_BOX[ui.region];
-  const [x0, y1] = proj(la0, lo0), [x1, y0] = proj(la1, lo1);
-  let w = x1 - x0, h = y1 - y0;
-  const ratio = 1000 / 620;
-  if (w / h > ratio) { const nh = w / ratio; return [x0, y0 - (nh - h) / 2, w, nh]; }
-  const nw = h * ratio; return [x0 - (nw - w) / 2, y0, nw, h];
-}
-function applyZoom(vb){
-  const z = ui.zoom, cx = vb[0] + vb[2] / 2, cy = vb[1] + vb[3] / 2;
-  const w = vb[2] / z, h = vb[3] / z;
-  return [cx - w / 2, cy - h / 2, w, h];
-}
 const loc = (kind, id) => PAYLOAD.geo.locations[`${kind}:${id}`] || null;
 const city = name => PAYLOAD.geo.cities[String(name || "").toLowerCase()] || null;
+const svgEl = $("map");
+const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
+let view = null, drawnW = null, mapState = {lanes: {}, custs: {}, issues: [], nodes: {}};
+let selected = null;   // {kind, id}
+
 function metricDefs(){
   return [
     {key: "best", label: "Cheapest in-scope scenario", kind: "cat"},
@@ -387,28 +451,70 @@ function metricDefs(){
     {key: "issues", label: "Number of issues", kind: "seq", dp: 0},
   ];
 }
-function drawMap(){
-  const svg = $("map");
-  const vb = applyZoom(viewBox());
-  svg.setAttribute("viewBox", vb.map(v => v.toFixed(1)).join(" "));
-  const scale = vb[2] / 1000;
-  const metric = metricDefs().find(m => m.key === ui.mapMetric);
-  const studyCountries = new Set(Object.keys(PAYLOAD.data.country_region).filter(c => REGIONS.includes(PAYLOAD.data.country_region[c])));
-  const issues = issuesAll();
-  const issueCount = {}; issues.forEach(i => (i.countries || []).forEach(c => issueCount[c] = (issueCount[c] || 0) + 1));
 
-  // country values
+// ---- view geometry
+function regionBox(r){ const [lo0, lo1, la0, la1] = REGION_BOX[r]; const [x0, y1] = proj(la0, lo0), [x1, y0] = proj(la1, lo1); return [x0, y0, x1 - x0, y1 - y0]; }
+function ratio(){ const b = svgEl.getBoundingClientRect(); return b.width > 0 && b.height > 0 ? b.width / b.height : 1000 / 620; }
+function clampView(v){
+  let [x, y, w, h] = v; const R = w / h;
+  if (w > MAPW * 1.2) { w = MAPW * 1.2; h = w / R; }
+  if (w < 24) { w = 24; h = w / R; }
+  const cx = Math.min(MAPW, Math.max(0, x + w / 2)), cy = Math.min(MAPH, Math.max(0, y + h / 2));
+  return [cx - w / 2, cy - h / 2, w, h];
+}
+function fitBox(b, pad = 0.04){
+  let [x, y, w, h] = b; x -= w * pad; y -= h * pad; w *= 1 + 2 * pad; h *= 1 + 2 * pad;
+  const R = ratio();
+  if (w / h > R) { const nh = w / R; y -= (nh - h) / 2; h = nh; } else { const nw = h * R; x -= (nw - w) / 2; w = nw; }
+  return clampView([x, y, w, h]);
+}
+function applyView(){
+  svgEl.setAttribute("viewBox", view.map(v => v.toFixed(2)).join(" "));
+  $("zoomLvl").textContent = Math.round(fitBox(regionBox("All"))[2] / view[2] * 100) + "%";
+  if (!drawnW || Math.abs(view[2] - drawnW) / view[2] > 0.03) scheduleOverlay();
+}
+let flyRaf = null;
+function flyTo(target){
+  cancelAnimationFrame(flyRaf);
+  if (!view || REDUCED) { view = target; applyView(); return; }
+  const from = view.slice(), t0 = performance.now(), D = 320;
+  const step = now => {
+    const t = Math.min(1, (now - t0) / D), e = 1 - Math.pow(1 - t, 3);
+    view = from.map((v, i) => v + (target[i] - v) * e); applyView();
+    if (t < 1) flyRaf = requestAnimationFrame(step);
+  };
+  flyRaf = requestAnimationFrame(step);
+}
+function clientToMap(cx, cy){ const b = svgEl.getBoundingClientRect(); return [view[0] + (cx - b.left) / b.width * view[2], view[1] + (cy - b.top) / b.height * view[3]]; }
+function zoomAt(f, px, py){
+  const [x, y, w, h] = view;
+  view = clampView([px - (px - x) / f, py - (py - y) / f, w / f, h / f]); applyView();
+}
+function zoomCenter(f){ zoomAt(f, view[0] + view[2] / 2, view[1] + view[3] / 2); }
+function panBy(fx, fy){ view = clampView([view[0] + view[2] * fx, view[1] + view[3] * fy, view[2], view[3]]); applyView(); }
+function resetView(){ flyTo(fitBox(regionBox(ui.region))); }
+
+// ---- layers
+function countryValues(){
+  const metric = metricDefs().find(m => m.key === ui.mapMetric);
+  const issueCount = {}; issuesAll().forEach(i => (i.countries || []).forEach(c => issueCount[c] = (issueCount[c] || 0) + 1));
   let values = {}, cats = {};
   if (metric.kind === "cat") {
     const per = {};
-    INS.forEach(s => { const cc = countryCard(s); Object.entries(cc).forEach(([c, a]) => { if (a && a.cost_per_unit_eur != null && (!per[c] || a.cost_per_unit_eur < per[c].v)) per[c] = {v: a.cost_per_unit_eur, s}; }); });
+    INS.forEach(s => { Object.entries(countryCard(s)).forEach(([c, a]) => { if (a && a.cost_per_unit_eur != null && (!per[c] || a.cost_per_unit_eur < per[c].v)) per[c] = {v: a.cost_per_unit_eur, s}; }); });
     Object.entries(per).forEach(([c, x]) => cats[c] = x.s);
   } else if (metric.key === "issues") values = issueCount;
-  else { const cc = countryCard(ui.mapScenario); Object.entries(cc).forEach(([c, a]) => { if (a && a[metric.key] != null) values[c] = a[metric.key]; }); }
+  else Object.entries(countryCard(ui.mapScenario)).forEach(([c, a]) => { if (a && a[metric.key] != null) values[c] = a[metric.key]; });
+  return {metric, values, cats};
+}
+const studyCountries = new Set(Object.keys(PAYLOAD.data.country_region).filter(c => REGIONS.includes(PAYLOAD.data.country_region[c])));
+let legendRange = [0, 0];
+function drawCountries(){
+  const {metric, values, cats} = countryValues();
   const vals = Object.entries(values).filter(([c]) => studyCountries.has(c) && (ui.region === "All" || R.data.regionFor(c) === ui.region)).map(([, v]) => v);
-  const vmin = Math.min(...vals), vmax = Math.max(...vals);
+  const vmin = vals.length ? Math.min(...vals) : 0, vmax = vals.length ? Math.max(...vals) : 0;
+  legendRange = [vmin, vmax];
   const bin = v => vmax === vmin ? 3 : 1 + Math.max(0, Math.min(4, Math.floor(5 * (v - vmin) / (vmax - vmin + 1e-9))));
-
   let h = "";
   BM.countries.forEach(c => {
     const study = studyCountries.has(c.iso);
@@ -416,81 +522,253 @@ function drawMap(){
     if (study && metric.kind === "cat" && cats[c.iso]) fill = `var(--s-${cats[c.iso]})`;
     if (study && metric.kind === "seq" && values[c.iso] != null) fill = `var(--q${bin(values[c.iso])})`;
     const tipv = metric.kind === "cat" ? (cats[c.iso] ? E.LABELS[cats[c.iso]] : "no data") : (values[c.iso] != null ? fmt(values[c.iso], metric.dp) : "no data");
-    h += `<path class="country${study ? " study" : ""}${c.iso && ui.country === c.iso ? " sel" : ""}" d="${c.d}" style="fill:${fill}" data-iso="${c.iso || ""}"` +
-         (study ? ` data-tip="${esc(CNAME(c.iso))}: ${esc(metric.label)} ${esc(tipv)}"` : "") + `/>`;
+    h += `<path class="country${study ? " study" : ""}" d="${c.d}" style="fill:${fill}"` +
+         (study ? ` data-kind="country" data-id="${c.iso}" data-tip="${esc(CNAME(c.iso))}: ${esc(metric.label)} ${esc(tipv)} · click for detail"` : "") + `/>`;
   });
-
-  // lanes
+  $("gCountries").innerHTML = h;
+  markSelection();
+  drawLegend(metric);
+}
+let overlayTimer = null;
+function scheduleOverlay(){ clearTimeout(overlayTimer); overlayTimer = setTimeout(drawOverlay, 60); }
+function drawOverlay(){
+  const scale = view[2] / 1000; drawnW = view[2];
   const rows = rowsFor(ui.mapScenario).filter(r => r.available && (ui.region === "All" || r.region === ui.region));
-  const lanes = {}, lasts = {}, custs = {};
+  const lanes = {}, lasts = {}, custs = {}, nodes = {};
   rows.forEach(r => {
     const rt = r.route, sc = r.scenario === "best" ? r.bestOf : r.scenario;
     const ml = rt.main_leg; if (!ml) return;
     const key = sc + "|" + ml.port + "|" + ml.country;
     const lp = PAYLOAD.geo.lanes[ml.port.toLowerCase()];
-    if (!lanes[key]) lanes[key] = {sc, mode: lp ? lp.mode : ml.mode, pts: lp ? lp.points : null, port: ml.port, country: ml.country, pallets: 0, orders: 0, dc: rt.dc_id};
-    if (!lanes[key].pts) { const a = PAYLOAD.geo.cities.helmond, b = rt.dc_id ? loc("dc", rt.dc_id) : city(ml.port); lanes[key].pts = b ? [a, b] : null; }
-    lanes[key].pallets += r.pallets; lanes[key].orders += 1;
+    if (!lanes[key]) lanes[key] = {key, sc, mode: lp ? lp.mode : ml.mode, pts: lp ? lp.points : null, port: ml.port, country: ml.country, pallets: 0, orders: 0, units: 0, cost: 0, lead: 0, countries: {}};
+    const L = lanes[key];
+    if (!L.pts) { const a = PAYLOAD.geo.cities.helmond, b = rt.dc_id ? loc("dc", rt.dc_id) : city(ml.port); L.pts = b ? [a, b] : null; }
+    L.pallets += r.pallets; L.orders += 1; L.units += r.units; L.cost += r.cost_to_serve_eur; L.lead += r.lead_time_days; L.countries[r.country] = (L.countries[r.country] || 0) + 1;
+    if (rt.dc_id) { const n = nodes[rt.dc_id] = nodes[rt.dc_id] || {orders: 0, pallets: 0, countries: {}}; n.orders += 1; n.pallets += r.pallets; n.countries[r.country] = (n.countries[r.country] || 0) + 1; }
     const end = rt.dc_id ? loc("dc", rt.dc_id) : (lp ? lp.points[lp.points.length - 1] : null);
     const cl = loc("cust", r.customer_id);
-    if (end && cl) { const k2 = end.join() + "|" + cl.join(); lasts[k2] = lasts[k2] || {a: end, b: cl, pallets: 0}; lasts[k2].pallets += r.pallets; }
-    if (cl) { const k3 = cl.join(); custs[k3] = custs[k3] || {p: cl, pallets: 0, id: r.customer_id}; custs[k3].pallets += r.pallets; }
+    if (end && cl) { const k2 = end.join() + "|" + cl.join(); lasts[k2] = lasts[k2] || {a: end, b: cl}; }
+    if (cl) { const cu = custs[r.customer_id] = custs[r.customer_id] || {p: cl, pallets: 0, orders: 0, id: r.customer_id, country: r.country}; cu.pallets += r.pallets; cu.orders += 1; }
   });
+  const issues = issuesAll().filter(i => i.lat != null && (ui.region === "All" || (i.countries || []).some(c => R.data.regionFor(c) === ui.region)));
+  mapState = {lanes, custs, issues, nodes};
   const maxP = Math.max(1, ...Object.values(lanes).map(l => l.pallets));
   const path = pts => pts.map((p, i) => { const [x, y] = proj(p[0], p[1]); return (i ? "L" : "M") + x.toFixed(1) + "," + y.toFixed(1); }).join("");
+  let h = "";
   Object.values(lasts).forEach(l => { h += `<path class="last" d="${path([l.a, l.b])}"/>`; });
   Object.values(lanes).sort((a, b) => b.pallets - a.pallets).forEach(l => {
     if (!l.pts) return;
     const w = 1.5 + 6 * Math.sqrt(l.pallets / maxP);
-    const t = `${E.LABELS[l.sc]}: Helmond → ${l.port || l.country} (${l.mode}) · ${fmt(l.pallets)} pallets, ${l.orders} orders`;
-    h += `<path class="lane ${l.mode === "road" ? "road" : ""}" d="${path(l.pts)}" style="stroke:var(--s-${l.sc});stroke-width:${w.toFixed(1)}px" data-tip="${esc(t)}"/>`;
-    h += `<path d="${path(l.pts)}" style="fill:none;stroke:transparent;stroke-width:12px;vector-effect:non-scaling-stroke" data-tip="${esc(t)}"/>`;
+    const t = `${E.LABELS[l.sc]}: Helmond → ${l.port || l.country} (${l.mode}) · ${fmt(l.pallets)} pallets, ${l.orders} orders · click for detail`;
+    h += `<path class="lane ${l.mode === "road" ? "road" : ""}${sel("lane", l.key) ? " on" : ""}" d="${path(l.pts)}" style="stroke:var(--s-${l.sc});stroke-width:${w.toFixed(1)}px"/>`;
+    h += `<path class="hit" d="${path(l.pts)}" data-kind="lane" data-id="${esc(l.key)}" data-tip="${esc(t)}"/>`;
   });
   Object.values(custs).forEach(c => {
     const [x, y] = proj(c.p[0], c.p[1]);
-    h += `<circle class="cust" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${((1.8 + Math.sqrt(c.pallets) * .35) * scale).toFixed(2)}" data-tip="${esc(c.id)} · ${fmt(c.pallets)} pallets in batch"/>`;
+    h += `<circle class="cust${sel("cust", c.id) ? " on" : ""}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${((2 + Math.sqrt(c.pallets) * .35) * scale).toFixed(2)}" data-kind="cust" data-id="${esc(c.id)}" data-tip="${esc(c.id)} · ${c.orders} orders, ${fmt(c.pallets)} pallets · click for detail"/>`;
   });
-  // nodes
   R.data.dcs.filter(d => d.dc_type !== "helmond_hub").forEach(d => {
     const p = loc("dc", d.dc_id); if (!p) return;
-    const [x, y] = proj(p[0], p[1]); const s = 5.5 * scale;
-    const cls = `node${d.status === "existing" ? "" : " cand"}`, st = `fill:var(--s-${d.dc_type});stroke:var(--s-${d.dc_type})`;
-    const t = `${d.name} · ${d.status} · serves ${String(d.serves_countries || d.country).split(";").join(", ")}`;
-    const dx = d.dc_type === "3pl" ? -s * .9 : d.dc_type === "owned_warehouse" ? s * .9 : 0;
-    const X = x + dx;
-    if (d.dc_type === "distributor") h += `<circle class="${cls}" cx="${X}" cy="${y}" r="${s}" style="${st}" data-tip="${esc(t)}"/>`;
-    else if (d.dc_type === "3pl") h += `<rect class="${cls}" x="${X - s}" y="${y - s}" width="${2 * s}" height="${2 * s}" style="${st}" data-tip="${esc(t)}"/>`;
-    else h += `<path class="${cls}" d="M${X},${y - s * 1.3}L${X + s * 1.3},${y}L${X},${y + s * 1.3}L${X - s * 1.3},${y}Z" style="${st}" data-tip="${esc(t)}"/>`;
+    const [x, y] = proj(p[0], p[1]); const s = 6 * scale;
+    const cls = `node${d.status === "existing" ? "" : " cand"}${sel("node", d.dc_id) ? " on" : ""}`, st = `fill:var(--s-${d.dc_type});stroke:var(--s-${d.dc_type})`;
+    const t = `${d.name} · ${d.status} · serves ${String(d.serves_countries || d.country).split(";").join(", ")} · click for detail`;
+    const X = x + (d.dc_type === "3pl" ? -s * .9 : d.dc_type === "owned_warehouse" ? s * .9 : 0);
+    const a = `data-kind="node" data-id="${esc(d.dc_id)}" data-tip="${esc(t)}"`;
+    if (d.dc_type === "distributor") h += `<circle class="${cls}" cx="${X}" cy="${y}" r="${s}" style="${st}" ${a}/>`;
+    else if (d.dc_type === "3pl") h += `<rect class="${cls}" x="${X - s}" y="${y - s}" width="${2 * s}" height="${2 * s}" style="${st}" ${a}/>`;
+    else h += `<path class="${cls}" d="M${X},${y - s * 1.3}L${X + s * 1.3},${y}L${X},${y + s * 1.3}L${X - s * 1.3},${y}Z" style="${st}" ${a}/>`;
   });
-  const hub = proj(...PAYLOAD.geo.cities.helmond), hs = 7 * scale;
-  h += `<path class="hub" d="${star(hub[0], hub[1], hs)}" data-tip="Helmond EU hub · origin of every flow"/>`;
-  // issues
-  issues.filter(i => i.lat != null && (ui.region === "All" || (i.countries || []).some(c => R.data.regionFor(c) === ui.region)))
-    .forEach(i => {
-      const [x, y] = proj(i.lat, i.lon), s = 8 * scale;
-      h += `<g class="issue" data-tip="${esc(i.severity.toUpperCase())}: ${esc(i.title)}"><path d="M${x},${y - s}L${x + s},${y + s * .8}L${x - s},${y + s * .8}Z" style="fill:var(--st-${i.severity})"/>` +
-           `<text x="${x}" y="${y + s * .6}" text-anchor="middle" style="font-size:${(9 * scale).toFixed(2)}px">!</text></g>`;
-    });
-  // ISO labels on study countries
+  const hub = proj(...PAYLOAD.geo.cities.helmond);
+  h += `<path class="hub" d="${star(hub[0], hub[1], 8 * scale)}" data-kind="hub" data-id="HLM" data-tip="Helmond EU hub · origin of every flow"/>`;
+  issues.forEach((i, n) => {
+    const [x, y] = proj(i.lat, i.lon), s = 9 * scale;
+    h += `<g class="issue${sel("issue", n) ? " on" : ""}" data-kind="issue" data-id="${n}" data-tip="${esc(i.severity.toUpperCase())}: ${esc(i.title)} · click for detail"><path d="M${x},${y - s}L${x + s},${y + s * .8}L${x - s},${y + s * .8}Z" style="fill:var(--st-${i.severity})"/>` +
+         `<text x="${x}" y="${y + s * .6}" text-anchor="middle" style="font-size:${(10 * scale).toFixed(2)}px">!</text></g>`;
+  });
   BM.countries.filter(c => studyCountries.has(c.iso) && c.c).forEach(c => {
     h += `<text class="clabel" x="${c.c[0]}" y="${c.c[1]}" text-anchor="middle" style="font-size:${(10 * scale).toFixed(2)}px">${esc(c.iso)}</text>`;
   });
-  svg.innerHTML = h;
-  bindTips(svg);
-  svg.querySelectorAll(".country.study").forEach(el => el.addEventListener("click", () => { ui.country = el.dataset.iso; renderCountry(); drawMap(); }));
-
-  // legend
+  $("gOver").innerHTML = h;
+}
+const sel = (kind, id) => selected && selected.kind === kind && String(selected.id) === String(id);
+function markSelection(){ $("gCountries").querySelectorAll(".country.study").forEach(el => el.classList.toggle("sel", sel("country", el.dataset.id))); }
+function drawLegend(metric){
   let lg = "";
   if (metric.kind === "cat") lg += INS.map(s => `<span><i class="sw" style="background:var(--s-${s})"></i>${esc(SHORT[s])} cheapest</span>`).join("");
-  else lg += `<span>${esc(metric.label)} <span class="ramp">${[1,2,3,4,5].map(i => `<i style="background:var(--q${i})"></i>`).join("")}</span> <span class="num">${fmt(vmin, metric.dp)} → ${fmt(vmax, metric.dp)}</span></span>`;
+  else lg += `<span>${esc(metric.label)} <span class="ramp">${[1,2,3,4,5].map(i => `<i style="background:var(--q${i})"></i>`).join("")}</span> <span class="num">${fmt(legendRange[0], metric.dp)} → ${fmt(legendRange[1], metric.dp)}</span></span>`;
   lg += `<span><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" style="stroke:var(--muted);stroke-width:3"/></svg>sea</span>`;
   lg += `<span><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" style="stroke:var(--muted);stroke-width:3;stroke-dasharray:6 4"/></svg>road</span>`;
   lg += `<span><svg width="12" height="12"><circle cx="6" cy="6" r="5" style="fill:var(--muted)"/></svg>distributor</span><span><svg width="12" height="12"><rect x="1" y="1" width="10" height="10" style="fill:var(--muted)"/></svg>3PL</span><span><svg width="14" height="14"><path d="M7,0L14,7L7,14L0,7Z" style="fill:var(--muted)"/></svg>owned</span><span class="faint">faded = not yet signed</span>`;
   lg += ["critical","serious","warning","info"].map(s => `<span><svg width="12" height="11"><path d="M6,0L12,11L0,11Z" style="fill:var(--st-${s})"/></svg>${s}</span>`).join("");
   $("mapLegend").innerHTML = lg;
+  $("mapLegendFs").innerHTML = lg;
   $("mapTitle").textContent = `Routes: ${ui.mapScenario === "best" ? "best in-scope option per order" : E.LABELS[ui.mapScenario]}`;
 }
+function drawMap(){
+  if (!view) view = fitBox(regionBox(ui.region));
+  applyView(); drawCountries(); drawOverlay(); renderInfo();
+}
 function star(cx, cy, r){ let d = ""; for (let i = 0; i < 10; i++) { const a = Math.PI / 5 * i - Math.PI / 2, rr = i % 2 ? r * .45 : r; d += (i ? "L" : "M") + (cx + rr * Math.cos(a)).toFixed(1) + "," + (cy + rr * Math.sin(a)).toFixed(1); } return d + "Z"; }
+
+// ---- info card for the clicked object
+function select(kind, id){
+  selected = kind ? {kind, id} : null;
+  if (kind === "country") { ui.country = id; renderCountry(); }
+  markSelection(); drawOverlay(); renderInfo();
+}
+function zoomToCountry(iso){
+  const el = $("gCountries").querySelector(`.country[data-id="${iso}"]`); if (!el) return;
+  const b = el.getBBox(); flyTo(fitBox([b.x, b.y, b.width, b.height], 0.25));
+}
+function zoomToPoint(p, width = 120){ const [x, y] = proj(p[0], p[1]); const R = ratio(); flyTo(clampView([x - width / 2, y - width / R / 2, width, width / R])); }
+function renderInfo(){
+  const el = $("mapInfo");
+  if (!selected) { el.hidden = true; return; }
+  const {kind, id} = selected; let h = "";
+  const btn = (act, label) => `<button type="button" class="btn ghost sm" data-act="${act}">${label}</button>`;
+  if (kind === "country") {
+    const rows = SC.map(s => ({s, a: countryCard(s)[id]})).filter(x => x.a);
+    const iss = issuesAll().filter(i => (i.countries || []).includes(id)).sort((a, b) => SEV_RANK[a.severity] - SEV_RANK[b.severity]);
+    h = `<div class="ih"><span class="eyebrow">${esc(R.data.regionFor(id))}</span><h3>${esc(CNAME(id))}</h3></div>` +
+      (rows.length ? `<table class="it"><thead><tr><th></th><th>€/unit</th><th>Cust €</th><th>Days</th></tr></thead><tbody>${rows.map(({s, a}) => `<tr><td><i class="sw" style="background:var(--s-${s})"></i> ${esc(SHORT[s])}</td><td class="n">${fmt(a.cost_per_unit_eur, 2)}</td><td class="n">${fmt(a.customer_cost_per_unit_eur, 2)}</td><td class="n">${fmt(a.lead_time_days, 0)}</td></tr>`).join("")}</tbody></table><p class="faint">${rows[0].a.orders} orders · ${fmt(rows[0].a.pallets)} pallets</p>` : `<p class="faint">No batch orders.</p>`) +
+      (iss.length ? `<ul class="ilist">${iss.slice(0, 4).map(i => `<li><span class="sev ${i.severity}">${i.severity === "info" ? "i" : "▲"}</span> ${esc(i.title)}</li>`).join("")}</ul>` : "") +
+      `<div class="iact">${btn("zoom-country", "Zoom to country")}${btn("panel", "Full detail")}</div>`;
+  } else if (kind === "issue") {
+    const i = mapState.issues[+id]; if (!i) { el.hidden = true; return; }
+    h = `<div class="ih"><span class="sev ${i.severity}">${i.severity === "info" ? "i" : "▲"} ${esc(i.severity)}</span><h3>${esc(i.title)}</h3></div><p>${esc(i.detail)}</p>` +
+      (i.lever ? `<p class="faint">Lever: ${esc(i.lever)}</p>` : "") + (i.kind === "briefing" ? `<p class="faint">Briefing note from general trade knowledge. Verify with your broker.</p>` : "") +
+      `<div class="iact">${(i.countries || []).filter(c => studyCountries.has(c)).map(c => `<button type="button" class="btn ghost sm" data-act="goto-country" data-c="${c}">${esc(CNAME(c))}</button>`).join("")}</div>`;
+  } else if (kind === "node") {
+    const d = R.data.dcs.find(x => x.dc_id === id); if (!d) { el.hidden = true; return; }
+    const n = mapState.nodes[id];
+    h = `<div class="ih"><span class="eyebrow"><i class="sw" style="background:var(--s-${d.dc_type})"></i> ${esc(PAYLOAD.names.dc_types[d.dc_type] || d.dc_type)}</span><h3>${esc(d.name)}</h3></div>` +
+      `<dl class="kv"><dt>Status</dt><dd>${esc(d.status)}</dd><dt>Location</dt><dd>${esc(d.city || "")} ${esc(CNAME(d.country))}</dd><dt>Serves</dt><dd>${String(d.serves_countries || d.country).split(";").filter(Boolean).map(CNAME).map(esc).join(", ")}</dd>` +
+      `<dt>Min. order</dt><dd class="num">${d.min_order_value_eur != null ? "€" + fmt(d.min_order_value_eur) : "scenario default"}</dd>` +
+      `<dt>On this map</dt><dd>${n ? `${n.orders} orders, ${fmt(n.pallets)} pallets (${Object.entries(n.countries).map(([c, k]) => `${esc(c)} ${k}`).join(", ")})` : "no orders routed here in this view"}</dd></dl>` +
+      `<div class="iact">${btn("zoom-node", "Zoom here")}${btn("params", "Edit in Parameters")}</div>`;
+  } else if (kind === "lane") {
+    const l = mapState.lanes[id]; if (!l) { el.hidden = true; return; }
+    h = `<div class="ih"><span class="eyebrow"><i class="sw" style="background:var(--s-${l.sc})"></i> ${esc(E.LABELS[l.sc])}</span><h3>Helmond → ${esc(l.port || l.country)}</h3></div>` +
+      `<dl class="kv"><dt>Mode</dt><dd>${esc(l.mode)}</dd><dt>Orders</dt><dd class="num">${l.orders}</dd><dt>Pallets</dt><dd class="num">${fmt(l.pallets)}</dd>` +
+      `<dt>Cost/unit</dt><dd class="num">€${fmt(l.units ? l.cost / l.units : null, 2)}</dd><dt>Avg lead</dt><dd class="num">${fmt(l.lead / l.orders, 1)} days</dd>` +
+      `<dt>Countries</dt><dd>${Object.entries(l.countries).map(([c, k]) => `${esc(CNAME(c))} ${k}`).join(", ")}</dd></dl>`;
+  } else if (kind === "cust") {
+    const c = mapState.custs[id]; const cu = R.data.customers.find(x => x.customer_id === id) || {};
+    h = `<div class="ih"><span class="eyebrow">Customer</span><h3>${esc(cu.name || id)}</h3></div>` +
+      `<dl class="kv"><dt>Location</dt><dd>${esc(cu.city || "")} ${esc(CNAME(cu.country))}</dd><dt>In batch</dt><dd>${c ? `${c.orders} orders, ${fmt(c.pallets)} pallets` : "none in this view"}</dd><dt>Today</dt><dd>${esc(cu.current_incoterm || "CIF")} to ${esc(cu.destination_port || "port")}</dd></dl>` +
+      `<div class="iact">${btn("order", "Open an order")}</div>`;
+  } else if (kind === "hub") {
+    h = `<div class="ih"><span class="eyebrow">Origin</span><h3>Helmond EU hub</h3></div><p>Every flow in this tool starts here. Stocked scenarios refill regional nodes from Helmond in consolidated loads.</p>`;
+  }
+  el.innerHTML = `<button type="button" class="iclose" data-act="close" aria-label="Close detail">×</button>` + h;
+  el.hidden = false;
+}
+$("mapInfo").addEventListener("click", e => {
+  const b = e.target.closest("[data-act]"); if (!b) return;
+  const act = b.dataset.act;
+  if (act === "close") select(null);
+  else if (act === "zoom-country") zoomToCountry(selected.id);
+  else if (act === "goto-country") { select("country", b.dataset.c); zoomToCountry(b.dataset.c); }
+  else if (act === "zoom-node") { const p = loc("dc", selected.id); if (p) zoomToPoint(p); }
+  else if (act === "params") { openDrawer(); const g = document.querySelector('details.grp[data-g="dcs"]'); if (g) { g.open = true; g.scrollIntoView({block: "start"}); } }
+  else if (act === "panel") { if (isFs()) exitFs(); $("countryPanel").scrollIntoView({behavior: REDUCED ? "auto" : "smooth", block: "start"}); }
+  else if (act === "order") {
+    const o = PAYLOAD.batch.orders.find(x => x.customer_id === selected.id) || PAYLOAD.tests.orders.find(x => x.customer_id === selected.id);
+    if (o) { ui.orderId = o.order_id; ui.override = "auto"; renderOrder(); if (isFs()) exitFs(); $("orderCard").scrollIntoView({behavior: REDUCED ? "auto" : "smooth", block: "start"}); }
+  }
+});
+
+// ---- pointer, wheel and keyboard navigation
+const pointers = new Map(); let gesture = null, suppressClick = false;
+svgEl.addEventListener("pointerdown", e => {
+  if (e.pointerType === "mouse" && e.button !== 0) return;
+  if (!pointers.size) suppressClick = false;
+  pointers.set(e.pointerId, {x: e.clientX, y: e.clientY});
+  gesture = {moved: false, start: {x: e.clientX, y: e.clientY}, last: gestureState()};
+});
+function gestureState(){
+  const p = [...pointers.values()];
+  if (p.length >= 2) return {mx: (p[0].x + p[1].x) / 2, my: (p[0].y + p[1].y) / 2, d: Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y)};
+  return p.length ? {mx: p[0].x, my: p[0].y, d: 0} : null;
+}
+svgEl.addEventListener("pointermove", e => {
+  if (!pointers.has(e.pointerId) || !gesture) return;
+  pointers.set(e.pointerId, {x: e.clientX, y: e.clientY});
+  const s = gestureState(), l = gesture.last;
+  if (!gesture.moved && Math.hypot(e.clientX - gesture.start.x, e.clientY - gesture.start.y) < 5 && pointers.size < 2) return;
+  if (!gesture.moved) { gesture.moved = true; svgEl.setPointerCapture(e.pointerId); svgEl.classList.add("dragging"); tip.hidden = true; }
+  const b = svgEl.getBoundingClientRect();
+  if (l && s) {
+    if (pointers.size >= 2 && l.d && s.d) { const [px, py] = clientToMap(s.mx, s.my); zoomAt(s.d / l.d, px, py); }
+    view = clampView([view[0] - (s.mx - l.mx) / b.width * view[2], view[1] - (s.my - l.my) / b.height * view[3], view[2], view[3]]); applyView();
+  }
+  gesture.last = s;
+});
+function endPointer(e){
+  pointers.delete(e.pointerId);
+  if (gesture && gesture.moved) suppressClick = true;
+  if (!pointers.size) { gesture = null; svgEl.classList.remove("dragging"); } else gesture.last = gestureState();
+}
+svgEl.addEventListener("pointerup", endPointer);
+svgEl.addEventListener("pointercancel", endPointer);
+svgEl.addEventListener("click", e => {
+  if (suppressClick) { suppressClick = false; return; }
+  // The marker layer can be redrawn between press and release; read what is under the pointer now.
+  const under = document.elementFromPoint(e.clientX, e.clientY);
+  const t = e.target.closest("[data-kind]") || (under && svgEl.contains(under) ? under.closest("[data-kind]") : null);
+  if (!t) { select(null); return; }
+  const b = svgEl.getBoundingClientRect();
+  $("mapInfo").classList.toggle("left", e.clientX > b.left + b.width * 0.5);
+  select(t.dataset.kind, t.dataset.id);
+});
+svgEl.addEventListener("dblclick", e => { e.preventDefault(); const [px, py] = clientToMap(e.clientX, e.clientY); zoomAt(e.shiftKey ? 0.5 : 2, px, py); });
+svgEl.addEventListener("wheel", e => {
+  if (!isFs() && !(e.ctrlKey || e.metaKey)) { hint("Hold Ctrl (⌘ on Mac) and scroll to zoom, or open full screen"); return; }
+  e.preventDefault();
+  const [px, py] = clientToMap(e.clientX, e.clientY);
+  zoomAt(Math.exp(-Math.max(-60, Math.min(60, e.deltaY)) * 0.004), px, py);
+}, {passive: false});
+svgEl.addEventListener("keydown", e => {
+  const k = e.key, m = {ArrowLeft: [-.15, 0], ArrowRight: [.15, 0], ArrowUp: [0, -.15], ArrowDown: [0, .15]}[k];
+  if (m) { panBy(...m); e.preventDefault(); }
+  else if (k === "+" || k === "=") { zoomCenter(1.4); e.preventDefault(); }
+  else if (k === "-" || k === "_") { zoomCenter(1 / 1.4); e.preventDefault(); }
+  else if (k === "0") { resetView(); e.preventDefault(); }
+  else if (k === "f" || k === "F") { toggleFs(); e.preventDefault(); }
+});
+svgEl.addEventListener("mouseover", e => { const t = e.target.closest("[data-tip]"); if (t && !gesture?.moved) { tip.textContent = t.dataset.tip; tip.hidden = false; move(e); } });
+svgEl.addEventListener("mousemove", e => { if (!tip.hidden) move(e); });
+svgEl.addEventListener("mouseout", e => { if (!e.relatedTarget || !svgEl.contains(e.relatedTarget) || !e.relatedTarget.closest("[data-tip]")) tip.hidden = true; });
+let hintTimer = null;
+function hint(text){ const h = $("mapHint"); h.textContent = text; h.classList.add("show"); clearTimeout(hintTimer); hintTimer = setTimeout(() => h.classList.remove("show"), 1600); }
+
+// ---- full screen: native when the browser allows it, an in-page overlay otherwise
+const isFs = () => document.body.classList.contains("map-fs");
+async function enterFs(){
+  const keep = view && [view[0] + view[2] / 2, view[1] + view[3] / 2, view[2]];
+  document.body.classList.add("map-fs");
+  $("fsBtn").setAttribute("aria-pressed", "true"); $("fsBtn").textContent = "Exit full screen";
+  try { if (document.documentElement.requestFullscreen && !document.fullscreenElement) await document.documentElement.requestFullscreen(); } catch (err) {}
+  refit(keep); svgEl.focus({preventScroll: true});
+  hint("Drag to pan · scroll or pinch to zoom · click anything for detail · Esc to exit");
+}
+function exitFs(){
+  const keep = view && [view[0] + view[2] / 2, view[1] + view[3] / 2, view[2]];
+  document.body.classList.remove("map-fs");
+  $("fsBtn").setAttribute("aria-pressed", "false"); $("fsBtn").textContent = "Full screen";
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  refit(keep);
+}
+const toggleFs = () => (isFs() ? exitFs() : enterFs());
+document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement && isFs()) exitFs(); });
+function refit(keep){
+  requestAnimationFrame(() => {
+    if (!keep) { view = fitBox(regionBox(ui.region)); }
+    else { const R = ratio(), w = keep[2]; view = clampView([keep[0] - w / 2, keep[1] - w / R / 2, w, w / R]); }
+    applyView(); drawOverlay();
+  });
+}
+new ResizeObserver(() => { if (view) { const c = [view[0] + view[2] / 2, view[1] + view[3] / 2, view[2]]; const R = ratio(); view = clampView([c[0] - c[2] / 2, c[1] - c[2] / R / 2, c[2], c[2] / R]); applyView(); } }).observe(svgEl);
 
 // ============================================================ tooltips
 const tip = $("tip");
@@ -641,18 +919,27 @@ function renderChips(){
     (n ? `<span class="chip" style="background:var(--accent);color:var(--accent-ink)">${n} what-if change(s)</span>` : "");
   $("chgCount").textContent = n;
 }
-function setRegion(r){ ui.region = r; ui.zoom = 1; if (ui.country && r !== "All" && R.data.regionFor(ui.country) !== r) ui.country = null; renderView(); }
+function setRegion(r){
+  ui.region = r;
+  if (ui.country && r !== "All" && R.data.regionFor(ui.country) !== r) { ui.country = null; if (selected && selected.kind === "country") selected = null; }
+  renderView(); resetView();
+}
 function initControls(){
-  $("regionSeg").innerHTML = ["All", ...REGIONS].map(r => `<button type="button" data-r="${esc(r)}" aria-pressed="${ui.region === r}">${esc(r === "All" ? "All" : r)}</button>`).join("");
-  $("regionSeg").querySelectorAll("button").forEach(b => b.addEventListener("click", () => setRegion(b.dataset.r)));
+  ["regionSeg", "regionSegFs"].forEach(id => {
+    $(id).innerHTML = ["All", ...REGIONS].map(r => `<button type="button" data-r="${esc(r)}" aria-pressed="${ui.region === r}">${esc(r)}</button>`).join("");
+    $(id).querySelectorAll("button").forEach(b => b.addEventListener("click", () => setRegion(b.dataset.r)));
+  });
   $("mapScenario").innerHTML = [`<option value="best">Best in-scope per order</option>`, ...SC.map(s => `<option value="${s}">${esc(E.LABELS[s])}</option>`)].join("");
   $("mapMetric").innerHTML = metricDefs().map(m => `<option value="${m.key}">${esc(m.label)}</option>`).join("");
   $("method").innerHTML = [["customer_first","Customer-first paperwork"],["customs_touchpoints","Customs touchpoints"],["handoffs","Handoffs"],["doc_steps","Documentation steps"]].map(([k,l]) => `<option value="${k}">${l}</option>`).join("");
-  $("mapScenario").addEventListener("change", e => { ui.mapScenario = e.target.value; drawMap(); });
-  $("mapMetric").addEventListener("change", e => { ui.mapMetric = e.target.value; drawMap(); });
+  $("mapScenario").addEventListener("change", e => { ui.mapScenario = e.target.value; drawCountries(); drawOverlay(); renderInfo(); });
+  $("mapMetric").addEventListener("change", e => { ui.mapMetric = e.target.value; drawCountries(); });
   $("method").addEventListener("change", e => { ui.method = e.target.value; renderView(); });
-  $("zin").addEventListener("click", () => { ui.zoom = Math.min(4, ui.zoom * 1.4); drawMap(); });
-  $("zout").addEventListener("click", () => { ui.zoom = Math.max(1, ui.zoom / 1.4); drawMap(); });
+  $("zin").addEventListener("click", () => zoomCenter(1.4));
+  $("zout").addEventListener("click", () => zoomCenter(1 / 1.4));
+  $("zreset").addEventListener("click", resetView);
+  $("fsBtn").addEventListener("click", toggleFs);
+  $("fsParams").addEventListener("click", openDrawer);
 }
 
 // ============================================================ parameter drawer
@@ -726,7 +1013,12 @@ function closeDrawer(){ $("drawer").hidden = true; $("scrim").hidden = true; }
 $("openParams").addEventListener("click", openDrawer);
 $("closeParams").addEventListener("click", closeDrawer);
 $("scrim").addEventListener("click", closeDrawer);
-document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("drawer").hidden) closeDrawer(); });
+document.addEventListener("keydown", e => {
+  if (e.key !== "Escape") return;
+  if (!$("drawer").hidden) closeDrawer();
+  else if (selected && isFs()) select(null);
+  else if (isFs()) exitFs();
+});
 $("resetAll").addEventListener("click", () => { W = clone(BASE); whatIf = {redSea: false, euAll: false}; excluded = new Set(); $("copyout").hidden = true; changed(true); });
 $("copyChanges").addEventListener("click", () => {
   const d = diff();
@@ -738,7 +1030,7 @@ $("copyChanges").addEventListener("click", () => {
 
 // ============================================================ render
 function renderView(){
-  $("regionSeg").querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.r === ui.region)));
+  document.querySelectorAll("#regionSeg button, #regionSegFs button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.r === ui.region)));
   renderChips(); renderRegions(); drawMap(); renderCountry(); renderSM(); renderOrder(); renderIssues();
 }
 load(); initControls(); compute(); renderView();

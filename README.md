@@ -133,6 +133,11 @@ HTML file that runs the whole simulator in the browser, with no Python and no se
   Parameters > Apply changes from the interactive dashboard writes back into the workspace.
 - Region cards, scorecard small multiples, order explorer with route override, issues list and the
   data request table.
+- Map navigation: drag to pan, Ctrl/⌘ + scroll or pinch to zoom (plain scroll in full screen),
+  double-click to zoom in (Shift + double-click out), + / − / arrows / 0 on the keyboard, F for full screen.
+  Full screen uses the browser's full screen when allowed and a page overlay otherwise; the parameter
+  drawer still opens over it. Click a country, issue, node, lane or customer for a detail card with
+  zoom and jump actions.
 
 The browser engine (`flexitog/assets/engine.js`) is a port of `engine.py`/`batch.py`.
 `tests/test_dashboard_engine.py` runs both on the same batch and requires identical results, so change
