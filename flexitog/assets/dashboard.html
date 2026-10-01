@@ -231,15 +231,147 @@ details.grp .gbody{padding:0 12px 12px;display:flex;flex-direction:column;gap:8p
 #copyout{width:100%;min-height:90px;font:11px var(--mono)}
 @media (max-width:1100px){.maprow{grid-template-columns:minmax(0,1fr)}.explorer,.bottom{grid-template-columns:minmax(0,1fr)}}
 @media (max-width:760px){.regions{grid-template-columns:minmax(0,1fr)}.sm{grid-template-columns:minmax(0,1fr);gap:0}.sm .ch.first,.sm .rh.sp{display:none}}
+/* menu */
+.topl{display:flex;gap:14px;align-items:flex-start;position:relative;min-width:0}
+.menubtn{flex:none;width:40px;height:40px;border:1px solid var(--rule);border-radius:8px;background:var(--surface);display:flex;flex-direction:column;justify-content:center;align-items:center;gap:4px;padding:0;margin-top:2px}
+.menubtn span{display:block;width:18px;height:2px;border-radius:1px;background:var(--ink);transition:transform .15s,opacity .15s}
+.menubtn[aria-expanded="true"]{background:var(--accent-soft)}
+.menubtn[aria-expanded="true"] span:nth-child(1){transform:translateY(6px) rotate(45deg)}
+.menubtn[aria-expanded="true"] span:nth-child(2){opacity:0}
+.menubtn[aria-expanded="true"] span:nth-child(3){transform:translateY(-6px) rotate(-45deg)}
+.menu{position:absolute;left:0;top:48px;z-index:25;width:min(340px,calc(100vw - 32px));max-height:calc(100vh - 80px);overflow-y:auto;background:var(--surface);border:1px solid var(--rule);border-radius:10px;box-shadow:0 14px 36px rgba(0,0,0,.2);padding:10px;display:flex;flex-direction:column;gap:4px}
+.menu .eyebrow{padding:8px 8px 2px}
+.menu > button{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;border:0;background:transparent;border-radius:6px;padding:8px 10px}
+.menu > button:hover{background:var(--surface-2)}
+.menu > button b{font-weight:600}
+.menu > button small{color:var(--muted);font-size:12px;line-height:1.35}
+.menu > button[aria-current="true"]{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}
+.mquick{display:flex;flex-wrap:wrap;gap:6px;padding:4px 8px}
+.mquick button{border:1px solid var(--rule);background:var(--surface-2);border-radius:999px;padding:4px 10px;font-size:12.5px}
+.mquick button:hover{border-color:var(--accent)}
+.mstore{font-size:11.5px;padding:8px 8px 2px;border-top:1px solid var(--rule);margin-top:6px}
+body[data-view="md"] .top>.controls,body[data-view="report"] .top>.controls{display:none}
+.view{display:flex;flex-direction:column;gap:18px;min-width:0}
+
+/* master data */
+.mdtop{display:flex;flex-wrap:wrap;gap:10px 18px;justify-content:space-between;align-items:center}
+.mdtop>p{max-width:640px;font-size:13px}
+.mdtopr{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.mdtopr .faint{font-size:12px}
+.tabs{display:flex;gap:4px;overflow-x:auto;border-bottom:1px solid var(--rule);scrollbar-width:thin}
+.tabs button{flex:none;border:1px solid transparent;border-bottom:0;background:transparent;border-radius:6px 6px 0 0;padding:8px 12px;font-size:13px;display:inline-flex;gap:6px;align-items:center;color:var(--muted);margin-bottom:-1px}
+.tabs button:hover{color:var(--ink)}
+.tabs button[aria-selected="true"]{background:var(--surface);border-color:var(--rule);color:var(--ink);font-weight:600}
+.tabs .cnt{font:500 10.5px/1 var(--mono);background:var(--surface-2);border:1px solid var(--rule);border-radius:999px;padding:2px 6px;color:var(--muted)}
+.tabs .dot{width:7px;height:7px;border-radius:50%;background:var(--st-warning)}
+.tabs .sv{color:#0ca30c;font-size:9px}
+.mdhead{display:flex;flex-wrap:wrap;gap:6px 18px;justify-content:space-between;align-items:flex-end}
+.mdhead p{font-size:13px;max-width:760px}
+.mdmeta{font-size:12px}
+.warnc{color:var(--st-critical);font-weight:600}
+.mdbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.mdbar input[type=search]{background:var(--surface);border:1px solid var(--rule);border-radius:6px;padding:6px 9px;min-width:0;width:220px;max-width:100%}
+.mdbar .sp{flex:1 1 0}
+.mdbar .btn{padding:6px 10px;font-size:13px}
+.btn:disabled{opacity:.45;cursor:default}
+.mdgrid{max-height:62vh;overflow:auto}
+.mdgrid th{position:sticky;top:0;z-index:1;white-space:nowrap}
+.mdgrid td{padding:3px 4px;vertical-align:middle}
+.mdgrid td input[type=text],.mdgrid td input[type=number],.mdgrid td input[type=date],.mdgrid td select{width:100%;min-width:96px;background:transparent;border:1px solid transparent;border-radius:4px;padding:4px 5px;font:12.5px var(--body)}
+.mdgrid td input[type=number]{font-family:var(--mono);min-width:80px}
+.mdgrid td input[data-f="name"],.mdgrid td input[data-f="description"],.mdgrid td input[data-f="address"],.mdgrid td input[data-f="notes"],.mdgrid td input[data-f="port_of_entry"],.mdgrid td input[data-f="serves_countries"],.mdgrid td input[data-f="skus_supplied"]{min-width:190px}
+.iact{display:flex;flex-wrap:wrap;gap:8px}
+.mdgrid td input:hover,.mdgrid td select:hover{border-color:var(--rule)}
+.mdgrid td input:focus,.mdgrid td select:focus{border-color:var(--accent);background:var(--surface);outline:0}
+.mdgrid td .bad{border-color:var(--st-critical);background:color-mix(in srgb,var(--st-critical) 8%,transparent)}
+.mdgrid .rn{color:var(--faint);font:11px var(--mono);text-align:right;width:1%}
+.mdgrid tr.hasissue td.rn{color:var(--st-critical);font-weight:600}
+.req{color:var(--st-critical)}
+.srcb{font:500 10px/1 var(--mono);padding:3px 6px;border-radius:999px;white-space:nowrap}
+.srcb.ph{background:var(--band);box-shadow:inset 0 0 0 1px var(--band-edge)}
+.srcb.im{background:color-mix(in srgb,#0ca30c 18%,transparent)}
+.srcb.mn{background:var(--accent-soft)}
+.del{border:0;background:transparent;color:var(--faint);font-size:18px;line-height:1;padding:2px 6px;border-radius:4px}
+.del:hover{color:var(--st-critical);background:var(--surface-2)}
+.pager{display:flex;gap:10px;align-items:center;justify-content:flex-end;font-size:12.5px}
+.mdissues{border:1px solid color-mix(in srgb,var(--st-critical) 40%,var(--rule));border-radius:6px;padding:6px 10px;font-size:12.5px}
+.mdissues summary{cursor:pointer;font-weight:600;color:var(--st-critical)}
+.mdissues ul{margin:6px 0 0;padding-left:18px;max-height:180px;overflow:auto}
+.upcard{border:1px solid var(--accent);border-radius:8px;background:var(--surface-2);padding:12px 14px;display:flex;flex-direction:column;gap:10px;position:relative}
+.upcard h4{font:600 13px var(--display);margin:0 0 6px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+.uph{display:flex;justify-content:space-between;gap:8px;padding-right:24px}
+.upcard .iclose{position:absolute;right:8px;top:6px;border:0;background:transparent;font-size:20px;line-height:1;color:var(--muted)}
+.upcard input[type=number]{background:var(--surface);border:1px solid var(--rule);border-radius:6px;padding:5px 8px}
+.drop{border:2px dashed var(--rule);border-radius:8px;padding:22px 14px;display:flex;justify-content:center;align-items:center;gap:10px;flex-wrap:wrap;background:var(--surface);cursor:pointer;text-align:center}
+.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+.drop input{max-width:100%}
+.upgrid{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:14px}
+.upgrid .tablewrap{max-height:320px;overflow:auto}
+.upgrid select{width:100%}
+.checks{list-style:none;margin:0 0 8px;padding:0;display:flex;flex-direction:column;gap:5px;font-size:13px}
+.checks li{padding-left:20px;position:relative}
+.checks li::before{position:absolute;left:0;font-weight:700}
+.checks li.ok::before{content:"✓";color:#0ca30c}
+.checks li.no::before{content:"!";color:var(--st-critical)}
+.filebtn{position:relative;overflow:hidden;cursor:pointer}
+.filebtn input{position:absolute;inset:0;opacity:0;cursor:pointer}
+details.custom{border:1px solid var(--rule);border-radius:6px;padding:8px 10px;display:flex;flex-direction:column;gap:8px}
+details.custom>summary{cursor:pointer;display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline}
+details.custom .tablewrap{max-height:340px;overflow:auto;margin-top:8px}
+details.custom .iact{display:flex;gap:6px;margin-top:8px}
+@media (max-width:760px){.upgrid{grid-template-columns:minmax(0,1fr)}.mdbar input[type=search]{width:100%}.mdbar .sp{display:none}}
+
+/* report */
+.repbar{flex-direction:row;flex-wrap:wrap;justify-content:space-between;align-items:flex-end}
+.repnote{font-size:12px}
+.report{padding:22px 26px;gap:0;font-size:13px}
+.report .rh h1{font-size:24px;margin:4px 0 12px}
+.report .ey{font:500 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.report .meta{display:flex;flex-wrap:wrap;gap:6px 26px;margin:0 0 12px}
+.report .meta dt{font-size:11px;color:var(--muted)} .report .meta dd{margin:0;font-weight:600}
+.report .warnbox{background:var(--band);border-left:4px solid var(--band-edge);padding:8px 12px}
+.report .rs{margin:22px 0 0;overflow-x:auto}
+.report .rs h2{font-size:17px;border-bottom:2px solid var(--ink);padding-bottom:4px;display:flex;gap:10px;align-items:baseline;margin-bottom:8px}
+.report .rs h2 span{font:600 12px var(--mono);color:var(--muted)}
+.report .rs p{margin:6px 0;max-width:900px}
+.report .lead{color:var(--muted)}
+.report ul,.report ol{margin:6px 0;padding-left:20px;display:flex;flex-direction:column;gap:6px;max-width:960px}
+.report table{margin:8px 0;font-size:12px}
+.report th{white-space:nowrap}
+/* toast */
+.toast{position:fixed;left:50%;bottom:20px;transform:translate(-50%,20px);background:var(--ink);color:var(--ground);padding:9px 14px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:40;max-width:calc(100vw - 32px)}
+.toast.show{opacity:.95;transform:translate(-50%,0)}
+.toast.bad{background:var(--st-critical);color:#fff}
+@media (max-width:760px){.report{padding:14px}}
 @media (prefers-reduced-motion:no-preference){.drawer{animation:slide .18s ease-out}@keyframes slide{from{transform:translateX(24px);opacity:.6}}}
 </style>
 
 <div class="app">
   <header class="top">
-    <div class="brand">
-      <span class="eyebrow">FlexiTog EU · Helmond hub · Türkiye, North Africa, Gulf/GCC</span>
-      <h1>FlexiTog Route Dashboard</h1>
-      <div class="chips" id="chips"></div>
+    <div class="topl">
+      <button type="button" class="menubtn" id="menuBtn" aria-label="Menu" aria-expanded="false" aria-controls="menu" title="Menu"><span></span><span></span><span></span></button>
+      <nav class="menu" id="menu" hidden aria-label="Main menu">
+        <p class="eyebrow">Views</p>
+        <button type="button" data-go="dash" aria-current="true"><b>Dashboard</b><small>Map, scorecard and order explorer</small></button>
+        <button type="button" data-go="md"><b>Master data upload</b><small>Products, customers, suppliers, logistics providers, sales history and other data</small></button>
+        <button type="button" data-go="report"><b>Report extract</b><small>Standard cross-border supply chain report as Excel, HTML or CSV</small></button>
+        <p class="eyebrow">Settings</p>
+        <button type="button" data-act="params"><b>Parameters</b><small>Freight, duties, compliance, lead times, scenarios and partners</small></button>
+        <p class="eyebrow">Go to master data</p>
+        <div class="mquick">
+          <button type="button" data-act="md-tab" data-tab="products">Products</button>
+          <button type="button" data-act="md-tab" data-tab="customers">Customers</button>
+          <button type="button" data-act="md-tab" data-tab="suppliers">Suppliers</button>
+          <button type="button" data-act="md-tab" data-tab="distribution_centers">Logistics providers</button>
+          <button type="button" data-act="md-tab" data-tab="sales_history">Sales history</button>
+        </div>
+        <p class="faint mstore" id="menuStore"></p>
+      </nav>
+      <div class="brand">
+        <span class="eyebrow">FlexiTog EU · Helmond hub · Türkiye, North Africa, Gulf/GCC</span>
+        <h1 id="viewTitle">FlexiTog Route Dashboard</h1>
+        <div class="chips" id="chips"></div>
+      </div>
     </div>
     <div class="controls">
       <div class="ctl"><label>Region</label><div class="seg" id="regionSeg"></div></div>
@@ -248,6 +380,7 @@ details.grp .gbody{padding:0 12px 12px;display:flex;flex-direction:column;gap:8p
     </div>
   </header>
 
+  <div id="viewDash" class="view">
   <section class="regions" id="regions" aria-label="Region summary"></section>
 
   <section class="maprow">
@@ -299,7 +432,36 @@ details.grp .gbody{padding:0 12px 12px;display:flex;flex-direction:column;gap:8p
       <p class="muted" style="font-size:13px">Collect in this order. The Excel pack <span class="num">templates/FlexiTog_data_request_pack.xlsx</span> has one sheet per row.</p>
       <div class="tablewrap"><table id="dataReq"></table></div></div>
   </section>
+  </div>
+
+  <div id="viewMD" class="view" hidden>
+    <div class="mdtop">
+      <p class="muted">Enter or upload the data the simulator runs on. Each tab is one table. Changes apply to the map, scorecard and report after you press Save changes.</p>
+      <div class="mdtopr"><span class="faint" id="storeStatus"></span>
+        <button type="button" class="btn ghost" id="mdTemplates">Upload templates (Excel)</button>
+        <button type="button" class="btn ghost" id="mdExportAll">Export all master data (Excel)</button></div>
+    </div>
+    <div class="tabs" id="mdTabs" role="tablist" aria-label="Master data tables"></div>
+    <div class="card" id="mdPanel" role="tabpanel"></div>
+  </div>
+
+  <div id="viewReport" class="view" hidden>
+    <div class="card repbar">
+      <div class="controls">
+        <div class="ctl"><label for="repRegion">Regions</label><select id="repRegion"></select></div>
+        <label class="toggle"><input type="checkbox" id="repAppendix" checked><span>Order appendix<small>One line per order</small></span></label>
+      </div>
+      <div class="controls">
+        <button type="button" class="btn" id="repXlsx">Excel workbook</button>
+        <button type="button" class="btn ghost" id="repHtml">HTML report</button>
+        <button type="button" class="btn ghost" id="repCsv">Order results CSV</button>
+      </div>
+    </div>
+    <p class="faint repnote">The report follows the current parameters, what-if switches and master data. Change them, then come back here.</p>
+    <article class="card report" id="repBody"></article>
+  </div>
 </div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <div class="scrim" id="scrim" hidden></div>
 <aside class="drawer" id="drawer" hidden aria-label="Parameters">
@@ -310,6 +472,7 @@ details.grp .gbody{padding:0 12px 12px;display:flex;flex-direction:column;gap:8p
 </aside>
 <div id="tip" hidden></div>
 
+<script>/*XLSX*/</script>
 <script>/*ENGINE*/</script>
 <script>
 "use strict";
@@ -327,8 +490,22 @@ const CNAME = c => PAYLOAD.names.countries[c] || c;
 const GCC = ["SA", "AE", "QA", "KW", "BH", "OM"];
 const STORE_KEY = "flexitog-dashboard-v1";
 
+// ============================================================ master data (source of truth for the engine)
+const MD_KEYS = ["products", "customers", "suppliers", "distribution_centers", "lanes", "sales_history", "demand_forecast", "orders", "order_lines"];
+const MD_BUILTIN = {products: PAYLOAD.data.products, customers: PAYLOAD.data.customers, suppliers: PAYLOAD.data.suppliers,
+  distribution_centers: PAYLOAD.data.dcs, lanes: PAYLOAD.data.lanes, sales_history: PAYLOAD.data.sales_history || [],
+  demand_forecast: PAYLOAD.data.demand_forecast || [], orders: PAYLOAD.tests.orders, order_lines: PAYLOAD.tests.lines};
+const MD = {t: clone(MD_BUILTIN), custom: [], saved: {}};
+const MD_LOCAL = "flexitog-md-v1:";
+(function loadLocalMasterData(){
+  try {
+    MD_KEYS.forEach(k => { const v = localStorage.getItem(MD_LOCAL + k); if (v) { const o = JSON.parse(v); MD.t[k] = o.rows; MD.saved[k] = {updated: o.updated, where: "browser"}; } });
+    const c = localStorage.getItem(MD_LOCAL + "custom"); if (c) MD.custom = JSON.parse(c);
+  } catch (e) {}
+})();
+
 // ============================================================ state
-const BASE = {params: clone(PAYLOAD.data.params), dcs: clone(PAYLOAD.data.dcs), products: clone(PAYLOAD.data.products)};
+const BASE = {params: clone(PAYLOAD.data.params), dcs: clone(MD.t.distribution_centers), products: clone(MD.t.products)};
 let W = clone(BASE);                      // working copy the drawer edits
 let whatIf = {redSea: false, euAll: false};
 let excluded = new Set();
@@ -360,8 +537,21 @@ function load(){
 }
 
 // ============================================================ compute
+let BATCH = {orders: PAYLOAD.batch.orders, lines: PAYLOAD.batch.lines, extra: [], notes: [], source: PAYLOAD.meta.source};
+const regionOf = c => PAYLOAD.data.country_region[c] || "Other";
+function buildBatch(products){
+  if (MD.t.sales_history.length) {
+    const hb = E.historyBatch(MD.t.sales_history, MD.t.customers, products, regionOf);
+    if (hb.orders.length) return {orders: hb.orders, lines: hb.lines, extra: hb.customers, notes: hb.notes, source: "sales history"};
+  }
+  return {orders: PAYLOAD.batch.orders, lines: PAYLOAD.batch.lines, extra: [], notes: [], source: PAYLOAD.meta.source === "sales history" ? "built-in test batch" : PAYLOAD.meta.source};
+}
 function effectiveRaw(){
   const raw = Object.assign({}, PAYLOAD.data);
+  BATCH = buildBatch(W.products);
+  raw.customers = MD.t.customers.concat(BATCH.extra.filter(x => !MD.t.customers.some(c => c.customer_id === x.customer_id)));
+  raw.suppliers = MD.t.suppliers; raw.lanes = MD.t.lanes; raw.sales_history = MD.t.sales_history;
+  raw.history = E.historyCounts(MD.t.sales_history);
   raw.params = clone(W.params);
   raw.dcs = W.dcs.filter(d => !excluded.has(d.dc_id));
   raw.products = W.products.map(p => whatIf.euAll ? Object.assign({}, p, {country_of_origin: "NL"}) : p);
@@ -372,7 +562,7 @@ function effectiveRaw(){
 }
 function compute(){
   const data = E.makeData(effectiveRaw());
-  const rows = E.runBatch(PAYLOAD.batch.orders, PAYLOAD.batch.lines, data);
+  const rows = E.runBatch(BATCH.orders, BATCH.lines, data);
   // "best in-scope per order": the available in-scope row with the lowest risk-adjusted score
   const byOrder = {};
   rows.forEach(r => (byOrder[r.order_id] = byOrder[r.order_id] || []).push(r));
@@ -384,6 +574,7 @@ function compute(){
     best.push(Object.assign({}, b, {bestOf: b.scenario, scenario: "best"}));
   });
   R = {data, rows, best, byOrder};
+  LOCS = {};
 }
 function rowsFor(scenario){ return scenario === "best" ? R.best : R.rows.filter(r => r.scenario === scenario); }
 function regionCard(){ return E.scorecard(R.rows, ui.method, r => r.region); }
@@ -434,7 +625,20 @@ const MAPW = BM.width, MAPH = BM.height;
 const rad = d => d * Math.PI / 180;
 function proj(lat, lon){ return [BM.k * rad(lon - BM.view.lonMin), BM.k * (BM.yTop - Math.log(Math.tan(Math.PI / 4 + rad(Math.max(-80, Math.min(80, lat))) / 2)))]; }
 const REGION_BOX = {All: [-14, 62, 12, 56], "Türkiye": [14, 46, 33, 52.5], "North Africa": [-14, 36, 20, 43], "Gulf/GCC": [32, 62, 12, 33]};
-const loc = (kind, id) => PAYLOAD.geo.locations[`${kind}:${id}`] || null;
+let LOCS = {};
+function loc(kind, id){
+  const k = kind + ":" + id;
+  if (k in LOCS) return LOCS[k];
+  const rows = kind === "cust" ? R.data.customers : R.data.dcs;
+  const row = rows.find(x => String(kind === "cust" ? x.customer_id : x.dc_id) === String(id));
+  let p = null;
+  if (row) {
+    const la = Number(row.latitude), lo = Number(row.longitude);
+    if (row.latitude != null && row.longitude != null && row.latitude !== "" && Number.isFinite(la) && Number.isFinite(lo)) p = [la, lo];
+    else p = city(row.city) || PAYLOAD.centroids[row.country] || null;
+  }
+  return (LOCS[k] = p);
+}
 const city = name => PAYLOAD.geo.cities[String(name || "").toLowerCase()] || null;
 const svgEl = $("map");
 const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -673,7 +877,7 @@ $("mapInfo").addEventListener("click", e => {
   else if (act === "params") { openDrawer(); const g = document.querySelector('details.grp[data-g="dcs"]'); if (g) { g.open = true; g.scrollIntoView({block: "start"}); } }
   else if (act === "panel") { if (isFs()) exitFs(); $("countryPanel").scrollIntoView({behavior: REDUCED ? "auto" : "smooth", block: "start"}); }
   else if (act === "order") {
-    const o = PAYLOAD.batch.orders.find(x => x.customer_id === selected.id) || PAYLOAD.tests.orders.find(x => x.customer_id === selected.id);
+    const o = BATCH.orders.find(x => x.customer_id === selected.id) || MD.t.orders.find(x => x.customer_id === selected.id);
     if (o) { ui.orderId = o.order_id; ui.override = "auto"; renderOrder(); if (isFs()) exitFs(); $("orderCard").scrollIntoView({behavior: REDUCED ? "auto" : "smooth", block: "start"}); }
   }
 });
@@ -806,7 +1010,7 @@ function renderCountry(){
   const c = ui.country;
   if (!c) {
     el.innerHTML = `<h2>Country detail</h2><p class="empty">Click a country on the map to compare the four scenarios for its orders and see its issues.</p>` +
-      `<dl class="kv"><dt>Batch</dt><dd>${PAYLOAD.batch.orders.length} orders from ${esc(PAYLOAD.meta.source)}</dd><dt>Countries</dt><dd>${[...new Set(R.rows.map(r => r.country))].length}</dd></dl>`;
+      `<dl class="kv"><dt>Batch</dt><dd>${BATCH.orders.length} orders from ${esc(BATCH.source)}</dd><dt>Countries</dt><dd>${[...new Set(R.rows.map(r => r.country))].length}</dd></dl>`;
     return;
   }
   const rows = SC.map(s => ({s, a: countryCard(s)[c]}));
@@ -853,9 +1057,9 @@ function renderSM(){
 
 // ============================================================ order explorer
 function orderList(){
-  const t = PAYLOAD.tests.orders.map(o => ({o, lines: PAYLOAD.tests.lines.filter(l => l.order_id === o.order_id), group: "Test orders"}));
+  const t = MD.t.orders.map(o => ({o, lines: MD.t.order_lines.filter(l => l.order_id === o.order_id), group: "Test orders"}));
   const inRegion = o => { const c = R.data.customers.find(x => x.customer_id === o.customer_id); return ui.region === "All" || (c && R.data.regionFor(c.country) === ui.region); };
-  const b = PAYLOAD.batch.orders.filter(inRegion).slice(0, 300).map(o => ({o, lines: PAYLOAD.batch.lines.filter(l => l.order_id === o.order_id), group: "Batch orders"}));
+  const b = BATCH.orders.filter(inRegion).slice(0, 300).map(o => ({o, lines: BATCH.lines.filter(l => l.order_id === o.order_id), group: "Batch orders"}));
   return [...t, ...b];
 }
 function renderOrder(){
@@ -915,7 +1119,7 @@ function renderChips(){
   const ph = R.rows.filter(r => r.available).reduce((a, r, _, arr) => a + r.placeholder_cost_share / arr.length, 0);
   const n = diff().length + (whatIf.redSea ? 1 : 0) + (whatIf.euAll ? 1 : 0) + excluded.size;
   $("chips").innerHTML = (PAYLOAD.meta.demo ? `<span class="chip demo">Dummy data · read the tool, not the numbers</span>` : "") +
-    `<span class="chip">${PAYLOAD.batch.orders.length} orders · ${esc(PAYLOAD.meta.source)}</span><span class="chip">${pct(ph)} of cost on placeholders</span><span class="chip">built ${esc(PAYLOAD.meta.generated)}</span>` +
+    `<span class="chip">${BATCH.orders.length} orders · ${esc(BATCH.source)}</span><span class="chip">${pct(ph)} of cost on placeholders</span><span class="chip">built ${esc(PAYLOAD.meta.generated)}</span>` +
     (n ? `<span class="chip" style="background:var(--accent);color:var(--accent-ink)">${n} what-if change(s)</span>` : "");
   $("chgCount").textContent = n;
 }
@@ -1035,3 +1239,4 @@ function renderView(){
 }
 load(); initControls(); compute(); renderView();
 </script>
+<script>/*WORKSPACE*/</script>

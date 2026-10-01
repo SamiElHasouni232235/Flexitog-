@@ -2,8 +2,9 @@
 
 The page embeds the current workspace (master data, parameters, batch orders), the JavaScript
 port of the engine (assets/engine.js), a projected basemap and the regional issues. Every
-parameter change in the page reruns the batch in the browser. No server, no external requests
-except Google Fonts.
+parameter change in the page reruns the batch in the browser. The menu (top left) opens the
+master data editor and upload (assets/workspace.js) and the report extract. SheetJS is inlined for
+Excel read and write. No server, no external requests except Google Fonts.
 """
 from __future__ import annotations
 
@@ -18,9 +19,9 @@ from . import batch as B
 from . import parameters as P
 from .datarequest import DATASETS
 from .engine import Data
-from .geo import CITIES, PORT_ROUTES, lane_path, locate
+from .geo import CITIES, COUNTRY_CENTROIDS, PORT_ROUTES, lane_path, locate
 from .issues import ISSUES
-from .schema import COUNTRY_NAMES, COUNTRY_REGION, DC_TYPE_LABELS, EU27, PLACEHOLDER, SOURCE_COL
+from .schema import COUNTRY_ALIASES, COUNTRY_NAMES, COUNTRY_REGION, DC_TYPE_LABELS, ENTITIES, EU27, PLACEHOLDER, SOURCE_COL
 
 ASSETS = Path(__file__).parent / "assets"
 
@@ -59,10 +60,12 @@ def build_payload(ws, per_region_synthetic: int = 15) -> dict:
     return {
         "meta": {"generated": date.today().strftime("%d %b %Y"), "source": source, "demo": demo, "notes": notes},
         "data": {
-            "products": _records(data.products), "customers": _records(customers),
+            "products": _records(data.products), "customers": _records(ws.load("customers")),
             "suppliers": _records(data.suppliers), "dcs": _records(data.dcs), "lanes": _records(data.lanes),
             "history": {"via": {str(k): int(v) for k, v in via.items()},
                         "direct": {str(k): int(v) for k, v in direct.items()}},
+            "sales_history": _records(ws.load("sales_history")),
+            "demand_forecast": _records(ws.load("demand_forecast")),
             "params": {name: _records(ws.load_params(name)) for name in P.DEFAULT_TABLES},
             "country_region": COUNTRY_REGION, "eu27": sorted(EU27),
         },
@@ -71,6 +74,9 @@ def build_payload(ws, per_region_synthetic: int = 15) -> dict:
         "geo": {"basemap": json.loads((ASSETS / "basemap.json").read_text(encoding="utf-8")),
                 "cities": CITIES, "locations": locs, "lanes": lanes},
         "issues": ISSUES,
+        "schema": {key: {"label": e.label, "primary_key": e.primary_key, "description": e.description,
+                         "fields": [f.to_dict() for f in ws.entity(key).fields]} for key, e in ENTITIES.items()},
+        "country_aliases": COUNTRY_ALIASES, "centroids": COUNTRY_CENTROIDS,
         "names": {"countries": COUNTRY_NAMES, "dc_types": DC_TYPE_LABELS},
         "datasets": [{"sheet": d[0], "priority": d[3], "why": d[4], "where": d[5], "target": d[6]} for d in DATASETS],
     }
@@ -115,4 +121,10 @@ def build_html(ws) -> str:
     payload = json.dumps(build_payload(ws), ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
     template = (ASSETS / "dashboard.html").read_text(encoding="utf-8")
     engine = (ASSETS / "engine.js").read_text(encoding="utf-8")
-    return template.replace("/*ENGINE*/", engine).replace("/*PAYLOAD*/null", payload)
+    xlsx = (ASSETS / "vendor" / "xlsx.full.min.js").read_text(encoding="utf-8")
+    workspace = (ASSETS / "workspace.js").read_text(encoding="utf-8")
+    for name, js in (("engine.js", engine), ("xlsx.full.min.js", xlsx), ("workspace.js", workspace)):
+        if "</script" in js.lower():
+            raise ValueError(f"{name} contains a closing script tag")
+    return (template.replace("/*XLSX*/", xlsx, 1).replace("/*ENGINE*/", engine, 1)
+            .replace("/*WORKSPACE*/", workspace, 1).replace("/*PAYLOAD*/null", payload, 1))

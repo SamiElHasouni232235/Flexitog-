@@ -423,7 +423,68 @@
     return out;
   }
 
-  const api = { makeData, evaluate, runBatch, scorecard, bestRoute, M, LABELS, SCENARIOS, IN_SCOPE, STUDY_REGIONS,
-                FLEXITOG, PARTNER, CUSTOMER, PLACEHOLDER, REAL };
+  // ------------------------------------------------------------------ sales history (port of Data.history_counts and batch.history_batch)
+  const HELMOND_IDS = new Set(["HLM", "HELMOND", "NL", ""]);
+  const dayMs = 86400000;
+  const parseDate = v => { if (blank(v)) return NaN; const t = Date.parse(String(v).length === 10 ? v + "T00:00:00Z" : v); return t; };
+
+  /** Distinct orders in the last 12 months per shipped_via node, and per country for direct Helmond orders. */
+  function historyCounts(sales) {
+    const via = {}, direct = {};
+    if (!sales || !sales.length) return { via, direct };
+    const t = sales.map(r => parseDate(r.order_date));
+    const valid = t.filter(Number.isFinite);
+    const cutoff = valid.length ? Math.max(...valid) - 365 * dayMs : -Infinity;
+    const seenVia = {}, seenDir = {};
+    sales.forEach((r, i) => {
+      if (valid.length && !(t[i] >= cutoff)) return;
+      const v = str(r.shipped_via).toUpperCase();
+      (seenVia[v] = seenVia[v] || new Set()).add(str(r.order_id));
+      if (HELMOND_IDS.has(v)) { const c = str(r.country); (seenDir[c] = seenDir[c] || new Set()).add(str(r.order_id)); }
+    });
+    Object.entries(seenVia).forEach(([k, s]) => { via[k] = s.size; });
+    Object.entries(seenDir).forEach(([k, s]) => { direct[k] = s.size; });
+    return { via, direct };
+  }
+
+  /** One batch order per historical order. Returns {orders, lines, customers (extra), notes}. */
+  function historyBatch(sales, customers, products, regionFor) {
+    const notes = [];
+    if (!sales || !sales.length) return { orders: [], lines: [], customers: [], notes: ["Sales history is empty"] };
+    const known = {}; customers.forEach(c => { known[str(c.customer_id)] = c.country; });
+    const upp = {}; const skus = new Set();
+    products.forEach(p => { skus.add(str(p.sku)); upp[str(p.sku)] = blank(p.units_per_pallet) ? NaN : Number(p.units_per_pallet); });
+    let rows = sales.map(r => Object.assign({}, r, { _country: !blank(known[str(r.customer_id)]) ? known[str(r.customer_id)] : (blank(r.country) ? null : r.country) }));
+    const noCountry = rows.filter(r => !r._country);
+    if (noCountry.length) { notes.push(`${new Set(noCountry.map(r => r.order_id)).size} historical order(s) skipped: no country on the sales row or in the customer table`); rows = rows.filter(r => r._country); }
+    const badSku = rows.filter(r => !skus.has(str(r.sku)));
+    if (badSku.length) { notes.push(`${badSku.length} sales line(s) skipped: SKU not in the product table (e.g. ${badSku[0].sku})`); rows = rows.filter(r => skus.has(str(r.sku))); }
+    const heads = new Map();
+    rows.forEach(r => {
+      const id = str(r.order_id);
+      if (!heads.has(id)) heads.set(id, { order_id: id, customer_id: r.customer_id, country: r._country, order_date: r.order_date, est: 0, pal: 0 });
+      const h = heads.get(id);
+      const share = num(r.quantity) / upp[str(r.sku)];
+      if (Number.isFinite(share)) h.est += share;
+      if (!blank(r.pallets) && Number.isFinite(Number(r.pallets))) h.pal += Number(r.pallets);
+    });
+    const ids = [...heads.keys()].sort();
+    const orders = ids.map(id => {
+      const h = heads.get(id);
+      const pc = h.pal > 0 ? h.pal : (h.est > 0 ? Math.max(1, Math.ceil(h.est - 1e-9)) : 1);
+      return { order_id: id, customer_id: h.customer_id, pallet_count: pc, pallet_type: "EUR", order_date: h.order_date, batch: "history", data_source: "history" };
+    });
+    const agg = new Map();
+    rows.forEach(r => { const k = str(r.order_id) + "\u0000" + str(r.sku); agg.set(k, (agg.get(k) || 0) + num(r.quantity)); });
+    const lines = [...agg.keys()].sort().map(k => { const [order_id, sku] = k.split("\u0000"); return { order_id, sku, quantity: agg.get(k) }; });
+    const extra = [], seen = new Set();
+    ids.forEach(id => { const h = heads.get(id); const c = str(h.customer_id);
+      if (!(c in known) && !seen.has(c)) { seen.add(c); extra.push({ customer_id: c, name: c, country: h.country, region: regionFor(h.country), city: null, data_source: "history" }); } });
+    if (extra.length) notes.push(`${extra.length} customer(s) not in the customer table, placed at country level only`);
+    return { orders, lines, customers: extra, notes };
+  }
+
+  const api = { makeData, evaluate, runBatch, scorecard, bestRoute, historyCounts, historyBatch, M, LABELS, SCENARIOS, IN_SCOPE,
+                STUDY_REGIONS, FLEXITOG, PARTNER, CUSTOMER, PLACEHOLDER, REAL };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.FlexEngine = api;
 })(typeof window !== "undefined" ? window : globalThis);

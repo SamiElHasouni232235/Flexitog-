@@ -139,6 +139,34 @@ HTML file that runs the whole simulator in the browser, with no Python and no se
   drawer still opens over it. Click a country, issue, node, lane or customer for a detail card with
   zoom and jump actions.
 
+### Menu, master data and report extract
+
+The menu button (three lines, top left) opens Dashboard, Master data upload, Report extract and
+Parameters, plus shortcuts to the main master data tabs.
+
+- Master data upload: one tab per table. Products, Customers, Suppliers, Logistics providers
+  (distributors, 3PLs, owned warehouses and the Helmond hub, filterable by type), Lanes, Sales history,
+  Demand forecast, Test orders, Test order lines and Other data (any file: rate cards, quotes, shipment
+  logs). Each tab is an editable table with search, add and delete row, required-field and allowed-value
+  checks, CSV export and a CSV template. Upload CSV (comma, semicolon or tab) or Excel: the page finds
+  the sheet and header row, matches columns to fields (same aliases as the Python importer), converts
+  countries to ISO codes, reads 1.234,50 and 13-09-2025, and shows a check and preview before rows go in.
+  Modes: update matching and add new, add all, replace. Save changes reruns the map, scorecard and report.
+  Sales history rebuilds the batch in the browser (one order per historical order, same rules as
+  `batch.history_batch`). Header buttons give the whole master data as one Excel workbook and an
+  Excel workbook of upload templates.
+- Saving: in the published artifact, saved tables are stored with the dashboard and everyone who opens
+  it sees them. Opened as a local file, they stay in that browser. Export the master data workbook to
+  move data into the Python tool (Import data accepts it sheet by sheet).
+- Report extract: a standard cross-border supply chain report for all regions or one. Sections:
+  executive summary, scope and method, scenario scorecard, landed cost breakdown, lead time breakdown,
+  demand profile, network (logistics providers and lanes), trade compliance by country, risk and issue
+  register, data quality, recommendations, and an order appendix. Export as an Excel workbook (one sheet
+  per section plus all orders), an HTML report or a CSV of every order and scenario.
+
+Excel read and write uses SheetJS Community Edition 0.18.5 (Apache-2.0), inlined from
+`flexitog/assets/vendor/`. The menu and master data code is `flexitog/assets/workspace.js`.
+
 The browser engine (`flexitog/assets/engine.js`) is a port of `engine.py`/`batch.py`.
 `tests/test_dashboard_engine.py` runs both on the same batch and requires identical results, so change
 both together. Issues are in `flexitog/issues.py` (briefing notes to verify) plus rules computed in the

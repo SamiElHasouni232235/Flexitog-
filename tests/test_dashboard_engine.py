@@ -114,6 +114,9 @@ def test_dashboard_html_is_self_contained(ws):
     assert "FlexEngine" in page
     for host in ("cdnjs", "jsdelivr", "unpkg"):
         assert host not in page
+    assert "/*XLSX*/" not in page and "/*WORKSPACE*/" not in page
+    assert 'id="menuBtn"' in page and 'id="viewMD"' in page and 'id="viewReport"' in page
+    assert "SheetJS" in page and "function renderMD" in page
     assert len(page.encode()) < 3_000_000
 
 
@@ -131,3 +134,63 @@ def test_apply_dashboard_changes(ws):
     dcs = ws.load("distribution_centers")
     assert dcs.iloc[1]["status"] == "existing" and dcs.iloc[1]["data_source"] == "manual"
     assert any("skipped" in l for l in log) and any("Red Sea" in l for l in log)
+
+
+HISTORY_RUNNER = """
+const E = require(process.argv[2]);
+const p = JSON.parse(require('fs').readFileSync(process.argv[3], 'utf8'));
+const regionFor = c => p.data.country_region[c] || 'Other';
+const hb = E.historyBatch(p.data.sales_history, p.data.customers, p.data.products, regionFor);
+const raw = Object.assign({}, p.data, {customers: p.data.customers.concat(hb.customers), history: E.historyCounts(p.data.sales_history)});
+const rows = E.runBatch(hb.orders, hb.lines, E.makeData(raw));
+console.log(JSON.stringify({hb, sc: E.scorecard(rows, 'customer_first'), history: raw.history}));
+"""
+
+
+def run_history_js(payload, tmp_path):
+    (tmp_path / "p.json").write_text(json.dumps(payload))
+    (tmp_path / "h.js").write_text(HISTORY_RUNNER)
+    out = subprocess.run([NODE, str(tmp_path / "h.js"), str(ASSETS / "engine.js"), str(tmp_path / "p.json")],
+                         capture_output=True, text=True, check=True)
+    return json.loads(out.stdout)
+
+
+def test_history_batch_matches_python(ws, tmp_path):
+    """The dashboard rebuilds the batch from uploaded sales history in the browser."""
+    sh = ws.load("sales_history")
+    extra = pd.DataFrame([
+        {"order_id": "SO-NEW-1", "order_date": "2026-03-01", "customer_id": "C-NEW", "sku": "FT-GLV-100",
+         "quantity": 2500, "country": "OM", "data_source": "manual"},
+        {"order_id": "SO-NEW-1", "order_date": "2026-03-01", "customer_id": "C-NEW", "sku": "FT-GLV-100",
+         "quantity": 100, "country": "OM", "data_source": "manual"},
+        {"order_id": "SO-NEW-2", "order_date": "2026-03-02", "customer_id": "C-NEW2", "sku": "NOT-A-SKU",
+         "quantity": 5, "country": "QA", "data_source": "manual"},
+    ])
+    ws.save("sales_history", pd.concat([sh, extra], ignore_index=True))
+    payload = build_payload(ws)
+    js = run_history_js(payload, tmp_path)
+    data = Data.from_workspace(ws)
+    orders, lines, new_cust, notes = B.history_batch(data)
+    assert [o["order_id"] for o in js["hb"]["orders"]] == list(orders["order_id"])
+    assert [o["pallet_count"] for o in js["hb"]["orders"]] == pytest.approx(list(orders["pallet_count"].astype(float)))
+    assert [o["customer_id"] for o in js["hb"]["orders"]] == list(orders["customer_id"])
+    jl = [(l["order_id"], l["sku"], l["quantity"]) for l in js["hb"]["lines"]]
+    assert jl == [(r.order_id, r.sku, pytest.approx(r.quantity)) for r in lines.itertuples()]
+    assert sorted(c["customer_id"] for c in js["hb"]["customers"]) == sorted(new_cust["customer_id"])
+    assert js["hb"]["notes"] == notes
+    new = next(o for o in js["hb"]["orders"] if o["order_id"] == "SO-NEW-1")
+    assert new["pallet_count"] == 3  # 2600 gloves at 1200 per pallet
+
+    # same scorecard as Python on the rebuilt batch
+    data = replace(data, customers=pd.concat([data.customers, new_cust], ignore_index=True), _history=None)
+    via, _ = data.history_counts()
+    assert js["history"]["via"] == {str(k): int(v) for k, v in via.items()}
+    sc = B.scorecard(B.run_batch(orders, lines, data), "customer_first")
+    jsc = {(r["group"], r["scenario"]): r for r in js["sc"]}
+    for r in sc.to_dict("records"):
+        j = jsc[(r["region"], r["scenario"])]
+        for k in ("cost_per_unit_eur", "lead_time_days", "hassle", "coverage"):
+            if pd.isna(r[k]):
+                assert j[k] is None
+            else:
+                assert j[k] == pytest.approx(r[k], rel=1e-9, abs=1e-9), (r["region"], r["scenario"], k)
