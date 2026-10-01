@@ -530,7 +530,8 @@ def build_route(ctx: OrderContext, data: Data, scenario: str, dc: dict | None = 
 
     # ---- supplier inbound (same for every scenario, days only hit the baseline)
     if ctx.supplier:
-        f = data.freight_option("inbound", "NL")
+        mode = ctx.supplier.get("inbound_mode")
+        f = data.freight_option("inbound", "NL", prefer_mode="sea" if blank(mode) else str(mode).strip().lower())
         cost = max(num(f["min_charge_eur"]), num(f["eur_per_pallet"]) * Pal) if f else 0.0
         route.steps.append(Step(
             step=f"Inbound {ctx.supplier['supplier_id']} -> Helmond", category="freight", cost_eur=cost,

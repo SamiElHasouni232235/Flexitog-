@@ -1,3 +1,4 @@
+<meta charset="utf-8">
 <title>FlexiTog Route Dashboard</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -8,8 +9,9 @@
   --ground:#f2f4f6; --surface:#ffffff; --surface-2:#f7f9fa; --ink:#14212c; --muted:#56636f; --faint:#8a95a0; --rule:#d9dfe4;
   --accent:#1f3a55; --accent-ink:#ffffff; --accent-soft:#e2e9f0; --band:#fff4d6; --band-edge:#d9a400;
   --sea:#e8eef3; --land:#dfe4e8; --land-edge:#ffffff; --land-study:#cfd6dc;
-  --s-cif_baseline:#8a8984; --s-distributor:#2a78d6; --s-3pl:#eb6834; --s-owned_warehouse:#1baf7a;
+  --s-cif_baseline:#8a8984; --s-distributor:#b8329b; --s-3pl:#eb6834; --s-owned_warehouse:#1baf7a;
   --p-flexitog:#4a3aa7; --p-partner:#eda100; --p-customer:#e87ba4;
+  --supplier:#2a78d6;
   --q1:#cde2fb; --q2:#86b6ef; --q3:#3987e5; --q4:#1c5cab; --q5:#0d366b;
   --st-critical:#d03b3b; --st-serious:#ec835a; --st-warning:#fab219; --st-info:#6f8193;
   --display:"IBM Plex Sans Condensed","Arial Narrow",Arial,sans-serif;
@@ -21,8 +23,9 @@
   --ground:#0d1318; --surface:#141c23; --surface-2:#18212a; --ink:#e6edf3; --muted:#a3b0bc; --faint:#6d7b88; --rule:#26323c;
   --accent:#9cc0e3; --accent-ink:#0d1318; --accent-soft:#1b2a38; --band:#2d2616; --band-edge:#c98500;
   --sea:#0f171e; --land:#1f2a33; --land-edge:#0d1318; --land-study:#2a3742;
-  --s-cif_baseline:#8f8e89; --s-distributor:#3987e5; --s-3pl:#d95926; --s-owned_warehouse:#199e70;
+  --s-cif_baseline:#8f8e89; --s-distributor:#c94fb0; --s-3pl:#d95926; --s-owned_warehouse:#199e70;
   --p-flexitog:#9085e9; --p-partner:#c98500; --p-customer:#d55181;
+  --supplier:#3987e5;
   --q1:#184f95; --q2:#256abf; --q3:#3987e5; --q4:#6da7ec; --q5:#b7d3f6;
 }}
 :root[data-theme="dark"]{
@@ -30,8 +33,9 @@
   --ground:#0d1318; --surface:#141c23; --surface-2:#18212a; --ink:#e6edf3; --muted:#a3b0bc; --faint:#6d7b88; --rule:#26323c;
   --accent:#9cc0e3; --accent-ink:#0d1318; --accent-soft:#1b2a38; --band:#2d2616; --band-edge:#c98500;
   --sea:#0f171e; --land:#1f2a33; --land-edge:#0d1318; --land-study:#2a3742;
-  --s-cif_baseline:#8f8e89; --s-distributor:#3987e5; --s-3pl:#d95926; --s-owned_warehouse:#199e70;
+  --s-cif_baseline:#8f8e89; --s-distributor:#c94fb0; --s-3pl:#d95926; --s-owned_warehouse:#199e70;
   --p-flexitog:#9085e9; --p-partner:#c98500; --p-customer:#d55181;
+  --supplier:#3987e5;
   --q1:#184f95; --q2:#256abf; --q3:#3987e5; --q4:#6da7ec; --q5:#b7d3f6;
 }
 *{box-sizing:border-box}
@@ -99,6 +103,13 @@ select{background:var(--surface);border:1px solid var(--rule);border-radius:6px;
 #map .node.cand{fill-opacity:.35;stroke-dasharray:2 2}
 #map .issue path{stroke:var(--surface);stroke-width:1;vector-effect:non-scaling-stroke}
 #map .issue text{font:700 9px var(--mono);fill:#14212c;pointer-events:none}
+#map .supin{fill:none;stroke:var(--supplier);stroke-width:1.6;opacity:.8;vector-effect:non-scaling-stroke;stroke-linecap:round;stroke-linejoin:round}
+#map .supin.road{stroke-dasharray:5 3}
+#map .supin.on{opacity:1;stroke-width:3}
+#map .sup{fill:var(--supplier);stroke:var(--surface);stroke-width:1.2;vector-effect:non-scaling-stroke;cursor:pointer}
+#map .sup.on{stroke:var(--ink);stroke-width:2.5}
+#map .slabel{font:600 10px var(--mono);fill:var(--supplier);paint-order:stroke;stroke:var(--land);stroke-width:3px;pointer-events:none}
+#map .capenote{font:500 10px var(--mono);fill:var(--supplier);paint-order:stroke;stroke:var(--sea);stroke-width:3px;pointer-events:none}
 #map .hub{fill:var(--ink);stroke:var(--surface);stroke-width:1.2;vector-effect:non-scaling-stroke}
 #map .clabel{font:500 10px var(--mono);fill:var(--ink);paint-order:stroke;stroke:var(--land);stroke-width:3px;pointer-events:none}
 .maplegend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12px;color:var(--muted);align-items:center}
@@ -401,11 +412,12 @@ details.custom .iact{display:flex;gap:6px;margin-top:8px}
               <button type="button" id="zout" aria-label="Zoom out" title="Zoom out (−)">–</button>
               <button type="button" id="zreset" aria-label="Reset view" title="Reset view (0)">⟲</button>
             </div>
+            <button type="button" class="btn ghost" id="supView" title="Show the suppliers and their routes to Helmond (S)">Suppliers</button>
             <button type="button" class="btn ghost fs-only" id="fsParams">Parameters</button>
             <button type="button" class="btn" id="fsBtn" aria-pressed="false" title="Full screen (F)">Full screen</button>
           </div>
         </div>
-        <svg id="map" role="application" aria-label="Map of routes from Helmond. Arrow keys pan, plus and minus zoom, 0 resets, F toggles full screen." tabindex="0"><g id="gCountries"></g><g id="gOver"></g></svg>
+        <svg id="map" role="application" aria-label="Map of routes from Helmond and suppliers. Arrow keys pan, plus and minus zoom, 0 resets, S shows suppliers, F toggles full screen." tabindex="0"><g id="gCountries"></g><g id="gOver"></g></svg>
         <div class="minfo" id="mapInfo" hidden aria-live="polite"></div>
         <div class="mlegend fs-only" id="mapLegendFs"></div>
         <div class="mhint" id="mapHint" role="status"></div>
@@ -629,8 +641,9 @@ let LOCS = {};
 function loc(kind, id){
   const k = kind + ":" + id;
   if (k in LOCS) return LOCS[k];
-  const rows = kind === "cust" ? R.data.customers : R.data.dcs;
-  const row = rows.find(x => String(kind === "cust" ? x.customer_id : x.dc_id) === String(id));
+  const rows = kind === "cust" ? R.data.customers : kind === "sup" ? R.data.suppliers : R.data.dcs;
+  const idf = kind === "cust" ? "customer_id" : kind === "sup" ? "supplier_id" : "dc_id";
+  const row = rows.find(x => String(x[idf]) === String(id));
   let p = null;
   if (row) {
     const la = Number(row.latitude), lo = Number(row.longitude);
@@ -640,6 +653,28 @@ function loc(kind, id){
   return (LOCS[k] = p);
 }
 const city = name => PAYLOAD.geo.cities[String(name || "").toLowerCase()] || null;
+// Supplier -> Helmond as one or two polylines (the Cape route leaves the map and comes back).
+function supplierMode(sp){ const m = String(sp.inbound_mode || "").trim().toLowerCase(); return m || "sea"; }
+function supplierPath(sp){
+  const p = loc("sup", sp.supplier_id); if (!p) return null;
+  const G = PAYLOAD.geo.supply, hlm = PAYLOAD.geo.cities.helmond, mode = supplierMode(sp);
+  if (mode === "road") {
+    if (p[1] > 18.5 && p[0] < 46) return {mode, segs: [[p].concat(p[1] > 20 || p[0] > 42.5 ? G.serbia_road : G.adriatic_road)]};
+    return {mode, segs: [[p, hlm]]};
+  }
+  let start = [p];
+  if (p[1] > 100) start = start.concat(p[0] > 32 ? G.yellow_sea : [], G.east_asia);
+  else if (p[1] > 60) start = start.concat(G.south_asia);
+  else return {mode, segs: [[p, PAYLOAD.geo.cities.rotterdam, hlm]]};
+  return whatIf.redSea ? {mode, segs: [start.concat(G.suez)], via: "Suez"} : {mode, segs: [start.concat(G.cape_out), G.cape_in], via: "Cape"};
+}
+function supplierStats(sp){
+  const skus = new Set(String(sp.sku_ids || "").split(/[;,]/).map(x => x.trim()).filter(Boolean));
+  const price = Object.fromEntries(R.data.products.map(x => [x.sku, Number(x.unit_price_eur) || 0]));
+  let units = 0, value = 0, orders = new Set();
+  BATCH.lines.forEach(l => { if (skus.has(l.sku)) { units += Number(l.quantity) || 0; value += (Number(l.quantity) || 0) * (price[l.sku] || 0); orders.add(l.order_id); } });
+  return {skus: [...skus], units, value, orders: orders.size};
+}
 const svgEl = $("map");
 const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
 let view = null, drawnW = null, mapState = {lanes: {}, custs: {}, issues: [], nodes: {}};
@@ -759,6 +794,19 @@ function drawOverlay(){
   const maxP = Math.max(1, ...Object.values(lanes).map(l => l.pallets));
   const path = pts => pts.map((p, i) => { const [x, y] = proj(p[0], p[1]); return (i ? "L" : "M") + x.toFixed(1) + "," + y.toFixed(1); }).join("");
   let h = "";
+  const sups = (R.data.suppliers || []).map(sp => ({sp, path: supplierPath(sp)})).filter(x => x.path);
+  sups.forEach(({sp, path: sp2}) => {
+    const t = `${sp.name} → Helmond (${sp2.mode}${sp2.via ? ", via " + sp2.via : ""}) · click for detail`;
+    sp2.segs.forEach(seg => {
+      h += `<path class="supin${sp2.mode === "road" ? " road" : ""}${sel("sup", sp.supplier_id) ? " on" : ""}" d="${path(seg)}"/>`;
+      h += `<path class="hit" d="${path(seg)}" data-kind="sup" data-id="${esc(sp.supplier_id)}" data-tip="${esc(t)}"/>`;
+    });
+  });
+  if (sups.some(x => x.path.via === "Cape")) {
+    const [x1, y1] = proj(-3.4, 54.5), [x2, y2] = proj(-3.4, -2.6);
+    h += `<text class="capenote" x="${x1.toFixed(1)}" y="${(y1 - 6 * scale).toFixed(1)}" text-anchor="middle" style="font-size:${(10 * scale).toFixed(2)}px">↓ via Cape of Good Hope</text>`;
+    h += `<text class="capenote" x="${(x2 + 4 * scale).toFixed(1)}" y="${(y2 - 6 * scale).toFixed(1)}" style="font-size:${(10 * scale).toFixed(2)}px">↑ from the Cape</text>`;
+  }
   Object.values(lasts).forEach(l => { h += `<path class="last" d="${path([l.a, l.b])}"/>`; });
   Object.values(lanes).sort((a, b) => b.pallets - a.pallets).forEach(l => {
     if (!l.pts) return;
@@ -782,6 +830,13 @@ function drawOverlay(){
     else if (d.dc_type === "3pl") h += `<rect class="${cls}" x="${X - s}" y="${y - s}" width="${2 * s}" height="${2 * s}" style="${st}" ${a}/>`;
     else h += `<path class="${cls}" d="M${X},${y - s * 1.3}L${X + s * 1.3},${y}L${X},${y + s * 1.3}L${X - s * 1.3},${y}Z" style="${st}" ${a}/>`;
   });
+  sups.forEach(({sp}) => {
+    const p = loc("sup", sp.supplier_id), [x, y] = proj(p[0], p[1]), s = 6.5 * scale;
+    const d = `M${x - s},${y + s}L${x - s},${y - s * .2}L${x - s * .33},${y - s * .75}L${x - s * .33},${y - s * .2}L${x + s * .33},${y - s * .75}L${x + s * .33},${y - s * .2}L${x + s},${y - s * .75}L${x + s},${y + s}Z`;
+    const t = `Supplier ${sp.name} · ${String(sp.brands || "").split(";").join(", ") || "no brand set"} · ${sp.lead_time_days != null ? fmt(sp.lead_time_days) + " days to Helmond" : ""} · click for detail`;
+    h += `<path class="sup${sel("sup", sp.supplier_id) ? " on" : ""}" d="${d}" data-kind="sup" data-id="${esc(sp.supplier_id)}" data-tip="${esc(t)}"/>`;
+    h += `<text class="slabel" x="${(x + s * 1.5).toFixed(1)}" y="${(y + s * .5).toFixed(1)}" style="font-size:${(10 * scale).toFixed(2)}px">${esc(sp.city || sp.supplier_id)}</text>`;
+  });
   const hub = proj(...PAYLOAD.geo.cities.helmond);
   h += `<path class="hub" d="${star(hub[0], hub[1], 8 * scale)}" data-kind="hub" data-id="HLM" data-tip="Helmond EU hub · origin of every flow"/>`;
   issues.forEach((i, n) => {
@@ -803,6 +858,7 @@ function drawLegend(metric){
   lg += `<span><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" style="stroke:var(--muted);stroke-width:3"/></svg>sea</span>`;
   lg += `<span><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" style="stroke:var(--muted);stroke-width:3;stroke-dasharray:6 4"/></svg>road</span>`;
   lg += `<span><svg width="12" height="12"><circle cx="6" cy="6" r="5" style="fill:var(--muted)"/></svg>distributor</span><span><svg width="12" height="12"><rect x="1" y="1" width="10" height="10" style="fill:var(--muted)"/></svg>3PL</span><span><svg width="14" height="14"><path d="M7,0L14,7L7,14L0,7Z" style="fill:var(--muted)"/></svg>owned</span><span class="faint">faded = not yet signed</span>`;
+  lg += `<span><svg width="14" height="12"><path d="M1,11L1,5L5,2L5,5L9,2L9,5L13,2L13,11Z" style="fill:var(--supplier)"/></svg>supplier</span><span><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" style="stroke:var(--supplier);stroke-width:2"/></svg>inbound to Helmond</span>`;
   lg += ["critical","serious","warning","info"].map(s => `<span><svg width="12" height="11"><path d="M6,0L12,11L0,11Z" style="fill:var(--st-${s})"/></svg>${s}</span>`).join("");
   $("mapLegend").innerHTML = lg;
   $("mapLegendFs").innerHTML = lg;
@@ -861,6 +917,18 @@ function renderInfo(){
     h = `<div class="ih"><span class="eyebrow">Customer</span><h3>${esc(cu.name || id)}</h3></div>` +
       `<dl class="kv"><dt>Location</dt><dd>${esc(cu.city || "")} ${esc(CNAME(cu.country))}</dd><dt>In batch</dt><dd>${c ? `${c.orders} orders, ${fmt(c.pallets)} pallets` : "none in this view"}</dd><dt>Today</dt><dd>${esc(cu.current_incoterm || "CIF")} to ${esc(cu.destination_port || "port")}</dd></dl>` +
       `<div class="iact">${btn("order", "Open an order")}</div>`;
+  } else if (kind === "sup") {
+    const sp = (R.data.suppliers || []).find(x => String(x.supplier_id) === String(id)); if (!sp) { el.hidden = true; return; }
+    const st = supplierStats(sp), pth = supplierPath(sp);
+    const prod = Object.fromEntries(R.data.products.map(x => [x.sku, x]));
+    h = `<div class="ih"><span class="eyebrow"><i class="sw" style="background:var(--supplier)"></i> Supplier</span><h3>${esc(sp.name)}</h3></div>` +
+      `<dl class="kv"><dt>Location</dt><dd>${esc(sp.city || "")} ${esc(CNAME(sp.country))}</dd><dt>Brands</dt><dd>${esc(String(sp.brands || "").split(";").filter(Boolean).join(", ") || "not set")}</dd>` +
+      `<dt>To Helmond</dt><dd>${esc(supplierMode(sp))}${pth && pth.via ? `, via ${pth.via}` : ""} · <span class="num">${sp.lead_time_days != null ? fmt(sp.lead_time_days) + " days" : "lead time not set"}</span></dd>` +
+      `<dt>Terms</dt><dd>${esc(sp.incoterm || "")} ${esc(sp.currency || "")}</dd>` +
+      `<dt>In batch</dt><dd>${st.orders} orders, ${fmt(st.units)} units, €${fmt(st.value)}</dd></dl>` +
+      `<ul class="ilist">${st.skus.map(k => `<li><span class="num">${esc(k)}</span> ${esc(prod[k] ? prod[k].description : "not in the product table")}${prod[k] && prod[k].country_of_origin ? ` <span class="faint">· origin ${esc(prod[k].country_of_origin)}</span>` : ""}</li>`).join("")}</ul>` +
+      (pth && pth.via === "Cape" ? `<p class="faint">Asia to Europe sailings run via the Cape of Good Hope while the Red Sea stays disrupted. The Red Sea switch in Parameters draws the Suez route.</p>` : "") +
+      `<div class="iact">${btn("zoom-sup", "Zoom here")}${btn("md-sup", "Edit supplier")}</div>`;
   } else if (kind === "hub") {
     h = `<div class="ih"><span class="eyebrow">Origin</span><h3>Helmond EU hub</h3></div><p>Every flow in this tool starts here. Stocked scenarios refill regional nodes from Helmond in consolidated loads.</p>`;
   }
@@ -874,6 +942,8 @@ $("mapInfo").addEventListener("click", e => {
   else if (act === "zoom-country") zoomToCountry(selected.id);
   else if (act === "goto-country") { select("country", b.dataset.c); zoomToCountry(b.dataset.c); }
   else if (act === "zoom-node") { const p = loc("dc", selected.id); if (p) zoomToPoint(p); }
+  else if (act === "zoom-sup") { const p = loc("sup", selected.id); if (p) zoomToPoint(p, 200); }
+  else if (act === "md-sup") { if (isFs()) exitFs(); MDUI.tab = "suppliers"; MDUI.filter = String(selected.id); showView("md"); }
   else if (act === "params") { openDrawer(); const g = document.querySelector('details.grp[data-g="dcs"]'); if (g) { g.open = true; g.scrollIntoView({block: "start"}); } }
   else if (act === "panel") { if (isFs()) exitFs(); $("countryPanel").scrollIntoView({behavior: REDUCED ? "auto" : "smooth", block: "start"}); }
   else if (act === "order") {
@@ -939,7 +1009,16 @@ svgEl.addEventListener("keydown", e => {
   else if (k === "-" || k === "_") { zoomCenter(1 / 1.4); e.preventDefault(); }
   else if (k === "0") { resetView(); e.preventDefault(); }
   else if (k === "f" || k === "F") { toggleFs(); e.preventDefault(); }
+  else if (k === "s" || k === "S") { supplyView(); e.preventDefault(); }
 });
+// Fit the suppliers and Helmond in view.
+function supplyView(){
+  const pts = (R.data.suppliers || []).map(sp => loc("sup", sp.supplier_id)).filter(Boolean).concat([PAYLOAD.geo.cities.helmond]);
+  const xy = pts.map(p => proj(p[0], p[1])), xs = xy.map(p => p[0]), ys = xy.map(p => p[1]);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  flyTo(fitBox([x0, y0, Math.max(60, x1 - x0), Math.max(40, y1 - y0)], 0.12));
+  hint("Suppliers in blue. Click one for its brands, products and route to Helmond");
+}
 svgEl.addEventListener("mouseover", e => { const t = e.target.closest("[data-tip]"); if (t && !gesture?.moved) { tip.textContent = t.dataset.tip; tip.hidden = false; move(e); } });
 svgEl.addEventListener("mousemove", e => { if (!tip.hidden) move(e); });
 svgEl.addEventListener("mouseout", e => { if (!e.relatedTarget || !svgEl.contains(e.relatedTarget) || !e.relatedTarget.closest("[data-tip]")) tip.hidden = true; });
@@ -1143,6 +1222,7 @@ function initControls(){
   $("zout").addEventListener("click", () => zoomCenter(1 / 1.4));
   $("zreset").addEventListener("click", resetView);
   $("fsBtn").addEventListener("click", toggleFs);
+  $("supView").addEventListener("click", supplyView);
   $("fsParams").addEventListener("click", openDrawer);
 }
 

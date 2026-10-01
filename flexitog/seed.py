@@ -11,15 +11,25 @@ from .schema import ENTITIES, PLACEHOLDER, SOURCE_COL
 from .importer import coerce_frame, enrich
 
 
+# FlexiTog's own line is made in Albania. RefrigiWear and Gold Freeze come mostly from China and
+# Bangladesh, with a few items from Serbia. Supplier names are placeholders.
 SUPPLIERS = [
-    {"supplier_id": "SUP-PK1", "name": "Placeholder Supplier Pakistan", "country": "PK", "city": "Sialkot",
-     "sku_ids": "FT-GLV-100;FT-GLV-200", "lead_time_days": 75, "incoterm": "FOB", "currency": "USD"},
-    {"supplier_id": "SUP-CN1", "name": "Placeholder Supplier China", "country": "CN", "city": "Ningbo",
-     "sku_ids": "FT-JKT-100;FT-JKT-200;FT-TRS-100", "lead_time_days": 90, "incoterm": "FOB", "currency": "USD"},
-    {"supplier_id": "SUP-BD1", "name": "Placeholder Supplier Bangladesh", "country": "BD", "city": "Dhaka",
-     "sku_ids": "FT-OVR-100;FT-BAL-100", "lead_time_days": 95, "incoterm": "FOB", "currency": "USD"},
-    {"supplier_id": "SUP-PT1", "name": "Placeholder Supplier Portugal", "country": "PT", "city": "Porto",
-     "sku_ids": "FT-BOT-100", "lead_time_days": 21, "incoterm": "DAP", "currency": "EUR"},
+    {"supplier_id": "SUP-AL1", "name": "Placeholder garment maker Albania", "country": "AL", "city": "Durrës",
+     "sku_ids": "FT-JKT-100;FT-JKT-200;FT-TRS-100;FT-OVR-100", "lead_time_days": 35, "incoterm": "DAP",
+     "currency": "EUR", "brands": "FlexiTog", "inbound_mode": "road",
+     "notes": "Cut-make-trim for the FlexiTog line. Road via Montenegro and Croatia, or ferry to Bari"},
+    {"supplier_id": "SUP-CN1", "name": "Placeholder workwear maker China (Ningbo)", "country": "CN", "city": "Ningbo",
+     "sku_ids": "RW-PRK-100;RW-GLV-100", "lead_time_days": 90, "incoterm": "FOB", "currency": "USD",
+     "brands": "RefrigiWear", "inbound_mode": "sea"},
+    {"supplier_id": "SUP-CN2", "name": "Placeholder glove maker China (Qingdao)", "country": "CN", "city": "Qingdao",
+     "sku_ids": "GF-GLV-200", "lead_time_days": 85, "incoterm": "FOB", "currency": "USD",
+     "brands": "Gold Freeze", "inbound_mode": "sea"},
+    {"supplier_id": "SUP-BD1", "name": "Placeholder garment maker Bangladesh (Chattogram)", "country": "BD",
+     "city": "Chattogram", "sku_ids": "RW-VST-100;GF-BAL-100;GF-TRS-200", "lead_time_days": 95, "incoterm": "FOB",
+     "currency": "USD", "brands": "RefrigiWear;Gold Freeze", "inbound_mode": "sea"},
+    {"supplier_id": "SUP-RS1", "name": "Placeholder footwear and hosiery maker Serbia", "country": "RS",
+     "city": "Leskovac", "sku_ids": "RW-BOT-100;GF-SOC-100", "lead_time_days": 30, "incoterm": "FCA",
+     "currency": "EUR", "brands": "RefrigiWear;Gold Freeze", "inbound_mode": "road"},
 ]
 
 DCS = [
@@ -83,30 +93,42 @@ CUSTOMERS = [
 ]
 
 PRODUCTS = [
-    {"sku": "FT-JKT-100", "description": "Freezer jacket -50°C", "product_family": "Jackets",
+    {"sku": "FT-JKT-100", "brand": "FlexiTog", "description": "Freezer jacket -50°C", "product_family": "Jackets",
      "unit_weight_kg": 2.1, "length_cm": 60, "width_cm": 40, "height_cm": 12, "unit_price_eur": 139,
-     "hs_code": "6201.40", "country_of_origin": "CN", "units_per_pallet": 120, "requires_conformity_cert": True},
-    {"sku": "FT-JKT-200", "description": "Chillroom jacket -20°C", "product_family": "Jackets",
+     "hs_code": "6201.40", "country_of_origin": "AL", "units_per_pallet": 120, "requires_conformity_cert": True},
+    {"sku": "FT-JKT-200", "brand": "FlexiTog", "description": "Chillroom jacket -20°C", "product_family": "Jackets",
      "unit_weight_kg": 1.5, "length_cm": 55, "width_cm": 38, "height_cm": 10, "unit_price_eur": 89,
-     "hs_code": "6201.40", "country_of_origin": "CN", "units_per_pallet": 160, "requires_conformity_cert": True},
-    {"sku": "FT-TRS-100", "description": "Freezer bib trousers -50°C", "product_family": "Trousers",
+     "hs_code": "6201.40", "country_of_origin": "AL", "units_per_pallet": 160, "requires_conformity_cert": True},
+    {"sku": "FT-TRS-100", "brand": "FlexiTog", "description": "Freezer bib trousers -50°C", "product_family": "Trousers",
      "unit_weight_kg": 1.8, "length_cm": 55, "width_cm": 40, "height_cm": 10, "unit_price_eur": 119,
-     "hs_code": "6203.43", "country_of_origin": "CN", "units_per_pallet": 140, "requires_conformity_cert": True},
-    {"sku": "FT-OVR-100", "description": "Freezer coverall -50°C", "product_family": "Coveralls",
+     "hs_code": "6203.43", "country_of_origin": "AL", "units_per_pallet": 140, "requires_conformity_cert": True},
+    {"sku": "FT-OVR-100", "brand": "FlexiTog", "description": "Freezer coverall -50°C", "product_family": "Coveralls",
      "unit_weight_kg": 3.2, "length_cm": 65, "width_cm": 45, "height_cm": 15, "unit_price_eur": 199,
-     "hs_code": "6201.40", "country_of_origin": "BD", "units_per_pallet": 80, "requires_conformity_cert": True},
-    {"sku": "FT-BAL-100", "description": "Thermal balaclava", "product_family": "Headwear",
+     "hs_code": "6201.40", "country_of_origin": "AL", "units_per_pallet": 80, "requires_conformity_cert": True},
+    {"sku": "RW-PRK-100", "brand": "RefrigiWear", "description": "Insulated freezer parka -45°C", "product_family": "Jackets",
+     "unit_weight_kg": 2.4, "length_cm": 62, "width_cm": 42, "height_cm": 14, "unit_price_eur": 169,
+     "hs_code": "6201.40", "country_of_origin": "CN", "units_per_pallet": 100, "requires_conformity_cert": True},
+    {"sku": "RW-VST-100", "brand": "RefrigiWear", "description": "Insulated freezer vest", "product_family": "Vests",
+     "unit_weight_kg": 0.9, "length_cm": 50, "width_cm": 35, "height_cm": 6, "unit_price_eur": 59,
+     "hs_code": "6201.40", "country_of_origin": "BD", "units_per_pallet": 300, "requires_conformity_cert": True},
+    {"sku": "RW-GLV-100", "brand": "RefrigiWear", "description": "Insulated freezer gloves", "product_family": "Gloves",
+     "unit_weight_kg": 0.25, "length_cm": 30, "width_cm": 15, "height_cm": 5, "unit_price_eur": 24,
+     "hs_code": "6116.10", "country_of_origin": "CN", "units_per_pallet": 1200, "requires_conformity_cert": True},
+    {"sku": "RW-BOT-100", "brand": "RefrigiWear", "description": "Insulated safety boots S3", "product_family": "Footwear",
+     "unit_weight_kg": 1.9, "length_cm": 35, "width_cm": 25, "height_cm": 15, "unit_price_eur": 129,
+     "hs_code": "6403.40", "country_of_origin": "RS", "units_per_pallet": 150, "requires_conformity_cert": True},
+    {"sku": "GF-GLV-200", "brand": "Gold Freeze", "description": "Cut-resistant liner gloves", "product_family": "Gloves",
+     "unit_weight_kg": 0.08, "length_cm": 25, "width_cm": 12, "height_cm": 2, "unit_price_eur": 9,
+     "hs_code": "6116.10", "country_of_origin": "CN", "units_per_pallet": 3000, "requires_conformity_cert": True},
+    {"sku": "GF-BAL-100", "brand": "Gold Freeze", "description": "Thermal balaclava", "product_family": "Headwear",
      "unit_weight_kg": 0.1, "length_cm": 25, "width_cm": 20, "height_cm": 3, "unit_price_eur": 14,
      "hs_code": "6505.00", "country_of_origin": "BD", "units_per_pallet": 2000, "requires_conformity_cert": False},
-    {"sku": "FT-GLV-100", "description": "Insulated freezer gloves", "product_family": "Gloves",
-     "unit_weight_kg": 0.25, "length_cm": 30, "width_cm": 15, "height_cm": 5, "unit_price_eur": 24,
-     "hs_code": "6116.10", "country_of_origin": "PK", "units_per_pallet": 1200, "requires_conformity_cert": True},
-    {"sku": "FT-GLV-200", "description": "Cut-resistant liner gloves", "product_family": "Gloves",
-     "unit_weight_kg": 0.08, "length_cm": 25, "width_cm": 12, "height_cm": 2, "unit_price_eur": 9,
-     "hs_code": "6116.10", "country_of_origin": "PK", "units_per_pallet": 3000, "requires_conformity_cert": True},
-    {"sku": "FT-BOT-100", "description": "Insulated safety boots S3", "product_family": "Footwear",
-     "unit_weight_kg": 1.9, "length_cm": 35, "width_cm": 25, "height_cm": 15, "unit_price_eur": 129,
-     "hs_code": "6403.40", "country_of_origin": "PT", "units_per_pallet": 150, "requires_conformity_cert": True},
+    {"sku": "GF-TRS-200", "brand": "Gold Freeze", "description": "Thermal trousers -30°C", "product_family": "Trousers",
+     "unit_weight_kg": 1.2, "length_cm": 50, "width_cm": 35, "height_cm": 8, "unit_price_eur": 79,
+     "hs_code": "6203.43", "country_of_origin": "BD", "units_per_pallet": 180, "requires_conformity_cert": True},
+    {"sku": "GF-SOC-100", "brand": "Gold Freeze", "description": "Thermal socks", "product_family": "Socks",
+     "unit_weight_kg": 0.12, "length_cm": 25, "width_cm": 10, "height_cm": 3, "unit_price_eur": 8,
+     "hs_code": "6115.96", "country_of_origin": "RS", "units_per_pallet": 4000, "requires_conformity_cert": False},
 ]
 
 LANES = [
@@ -183,9 +205,9 @@ ORDERS = [
 
 ORDER_LINES = [
     {"order_id": "T-SA-001", "sku": "FT-JKT-100", "quantity": 120},
-    {"order_id": "T-SA-001", "sku": "FT-GLV-100", "quantity": 300},
+    {"order_id": "T-SA-001", "sku": "RW-GLV-100", "quantity": 300},
     {"order_id": "T-TR-001", "sku": "FT-TRS-100", "quantity": 60},
-    {"order_id": "T-TR-001", "sku": "FT-BAL-100", "quantity": 200},
+    {"order_id": "T-TR-001", "sku": "GF-BAL-100", "quantity": 200},
 ]
 
 SEED = {

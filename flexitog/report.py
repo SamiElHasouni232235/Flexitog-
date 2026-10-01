@@ -97,7 +97,7 @@ TEMPLATE = r"""<title>FlexiTog Route Simulator</title>
 :root{
   --ground:#f3f5f7; --surface:#ffffff; --ink:#15222e; --muted:#566471; --faint:#8894a0; --rule:#d8dee4;
   --accent:#1f3a55; --accent-soft:#e3eaf1; --warn:#8c2f1b; --warn-soft:#f6e6e1; --band:#fff4d6;
-  --s-cif_baseline:#8a8984; --s-distributor:#2a78d6; --s-3pl:#eb6834; --s-owned_warehouse:#1baf7a;
+  --s-cif_baseline:#8a8984; --s-distributor:#b8329b; --s-3pl:#eb6834; --s-owned_warehouse:#1baf7a;
   --p-flexitog:#4a3aa7; --p-partner:#eda100; --p-customer:#e87ba4;
   --display:"IBM Plex Sans Condensed","Arial Narrow",Arial,sans-serif;
   --body:"IBM Plex Sans",-apple-system,"Segoe UI",Arial,sans-serif;
@@ -107,14 +107,14 @@ TEMPLATE = r"""<title>FlexiTog Route Simulator</title>
   color-scheme:dark;
   --ground:#0e141a; --surface:#151d25; --ink:#e6edf3; --muted:#a2afbb; --faint:#6f7d8a; --rule:#27333e;
   --accent:#9cc0e3; --accent-soft:#1c2b3a; --warn:#f0a08a; --warn-soft:#35201b; --band:#2e2716;
-  --s-cif_baseline:#8f8e89; --s-distributor:#3987e5; --s-3pl:#d95926; --s-owned_warehouse:#199e70;
+  --s-cif_baseline:#8f8e89; --s-distributor:#c94fb0; --s-3pl:#d95926; --s-owned_warehouse:#199e70;
   --p-flexitog:#9085e9; --p-partner:#c98500; --p-customer:#d55181;
 }}
 :root[data-theme="dark"]{
   color-scheme:dark;
   --ground:#0e141a; --surface:#151d25; --ink:#e6edf3; --muted:#a2afbb; --faint:#6f7d8a; --rule:#27333e;
   --accent:#9cc0e3; --accent-soft:#1c2b3a; --warn:#f0a08a; --warn-soft:#35201b; --band:#2e2716;
-  --s-cif_baseline:#8f8e89; --s-distributor:#3987e5; --s-3pl:#d95926; --s-owned_warehouse:#199e70;
+  --s-cif_baseline:#8f8e89; --s-distributor:#c94fb0; --s-3pl:#d95926; --s-owned_warehouse:#199e70;
   --p-flexitog:#9085e9; --p-partner:#c98500; --p-customer:#d55181;
 }
 *{box-sizing:border-box}

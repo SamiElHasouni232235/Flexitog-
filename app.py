@@ -549,7 +549,7 @@ def page_engine():
 
 
 # Baseline is the reference, so it takes a neutral grey. In-scope scenarios take categorical slots 1-3.
-SCENARIO_COLORS = {"Baseline: CIF to port": "#8a8984", "Distributor-held stock": "#2a78d6",
+SCENARIO_COLORS = {"Baseline: CIF to port": "#8a8984", "Distributor-held stock": "#b8329b",
                    "3PL presence": "#eb6834", "Owned non-EU warehouse": "#1baf7a"}
 SCORE_METRICS = {**B.METRICS, "cost_pct_of_value": ("Cost to serve, % of order value", True),
                  "coverage": ("Coverage (share of orders servable)", False)}

@@ -19,7 +19,7 @@ from . import batch as B
 from . import parameters as P
 from .datarequest import DATASETS
 from .engine import Data
-from .geo import CITIES, COUNTRY_CENTROIDS, PORT_ROUTES, lane_path, locate
+from .geo import CITIES, COUNTRY_CENTROIDS, PORT_ROUTES, lane_path, locate, supply_chains
 from .issues import ISSUES
 from .schema import COUNTRY_ALIASES, COUNTRY_NAMES, COUNTRY_REGION, DC_TYPE_LABELS, ENTITIES, EU27, PLACEHOLDER, SOURCE_COL
 
@@ -72,7 +72,7 @@ def build_payload(ws, per_region_synthetic: int = 15) -> dict:
         "batch": {"orders": _records(orders), "lines": _records(lines)},
         "tests": {"orders": _records(tests), "lines": _records(tlines[["order_id", "sku", "quantity"]])},
         "geo": {"basemap": json.loads((ASSETS / "basemap.json").read_text(encoding="utf-8")),
-                "cities": CITIES, "locations": locs, "lanes": lanes},
+                "cities": CITIES, "locations": locs, "lanes": lanes, "supply": supply_chains()},
         "issues": ISSUES,
         "schema": {key: {"label": e.label, "primary_key": e.primary_key, "description": e.description,
                          "fields": [f.to_dict() for f in ws.entity(key).fields]} for key, e in ENTITIES.items()},

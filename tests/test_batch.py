@@ -71,11 +71,11 @@ def test_history_batch_estimates_pallets_and_adds_unknown_customers(ws):
     sh = pd.DataFrame([
         {"order_id": "H1", "order_date": "2026-03-01", "customer_id": "C-SA-01", "sku": "FT-JKT-100",
          "quantity": 240},
-        {"order_id": "H1", "order_date": "2026-03-01", "customer_id": "C-SA-01", "sku": "FT-GLV-100",
+        {"order_id": "H1", "order_date": "2026-03-01", "customer_id": "C-SA-01", "sku": "RW-GLV-100",
          "quantity": 600},
-        {"order_id": "H2", "order_date": "2026-04-01", "customer_id": "NEW-EG", "sku": "FT-BAL-100",
+        {"order_id": "H2", "order_date": "2026-04-01", "customer_id": "NEW-EG", "sku": "GF-BAL-100",
          "quantity": 100, "country": "EG"},
-        {"order_id": "H3", "order_date": "2026-04-01", "customer_id": "NEW-XX", "sku": "FT-BAL-100",
+        {"order_id": "H3", "order_date": "2026-04-01", "customer_id": "NEW-XX", "sku": "GF-BAL-100",
          "quantity": 100},
     ])
     sh["data_source"] = "manual"

@@ -132,6 +132,9 @@ FREIGHT = _rows([
     {"leg": "inbound", "dest_country": "NL", "mode": "sea", "port_or_border": "Rotterdam",
      "eur_per_pallet": 140, "min_charge_eur": 300, "transit_days": 35,
      "source_note": "Asia-Rotterdam LCL + drayage to Helmond. Replace per supplier"},
+    {"leg": "inbound", "dest_country": "NL", "mode": "road", "port_or_border": "Balkans road",
+     "eur_per_pallet": 110, "min_charge_eur": 250, "transit_days": 5,
+     "source_note": "Albania / Serbia groupage truck to Helmond. Replace with the forwarder's quote"},
 ])
 
 

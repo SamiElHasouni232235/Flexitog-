@@ -19,6 +19,13 @@ CITIES = {
     "doha": (25.29, 51.53), "hamad": (25.01, 51.60), "kuwait city": (29.38, 47.99), "shuwaikh": (29.35, 47.93),
     "manama": (26.23, 50.59), "khalifa bin salman": (26.20, 50.72), "muscat": (23.59, 58.41), "sohar": (24.50, 56.63),
     "amman": (31.95, 35.93), "beirut": (33.89, 35.50), "baghdad": (33.31, 44.36),
+    # supplier cities
+    "ningbo": (29.87, 121.55), "qingdao": (36.07, 120.38), "shanghai": (31.23, 121.47), "shenzhen": (22.54, 114.06),
+    "chattogram": (22.34, 91.83), "chittagong": (22.34, 91.83), "dhaka": (23.81, 90.41),
+    "leskovac": (43.00, 21.95), "belgrade": (44.79, 20.45), "beograd": (44.79, 20.45), "niš": (43.32, 21.90),
+    "nis": (43.32, 21.90), "durrës": (41.32, 19.45), "durres": (41.32, 19.45), "tirana": (41.33, 19.82),
+    "shkodër": (42.07, 19.51), "shkoder": (42.07, 19.51), "korçë": (40.62, 20.78), "korce": (40.62, 20.78),
+    "sialkot": (32.49, 74.53), "karachi": (24.86, 67.01), "porto": (41.15, -8.61),
 }
 
 COUNTRY_CENTROIDS = {
@@ -26,6 +33,8 @@ COUNTRY_CENTROIDS = {
     "EG": (26.8, 30.8), "LY": (27.0, 17.2), "SA": (24.0, 45.0), "AE": (24.2, 54.4), "QA": (25.3, 51.2),
     "KW": (29.3, 47.6), "BH": (26.0, 50.55), "OM": (21.0, 57.0), "JO": (31.2, 36.5), "LB": (33.9, 35.9),
     "IQ": (33.0, 43.7), "IL": (31.0, 34.9),
+    "CN": (31.0, 112.0), "BD": (23.7, 90.3), "RS": (44.0, 20.9), "AL": (41.1, 20.0), "PK": (30.0, 70.0),
+    "IN": (22.0, 79.0), "VN": (16.0, 107.5), "PT": (39.6, -8.0),
 }
 
 # Sea and road waypoints. A lane is Helmond/Rotterdam -> chain -> destination.
@@ -94,3 +103,40 @@ def lane_path(port_or_border: str) -> dict | None:
         pts.extend(WAYPOINTS[name])
     pts.append(CITIES[end])
     return {"mode": mode, "points": pts}
+
+
+# ---------------------------------------------------------------- supply side (supplier -> Helmond)
+# Sea legs run east to west. The dashboard joins: supplier port -> Asia leg -> Suez or Cape -> Helmond.
+SUPPLY_LEGS = {
+    "yellow_sea": [(34.5, 122.6), (31.5, 123.0)],
+    "east_asia": [(27.5, 121.8), (24.5, 119.9), (22.0, 116.0), (15.0, 111.8), (8.0, 107.0), (2.0, 104.8),
+                  (1.25, 103.9), (2.6, 101.3), (5.9, 97.6), (5.6, 81.0), (6.5, 77.0)],
+    "south_asia": [(21.0, 91.5), (15.0, 88.5), (5.6, 81.0), (6.5, 77.0)],
+    "arabian_sea_to_aden": [(9.5, 62.0), (12.3, 50.0)],
+    # Cape of Good Hope: leaves the map at its southern edge and comes back off West Africa
+    "cape_out": [(2.0, 62.0), (-4.0, 54.0)],
+    "cape_in": [(-4.0, -3.0), (3.0, -12.0), (14.5, -17.8), (21.0, -17.6), (28.0, -15.8), (33.5, -11.0),
+                (37.0, -9.3), (43.3, -9.9)],
+    "serbia_road": [(44.79, 20.45), (47.50, 19.04), (48.20, 16.37), (48.14, 11.58), (50.11, 8.68)],
+    "adriatic_road": [(42.43, 19.26), (42.65, 18.09), (43.51, 16.44), (45.81, 15.98), (46.06, 14.51),
+                      (47.80, 13.04), (48.14, 11.58), (50.11, 8.68)],
+}
+
+
+def supply_chains() -> dict:
+    """Waypoint chains for supplier inbound lines on the dashboard map, all ending in Helmond."""
+    rev = lambda *names: [pt for n in names for pt in reversed(WAYPOINTS[n])]  # noqa: E731
+    helmond = [CITIES["helmond"]]
+    europe_from_atlantic = rev("north_sea") + helmond
+    return {
+        "yellow_sea": SUPPLY_LEGS["yellow_sea"],
+        "east_asia": SUPPLY_LEGS["east_asia"],
+        "south_asia": SUPPLY_LEGS["south_asia"],
+        "suez": SUPPLY_LEGS["arabian_sea_to_aden"]
+                + rev("bab_el_mandeb", "red_sea", "suez", "east_med", "central_med", "west_med", "iberia", "north_sea")
+                + helmond,
+        "cape_out": SUPPLY_LEGS["cape_out"],
+        "cape_in": SUPPLY_LEGS["cape_in"] + europe_from_atlantic,
+        "serbia_road": SUPPLY_LEGS["serbia_road"] + helmond,
+        "adriatic_road": SUPPLY_LEGS["adriatic_road"] + helmond,
+    }

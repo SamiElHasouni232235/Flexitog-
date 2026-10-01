@@ -39,10 +39,10 @@ On first run the tool fills every table with generic placeholder rows.
 
 | Table | Key | Notes |
 |---|---|---|
-| suppliers | supplier_id | SKUs (`;`-separated), lead time, location |
+| suppliers | supplier_id | SKUs (`;`-separated), brands, lead time, inbound mode (road/sea), location |
 | distribution_centers | dc_id | `dc_type`: helmond_hub, distributor, 3pl, owned_warehouse. `status`: existing, potential, candidate |
 | customers | customer_id | country, city, postal code. Region derived from country |
-| products | sku | weight, dimensions, unit price, HS code, origin, units per pallet, conformity cert flag |
+| products | sku | brand, weight, dimensions, unit price, HS code, origin, units per pallet, conformity cert flag |
 | lanes | lane_id | existing routes with status proven / occasional / unproven |
 | sales_history | order_id + sku | past order lines |
 | demand_forecast | period + sku + country + customer_id | forecast quantity |
@@ -106,8 +106,12 @@ margin, minimum order value, handoffs) and owned warehouse fixed cost. All ship 
 
 ## Demo data, HTML report and data request pack
 
-- The tool ships with dummy data: 20 customers, 8 SKUs, candidate distributors/3PLs/warehouses and
-  12 months of dummy sales history (192 orders). Overview > Reset to demo data restores it.
+- The tool ships with dummy data: 20 customers, 12 SKUs in three brands, 5 suppliers, candidate
+  distributors/3PLs/warehouses and 12 months of dummy sales history (192 orders). FlexiTog's own line
+  is made in Albania (Durrës, road to Helmond). RefrigiWear and Gold Freeze come mostly from China
+  (Ningbo, Qingdao) and Bangladesh (Chattogram) by sea, with boots and socks from Serbia (Leskovac) by
+  road. Albanian and Serbian origin pays the standard duty rate in the model; only EU origin gets the
+  preferential rate. Overview > Reset to demo data restores it.
 - HTML report: Batch and scorecard > Download HTML report, or `python tools/build_report.py`.
   One self-contained page with findings, the regional scorecard, one order route by route, the
   hassle method check and the data request list. `reports/demo_route_report.html` is the demo run.
@@ -138,6 +142,10 @@ HTML file that runs the whole simulator in the browser, with no Python and no se
   Full screen uses the browser's full screen when allowed and a page overlay otherwise; the parameter
   drawer still opens over it. Click a country, issue, node, lane or customer for a detail card with
   zoom and jump actions.
+- Suppliers in blue: a factory marker per supplier and its inbound route to Helmond (dashed = road).
+  Asia sea routes run via the Cape of Good Hope, or via Suez with the Red Sea switch on. The Suppliers
+  button (or S) frames the supply base; a supplier card lists brands, SKUs, origin, lead time and its
+  share of the batch. Distributor-held stock is plum so blue stays reserved for suppliers.
 
 ### Menu, master data and report extract
 
@@ -160,8 +168,9 @@ Parameters, plus shortcuts to the main master data tabs.
   move data into the Python tool (Import data accepts it sheet by sheet).
 - Report extract: a standard cross-border supply chain report for all regions or one. Sections:
   executive summary, scope and method, scenario scorecard, landed cost breakdown, lead time breakdown,
-  demand profile, network (logistics providers and lanes), trade compliance by country, risk and issue
-  register, data quality, recommendations, and an order appendix. Export as an Excel workbook (one sheet
+  demand profile, network (logistics providers and lanes), supply base (suppliers and brand mix),
+  trade compliance by country, risk and issue register, data quality, recommendations, and an order
+  appendix. Export as an Excel workbook (one sheet
   per section plus all orders), an HTML report or a CSV of every order and scenario.
 
 Excel read and write uses SheetJS Community Edition 0.18.5 (Apache-2.0), inlined from

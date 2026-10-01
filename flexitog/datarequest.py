@@ -55,9 +55,12 @@ DATASETS = [
      "Fixed cost per year (lease, staff, local entity) and planned pallets per year for each candidate "
      "location.", "Finance, management, real estate quotes.",
      "Parameters > Owned warehouse fixed cost (load file)"),
-    ("Suppliers", "entity", "suppliers", "Low",
-     "Only needed to simulate orders that start at a supplier instead of Helmond stock.",
-     "Purchasing.", "Import data > Suppliers"),
+    ("Suppliers", "entity", "suppliers", "Medium",
+     "Real supplier list per brand (FlexiTog, RefrigiWear, Gold Freeze) with city, SKUs, lead time, "
+     "Incoterm and inbound mode. Places the supply base on the map and sets inbound freight for orders "
+     "that start at a supplier. Confirm the origin per SKU: Albanian and Serbian origin may qualify for "
+     "Pan-Euro-Med preference.",
+     "Purchasing, supplier contracts, supplier origin declarations.", "Import data > Suppliers"),
     ("Demand forecast", "entity", "demand_forecast", "Low",
      "Optional. Sizes regional stock for the 3PL and owned warehouse scenarios.", "S&OP / demand planning.",
      "Import data > Demand forecast"),

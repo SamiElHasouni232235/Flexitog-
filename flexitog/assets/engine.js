@@ -217,7 +217,7 @@
     route.risk_premium_pct = prem;
 
     if (ctx.supplier) {
-      const f = data.freightOption("inbound", "NL");
+      const f = data.freightOption("inbound", "NL", null, blank(ctx.supplier.inbound_mode) ? "sea" : str(ctx.supplier.inbound_mode).trim().toLowerCase());
       const cost = f ? Math.max(num(f.min_charge_eur), num(f.eur_per_pallet) * Pal) : 0;
       route.steps.push(step({ step: `Inbound ${ctx.supplier.supplier_id} -> Helmond`, category: "freight", cost_eur: cost,
         days: stocked ? 0 : num(ctx.supplier.lead_time_days), party: `Supplier ${ctx.supplier.supplier_id}`,

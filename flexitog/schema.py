@@ -70,6 +70,9 @@ COUNTRY_NAMES = {
     "AE": "United Arab Emirates", "QA": "Qatar", "KW": "Kuwait",
     "BH": "Bahrain", "OM": "Oman", "JO": "Jordan", "LB": "Lebanon",
     "IQ": "Iraq", "IL": "Israel", "NL": "Netherlands",
+    # sourcing countries
+    "CN": "China", "BD": "Bangladesh", "RS": "Serbia", "AL": "Albania", "PK": "Pakistan", "IN": "India",
+    "VN": "Vietnam", "PT": "Portugal",
 }
 
 # Extra spellings seen in real exports. Keys are normalised (lowercase, no
@@ -93,6 +96,12 @@ COUNTRY_ALIASES = {
     "israel": "IL", "isr": "IL",
     "netherlands": "NL", "nederland": "NL", "holland": "NL", "nld": "NL",
     "thenetherlands": "NL",
+    "china": "CN", "prc": "CN", "chn": "CN", "peoplesrepublicofchina": "CN",
+    "bangladesh": "BD", "bgd": "BD",
+    "serbia": "RS", "srb": "RS", "srbija": "RS",
+    "albania": "AL", "alb": "AL", "shqiperia": "AL", "albanie": "AL", "albanië": "AL",
+    "pakistan": "PK", "pak": "PK", "india": "IN", "ind": "IN", "vietnam": "VN", "vnm": "VN",
+    "portugal": "PT", "prt": "PT",
 }
 
 EU27 = {"AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IE", "IT", "LV",
@@ -132,6 +141,14 @@ ENTITIES: dict[str, Entity] = {
                   aliases=["leadtime", "leadtimedays", "lt", "levertijd"]),
             Field("incoterm", aliases=["incoterms", "deliveryterms"]),
             Field("currency", aliases=["cur", "valuta"]),
+            Field("brands", description="Brands this supplier makes, separated by ;",
+                  aliases=["brand", "merk", "merken", "label"]),
+            Field("inbound_mode", allowed=MODES, description="Main transport mode to Helmond",
+                  aliases=["mode", "transportmode", "inboundmode"]),
+            Field("latitude", dtype="float", description="Optional. For the dashboard map. Blank = city lookup",
+                  aliases=["lat"]),
+            Field("longitude", dtype="float", description="Optional. For the dashboard map. Blank = city lookup",
+                  aliases=["lon", "lng", "long"]),
             Field("notes", aliases=["comment", "comments", "remarks", "opmerkingen"]),
         ],
     ),
@@ -223,6 +240,8 @@ ENTITIES: dict[str, Entity] = {
                            "artikelnummer", "artnr", "material", "materialnumber", "partnumber", "productcode"]),
             Field("description", required=True,
                   aliases=["name", "productname", "itemname", "itemdescription", "omschrijving", "desc"]),
+            Field("brand", description="Brand, e.g. FlexiTog, RefrigiWear, Gold Freeze",
+                  aliases=["merk", "label", "brandname", "make"]),
             Field("product_family", aliases=["category", "family", "productgroup", "group", "artikelgroep"]),
             Field("unit_weight_kg", dtype="float", required=True,
                   aliases=["weight", "weightkg", "grossweight", "grossweightkg", "netweight", "gewicht", "kg"]),

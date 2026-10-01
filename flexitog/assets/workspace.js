@@ -7,7 +7,7 @@
 const CLAUDE = window.claude && typeof window.claude.use === "function" ? window.claude : null;
 const DOWNLOADS = CLAUDE ? CLAUDE.use("downloads").catch(() => null) : Promise.resolve(null);
 const isBlank = v => v === null || v === undefined || (typeof v === "number" && Number.isNaN(v)) || String(v).trim() === "";
-const norm = s => String(s ?? "").toLowerCase().replace(/[^a-z0-9À-ɏ]/g, "");
+const norm = s => String(s ?? "").toLowerCase().replace(/[^a-z0-9\u00c0-\u024f]/g, "");
 const nowIso = () => new Date().toISOString();
 function toast(msg, kind){
   const t = $("toast"); t.textContent = msg; t.className = "toast show" + (kind ? " " + kind : "");
@@ -314,7 +314,7 @@ const MD_TABS = [
 const MD_HINT = {
   products: "SKU master. Country of origin decides duty; units per pallet drives pallet counts.",
   customers: "Customers with country, city and port. Latitude and longitude are optional and only place the customer on the map.",
-  suppliers: "Suppliers and the SKUs they deliver. Used when a test order starts at a supplier instead of Helmond stock.",
+  suppliers: "Suppliers with the brands and SKUs they make. Shown in blue on the map with their route to Helmond. Inbound mode (road or sea) picks the inbound freight rate when a test order starts at a supplier.",
   distribution_centers: "Every logistics provider and stock point: distributors, 3PLs, owned warehouses and the Helmond hub. Set the countries each serves, its status, minimum order value and its commercial terms.",
   lanes: "Routes in use today. Proven lanes are preferred in the recommendation.",
   sales_history: "Order lines from the ERP. When this table has rows, the batch is built from it: one test order per historical order.",
@@ -646,8 +646,24 @@ function reportData(){
       best: E.LABELS[r.bestOf], node: r.node, cost_unit: r.cost_to_serve_eur / (r.units || 1), base_cost_unit: b && b.available ? b.cost_to_serve_eur / (b.units || 1) : null,
       lead: r.lead_time_days, base_lead: b ? b.lead_time_days : null, customer_pays: r.customer_pays_eur, base_customer_pays: b ? b.customer_pays_eur : null};
   });
+  // supply base: suppliers and the brand mix of the orders in scope
+  const inScope = new Set(BATCH.orders.filter(o => { const c = R.data.customers.find(x => x.customer_id === o.customer_id); return c && regs.includes(regionOf(c.country)); }).map(o => o.order_id));
+  const prod = Object.fromEntries(R.data.products.map(x => [x.sku, x]));
+  const skuVal = {};
+  BATCH.lines.forEach(l => { if (!inScope.has(l.order_id) || !prod[l.sku]) return; const v = skuVal[l.sku] = skuVal[l.sku] || {units: 0, value: 0}; v.units += Number(l.quantity) || 0; v.value += (Number(l.quantity) || 0) * (Number(prod[l.sku].unit_price_eur) || 0); });
+  const totalVal = Object.values(skuVal).reduce((a, v) => a + v.value, 0) || 1;
+  const brandMix = {};
+  Object.entries(skuVal).forEach(([sku, v]) => { const p = prod[sku], k = (p.brand || "no brand") + "|" + (p.country_of_origin || "?");
+    const b = brandMix[k] = brandMix[k] || {brand: p.brand || "no brand", origin: p.country_of_origin || "", skus: new Set(), units: 0, value: 0}; b.skus.add(sku); b.units += v.units; b.value += v.value; });
+  const suppliers = (R.data.suppliers || []).map(sp => {
+    const skus = String(sp.sku_ids || "").split(/[;,]/).map(x => x.trim()).filter(Boolean);
+    const value = skus.reduce((a, k) => a + (skuVal[k] ? skuVal[k].value : 0), 0);
+    return {id: sp.supplier_id, name: sp.name, country: sp.country, city: sp.city, brands: String(sp.brands || "").split(";").filter(Boolean).join(", "),
+      skus, mode: supplierMode(sp), lead: sp.lead_time_days, incoterm: sp.incoterm, share: value / totalVal, value};
+  }).sort((a, b) => b.value - a.value);
+  const brands = Object.values(brandMix).map(b => Object.assign(b, {skus: [...b.skus], share: b.value / totalVal})).sort((a, b) => b.value - a.value);
   const changes = diff().length + (whatIf.redSea ? 1 : 0) + (whatIf.euAll ? 1 : 0) + excluded.size;
-  return {regs, sc, costs, leads, demand, compliance, nodes, lanes: Object.values(lanes), issues, quality, placeholderShare, findings, recs, orders, changes,
+  return {regs, sc, costs, leads, demand, compliance, nodes, lanes: Object.values(lanes), issues, quality, placeholderShare, findings, recs, orders, changes, suppliers, brands,
     generated: new Date().toLocaleString("en-GB"), batchOrders: BATCH.orders.length, source: BATCH.source};
 }
 function reportHtml(D){
@@ -676,14 +692,18 @@ function reportHtml(D){
     D.nodes.map(d => `<tr><td>${esc(d.name)} <span class="faint">${esc(d.dc_id)}</span></td><td>${esc(PAYLOAD.names.dc_types[d.dc_type] || d.dc_type)}</td><td>${esc(d.status)}</td><td>${esc(CNAME(d.country))}</td><td>${esc(String(d.serves_countries || "").split(";").join(", "))}</td>${n(d.min_order_value_eur, 0)}${n(d.orders, 0)}${n(d.pallets, 0)}</tr>`))
     + t(["Main lane (best model per order)", "Model", "Mode", "Orders", "Pallets", "Destination countries"],
     D.lanes.sort((a, b) => b.pallets - a.pallets).map(l => `<tr><td>Helmond → ${esc(l.port)}</td><td>${esc(E.LABELS[l.scenario])}</td><td>${esc(l.mode)}</td>${n(l.orders, 0)}${n(l.pallets, 0)}<td>${esc([...l.countries].map(CNAME).join(", "))}</td></tr>`)));
-  h += sec(8, "Trade compliance by country", t(["Country", "Duty EU origin %", "Duty standard %", "VAT %", "Preference proof", "Broker €", "Clearance days", "Certificates and documents"],
+  h += sec(8, "Supply base: suppliers and brands", t(["Supplier", "Location", "Brands", "SKUs", "To Helmond", "Lead time days", "Terms", "Share of order value"],
+    D.suppliers.map(x => `<tr><td>${esc(x.name)} <span class="faint">${esc(x.id)}</span></td><td>${esc(x.city || "")} ${esc(CNAME(x.country))}</td><td>${esc(x.brands)}</td><td>${esc(x.skus.join(", "))}</td><td>${esc(x.mode)}</td>${n(x.lead, 0)}<td>${esc(x.incoterm || "")}</td><td class="n">${pct(x.share)}</td></tr>`))
+    + t(["Brand", "Origin", "SKUs", "Units", "Order value €", "Share"], D.brands.map(b => `<tr><td>${esc(b.brand)}</td><td>${esc(CNAME(b.origin))}</td><td>${esc(b.skus.join(", "))}</td>${n(b.units, 0)}${n(b.value, 0)}<td class="n">${pct(b.share)}</td></tr>`)),
+    "Origin decides the duty rate. Only EU-origin lines get the preferential rate in this model. Albanian and Serbian origin pays the standard rate until the preference rules are confirmed with the broker.");
+  h += sec(9, "Trade compliance by country", t(["Country", "Duty EU origin %", "Duty standard %", "VAT %", "Preference proof", "Broker €", "Clearance days", "Certificates and documents"],
     D.compliance.map(c => `<tr><td>${esc(CNAME(c.country))}</td>${n(c.eu, 1)}${n(c.std, 1)}${n(c.vat, 1)}<td>${esc(c.pref || "")}</td>${n(c.broker, 0)}${n(c.days, 0)}<td>${esc(c.items.join("; ") || "none recorded")}</td></tr>`)),
     "Duty per order is value-weighted by SKU origin: EU-origin lines use the preferential rate with the preference proof shown.");
-  h += sec(9, "Risk and issue register", t(["Severity", "Issue", "Countries", "Detail", "Lever", "Source"],
+  h += sec(10, "Risk and issue register", t(["Severity", "Issue", "Countries", "Detail", "Lever", "Source"],
     D.issues.map(i => `<tr><td><span class="sev ${i.severity}">${esc(i.severity)}</span></td><td><b>${esc(i.title)}</b></td><td>${esc((i.countries || []).join(", "))}</td><td>${esc(i.detail)}</td><td>${esc(i.lever || "")}</td><td>${i.kind === "briefing" ? "briefing note, verify" : "computed"}</td></tr>`)));
-  h += sec(10, "Data quality", t(["Table", "Rows", "Placeholder", "Real"], D.quality.map(q => `<tr><td>${esc(q.table)}</td>${n(q.rows, 0)}${n(q.placeholder, 0)}${n(q.real, 0)}</tr>`)),
+  h += sec(11, "Data quality", t(["Table", "Rows", "Placeholder", "Real"], D.quality.map(q => `<tr><td>${esc(q.table)}</td>${n(q.rows, 0)}${n(q.placeholder, 0)}${n(q.real, 0)}</tr>`)),
     `Placeholder share of simulated cost: <b>${pct(D.placeholderShare)}</b>.`);
-  h += sec(11, "Recommendations and next steps", `<ol>${D.recs.map(r => `<li>${esc(r)}</li>`).join("")}</ol>`);
+  h += sec(12, "Recommendations and next steps", `<ol>${D.recs.map(r => `<li>${esc(r)}</li>`).join("")}</ol>`);
   if (REP.appendix) h += sec("A", "Appendix: order results (best in-scope model per order)", t(["Order", "Customer", "Country", "Value €", "Pallets", "Best model", "Node", "Cost/unit €", "Baseline €/unit", "Lead days", "Baseline days", "Customer pays €", "Baseline customer €"],
     D.orders.slice(0, 150).map(o => `<tr><td>${esc(o.order_id)}</td><td>${esc(o.customer_id)}</td><td>${esc(o.country)}</td>${n(o.value, 0)}${n(o.pallets, 0)}<td>${esc(o.best)}</td><td>${esc(o.node)}</td>${n(o.cost_unit)}${n(o.base_cost_unit)}${n(o.lead, 0)}${n(o.base_lead, 0)}${n(o.customer_pays, 0)}${n(o.base_customer_pays, 0)}</tr>`))
     + (D.orders.length > 150 ? `<p class="faint">First 150 of ${D.orders.length} orders. The Excel export has all of them.</p>` : ""));
@@ -726,6 +746,8 @@ $("repXlsx").addEventListener("click", () => {
   add("Demand", [["Country", "Region", "Orders", "Pallets", "Units", "Order value EUR"], ...D.demand.map(d => [CNAME(d.country), d.region, d.orders, d.pallets, d.units, Math.round(d.value)])]);
   add("Network nodes", [["dc_id", "Name", "Type", "Status", "Country", "Serves", "Min order EUR", "Orders (best)", "Pallets (best)"], ...D.nodes.map(d => [d.dc_id, d.name, d.dc_type, d.status, d.country, d.serves_countries, d.min_order_value_eur, d.orders, d.pallets])]);
   add("Network lanes", [["Main lane", "Model", "Mode", "Orders", "Pallets", "Countries"], ...D.lanes.map(l => ["Helmond -> " + l.port, E.LABELS[l.scenario], l.mode, l.orders, l.pallets, [...l.countries].join(", ")])]);
+  add("Suppliers", [["Supplier ID", "Name", "Country", "City", "Brands", "SKUs", "Mode to Helmond", "Lead time days", "Incoterm", "Share of order value"], ...D.suppliers.map(x => [x.id, x.name, x.country, x.city, x.brands, x.skus.join(", "), x.mode, x.lead, x.incoterm, r2(x.share)])]);
+  add("Brand mix", [["Brand", "Origin", "SKUs", "Units", "Order value EUR", "Share"], ...D.brands.map(b => [b.brand, b.origin, b.skus.join(", "), b.units, Math.round(b.value), r2(b.share)])]);
   add("Trade compliance", [["Country", "Duty EU origin %", "Duty standard %", "VAT %", "Preference proof", "Broker EUR", "Clearance days", "Certificates and documents"], ...D.compliance.map(c => [CNAME(c.country), c.eu, c.std, c.vat, c.pref, c.broker, c.days, c.items.join("; ")])]);
   add("Risks", [["Severity", "Issue", "Countries", "Detail", "Lever", "Source"], ...D.issues.map(i => [i.severity, i.title, (i.countries || []).join(", "), i.detail, i.lever || "", i.kind === "briefing" ? "briefing note, verify" : "computed"])]);
   add("Data quality", [["Table", "Rows", "Placeholder", "Real"], ...D.quality.map(q => [q.table, q.rows, q.placeholder, q.real])]);

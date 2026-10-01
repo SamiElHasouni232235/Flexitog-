@@ -1,5 +1,5 @@
-// Build flexitog/assets/basemap.json: Mercator-projected SVG paths for Europe, North Africa and
-// the Middle East, from Natural Earth 1:50m (world-atlas on npm).
+// Build flexitog/assets/basemap.json: Mercator-projected SVG paths for Europe, North Africa, the
+// Middle East and South and East Asia (supplier countries), from Natural Earth 1:50m (world-atlas on npm).
 //
 //   npm pack world-atlas@2.0.2 topojson-client@3.1.0   (unpack both next to this script's cwd)
 //   node tools/build_basemap.mjs <world-atlas dir> <topojson-client.js> <num2iso.json> <out.json>
@@ -12,12 +12,15 @@ const topojson = require(tjcPath);
 const world = JSON.parse(fs.readFileSync(`${atlasDir}/countries-50m.json`, "utf8"));
 const num2iso = JSON.parse(fs.readFileSync(isoPath, "utf8"));
 
-// View: Atlantic coast of Morocco to Oman, Sahel to southern Scandinavia.
-const VIEW = { lonMin: -18, lonMax: 64, latMin: 10, latMax: 57 };
-const WIDTH = 1000;
+// Extent: Atlantic coast of Morocco to the China coast (suppliers), Singapore to southern Scandinavia.
+// The scale is fixed by the study area (lon -18 to 64 = 1000 units wide), so widening the extent
+// never moves existing coordinates.
+const VIEW = { lonMin: -18, lonMax: 128, latMin: -4, latMax: 57 };
+const SCALE_LON = 82;
 const rad = d => (d * Math.PI) / 180;
 const my = lat => Math.log(Math.tan(Math.PI / 4 + rad(lat) / 2));
-const k = WIDTH / rad(VIEW.lonMax - VIEW.lonMin);
+const k = 1000 / rad(SCALE_LON);
+const WIDTH = Math.round(k * rad(VIEW.lonMax - VIEW.lonMin));
 const yTop = my(VIEW.latMax);
 const HEIGHT = Math.round(k * (yTop - my(VIEW.latMin)));
 const project = ([lon, lat]) => [k * rad(lon - VIEW.lonMin), k * (yTop - my(Math.max(-80, Math.min(80, lat))))];

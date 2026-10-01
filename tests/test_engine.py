@@ -132,7 +132,7 @@ def test_eu_origin_gets_preferential_duty_in_turkiye(ws):
 
 def test_below_mov_excluded_from_recommendation(ws):
     order, _ = order_for(ws, "T-SA-001")
-    lines = pd.DataFrame({"order_id": ["x"], "sku": ["FT-GLV-200"], "quantity": [5]})  # EUR 45
+    lines = pd.DataFrame({"order_id": ["x"], "sku": ["GF-GLV-200"], "quantity": [5]})  # EUR 45
     ev = evaluate({**order, "pallet_count": 1}, lines, Data.from_workspace(ws))
     assert all(r.below_mov for r in ev.routes if r.scenario != "cif_baseline")
     assert ev.recommended is None
@@ -156,3 +156,26 @@ def test_new_default_parameters_merge_into_old_files(ws):
     ws.save_params("general", old)
     loaded = ws.load_params("general")
     assert "free_zone_handling_eur_per_pallet" in set(loaded["parameter"])
+
+
+def test_supplier_inbound_uses_the_suppliers_mode(ws):
+    """Albania and Serbia ship by road to Helmond, China and Bangladesh by sea."""
+    order, lines = order_for(ws, "T-SA-001")
+    data = Data.from_workspace(ws)
+    inbound = lambda sup: next(s for s in evaluate({**order, "supplier_id": sup}, lines, data).baseline.steps  # noqa: E731
+                               if s.step.startswith("Inbound"))
+    road, sea = inbound("SUP-AL1"), inbound("SUP-CN1")
+    assert road.cost_eur == pytest.approx(max(250, 110 * order["pallet_count"]))
+    assert sea.cost_eur == pytest.approx(max(300, 140 * order["pallet_count"]))
+    assert road.days == 35 and sea.days == 90
+
+
+def test_seed_brands_and_origins(ws):
+    products = ws.load("products").set_index("sku")
+    assert set(products.loc[products["brand"] == "FlexiTog", "country_of_origin"]) == {"AL"}
+    other = products[products["brand"].isin(["RefrigiWear", "Gold Freeze"])]["country_of_origin"]
+    assert set(other) == {"CN", "BD", "RS"} and other.isin(["CN", "BD"]).mean() > 0.5
+    sup = ws.load("suppliers")
+    assert {"CN", "BD", "RS", "AL"} == set(sup["country"])
+    supplied = {s for ids in sup["sku_ids"] for s in str(ids).split(";")}
+    assert supplied == set(products.index)

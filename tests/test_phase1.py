@@ -152,7 +152,7 @@ def test_parameters_flagged_placeholder(ws):
 
 def test_order_summary(ws):
     products, customers = ws.load("products"), ws.load("customers")
-    lines = pd.DataFrame({"sku": ["FT-JKT-100", "FT-GLV-100"], "quantity": [120, 300]})
+    lines = pd.DataFrame({"sku": ["FT-JKT-100", "RW-GLV-100"], "quantity": [120, 300]})
     s = summarise({"order_id": "x", "customer_id": "C-SA-01", "pallet_count": 1}, lines, products, customers)
     assert s.order_value_eur == 120 * 139 + 300 * 24
     assert s.suggested_pallets == 2

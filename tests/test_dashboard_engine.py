@@ -96,7 +96,7 @@ def test_parity_holds_with_partner_overrides_and_eu_origin(ws, tmp_path):
     dcs.loc[dcs["dc_id"] == "DIST-TR", "margin_pct"] = 12
     ws.save("distribution_centers", dcs)
     prod = ws.load("products")
-    prod.loc[prod["sku"].isin(["FT-BOT-100", "FT-JKT-100"]), "country_of_origin"] = "PT"
+    prod.loc[prod["sku"].isin(["RW-BOT-100", "FT-JKT-100"]), "country_of_origin"] = "PT"
     ws.save("products", prod)
     payload = build_payload(ws)
     js = run_js(payload, tmp_path)
@@ -109,7 +109,7 @@ def test_parity_holds_with_partner_overrides_and_eu_origin(ws, tmp_path):
 
 def test_dashboard_html_is_self_contained(ws):
     page = build_html(ws)
-    assert page.startswith("<title>")
+    assert page.startswith('<meta charset="utf-8">\n<title>')
     assert "/*PAYLOAD*/" not in page and "/*ENGINE*/" not in page
     assert "FlexEngine" in page
     for host in ("cdnjs", "jsdelivr", "unpkg"):
@@ -160,9 +160,9 @@ def test_history_batch_matches_python(ws, tmp_path):
     """The dashboard rebuilds the batch from uploaded sales history in the browser."""
     sh = ws.load("sales_history")
     extra = pd.DataFrame([
-        {"order_id": "SO-NEW-1", "order_date": "2026-03-01", "customer_id": "C-NEW", "sku": "FT-GLV-100",
+        {"order_id": "SO-NEW-1", "order_date": "2026-03-01", "customer_id": "C-NEW", "sku": "RW-GLV-100",
          "quantity": 2500, "country": "OM", "data_source": "manual"},
-        {"order_id": "SO-NEW-1", "order_date": "2026-03-01", "customer_id": "C-NEW", "sku": "FT-GLV-100",
+        {"order_id": "SO-NEW-1", "order_date": "2026-03-01", "customer_id": "C-NEW", "sku": "RW-GLV-100",
          "quantity": 100, "country": "OM", "data_source": "manual"},
         {"order_id": "SO-NEW-2", "order_date": "2026-03-02", "customer_id": "C-NEW2", "sku": "NOT-A-SKU",
          "quantity": 5, "country": "QA", "data_source": "manual"},
