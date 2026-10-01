@@ -113,10 +113,10 @@ SUPPLY_LEGS = {
                   (1.25, 103.9), (2.6, 101.3), (5.9, 97.6), (5.6, 81.0), (6.5, 77.0)],
     "south_asia": [(21.0, 91.5), (15.0, 88.5), (5.6, 81.0), (6.5, 77.0)],
     "arabian_sea_to_aden": [(9.5, 62.0), (12.3, 50.0)],
-    # Cape of Good Hope: leaves the map at its southern edge and comes back off West Africa
-    "cape_out": [(2.0, 62.0), (-4.0, 54.0)],
-    "cape_in": [(-4.0, -3.0), (3.0, -12.0), (14.5, -17.8), (21.0, -17.6), (28.0, -15.8), (33.5, -11.0),
-                (37.0, -9.3), (43.3, -9.9)],
+    # Cape of Good Hope: south of Madagascar, round the Cape, up the West African coast, west of the Canaries
+    "cape": [(-2.0, 72.0), (-14.0, 62.0), (-27.5, 49.0), (-31.5, 38.0), (-35.5, 26.0), (-35.6, 19.8),
+             (-34.2, 17.0), (-29.0, 14.0), (-20.0, 10.0), (-8.0, 7.0), (0.0, 0.0), (3.5, -10.5), (8.0, -15.0),
+             (14.7, -18.2), (21.0, -18.0), (27.5, -19.0), (33.5, -12.5), (37.0, -10.0), (43.3, -9.9)],
     "serbia_road": [(44.79, 20.45), (47.50, 19.04), (48.20, 16.37), (48.14, 11.58), (50.11, 8.68)],
     "adriatic_road": [(42.43, 19.26), (42.65, 18.09), (43.51, 16.44), (45.81, 15.98), (46.06, 14.51),
                       (47.80, 13.04), (48.14, 11.58), (50.11, 8.68)],
@@ -135,8 +135,7 @@ def supply_chains() -> dict:
         "suez": SUPPLY_LEGS["arabian_sea_to_aden"]
                 + rev("bab_el_mandeb", "red_sea", "suez", "east_med", "central_med", "west_med", "iberia", "north_sea")
                 + helmond,
-        "cape_out": SUPPLY_LEGS["cape_out"],
-        "cape_in": SUPPLY_LEGS["cape_in"] + europe_from_atlantic,
+        "cape": SUPPLY_LEGS["cape"] + europe_from_atlantic,
         "serbia_road": SUPPLY_LEGS["serbia_road"] + helmond,
         "adriatic_road": SUPPLY_LEGS["adriatic_road"] + helmond,
     }

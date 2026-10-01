@@ -142,10 +142,13 @@ HTML file that runs the whole simulator in the browser, with no Python and no se
   Full screen uses the browser's full screen when allowed and a page overlay otherwise; the parameter
   drawer still opens over it. Click a country, issue, node, lane or customer for a detail card with
   zoom and jump actions.
-- Suppliers in blue: a factory marker per supplier and its inbound route to Helmond (dashed = road).
-  Asia sea routes run via the Cape of Good Hope, or via Suez with the Red Sea switch on. The Suppliers
-  button (or S) frames the supply base; a supplier card lists brands, SKUs, origin, lead time and its
-  share of the batch. Distributor-held stock is plum so blue stays reserved for suppliers.
+- World map: every country (Natural Earth 1:50m, Antarctica left out), finer detail in Europe, Africa
+  and Asia, Russia and Fiji split cleanly at the date line. Zoom out to see the whole world.
+- Suppliers: supplier countries are filled blue, each supplier has a dark navy factory marker and a
+  blue inbound route to Helmond (dashed = road). Asia sea routes run round the Cape of Good Hope, or via
+  Suez with the Red Sea switch on. The Suppliers button (or S) frames the supply base. Click a supplier
+  country or factory for brands, SKUs, origin, lead time and share of the batch. Blue is reserved for
+  suppliers: distributor-held stock is plum and the country value scale is violet.
 
 ### Menu, master data and report extract
 

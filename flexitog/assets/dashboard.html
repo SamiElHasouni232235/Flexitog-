@@ -11,8 +11,8 @@
   --sea:#e8eef3; --land:#dfe4e8; --land-edge:#ffffff; --land-study:#cfd6dc;
   --s-cif_baseline:#8a8984; --s-distributor:#b8329b; --s-3pl:#eb6834; --s-owned_warehouse:#1baf7a;
   --p-flexitog:#4a3aa7; --p-partner:#eda100; --p-customer:#e87ba4;
-  --supplier:#2a78d6;
-  --q1:#cde2fb; --q2:#86b6ef; --q3:#3987e5; --q4:#1c5cab; --q5:#0d366b;
+  --supplier:#2a78d6; --supplier-land:#86b6ef; --supplier-mark:#0d366b;
+  --q1:#8070d6; --q2:#6553c7; --q3:#4f3db0; --q4:#3b2c8f; --q5:#281d66;
   --st-critical:#d03b3b; --st-serious:#ec835a; --st-warning:#fab219; --st-info:#6f8193;
   --display:"IBM Plex Sans Condensed","Arial Narrow",Arial,sans-serif;
   --body:"IBM Plex Sans",-apple-system,"Segoe UI",Arial,sans-serif;
@@ -25,8 +25,8 @@
   --sea:#0f171e; --land:#1f2a33; --land-edge:#0d1318; --land-study:#2a3742;
   --s-cif_baseline:#8f8e89; --s-distributor:#c94fb0; --s-3pl:#d95926; --s-owned_warehouse:#199e70;
   --p-flexitog:#9085e9; --p-partner:#c98500; --p-customer:#d55181;
-  --supplier:#3987e5;
-  --q1:#184f95; --q2:#256abf; --q3:#3987e5; --q4:#6da7ec; --q5:#b7d3f6;
+  --supplier:#3987e5; --supplier-land:#104281; --supplier-mark:#cde2fb;
+  --q1:#6e5fd0; --q2:#8d80e2; --q3:#aaa0ee; --q4:#c6bff5; --q5:#e2defb;
 }}
 :root[data-theme="dark"]{
   color-scheme:dark;
@@ -35,8 +35,8 @@
   --sea:#0f171e; --land:#1f2a33; --land-edge:#0d1318; --land-study:#2a3742;
   --s-cif_baseline:#8f8e89; --s-distributor:#c94fb0; --s-3pl:#d95926; --s-owned_warehouse:#199e70;
   --p-flexitog:#9085e9; --p-partner:#c98500; --p-customer:#d55181;
-  --supplier:#3987e5;
-  --q1:#184f95; --q2:#256abf; --q3:#3987e5; --q4:#6da7ec; --q5:#b7d3f6;
+  --supplier:#3987e5; --supplier-land:#104281; --supplier-mark:#cde2fb;
+  --q1:#6e5fd0; --q2:#8d80e2; --q3:#aaa0ee; --q4:#c6bff5; --q5:#e2defb;
 }
 *{box-sizing:border-box}
 [hidden]{display:none!important}
@@ -94,6 +94,8 @@ select{background:var(--surface);border:1px solid var(--rule);border-radius:6px;
 #map .country{fill:var(--land);stroke:var(--land-edge);stroke-width:.6;vector-effect:non-scaling-stroke}
 #map .country.study{cursor:pointer}
 #map .country.study:hover{stroke:var(--ink);stroke-width:1.2}
+#map .country.supc{cursor:pointer}
+#map .country.supc:hover{stroke:var(--ink);stroke-width:1.2}
 #map .country.sel{stroke:var(--ink);stroke-width:2}
 #map .lane{fill:none;stroke-linecap:round;stroke-linejoin:round;opacity:.85;vector-effect:non-scaling-stroke}
 #map .lane.road{stroke-dasharray:6 4}
@@ -106,9 +108,9 @@ select{background:var(--surface);border:1px solid var(--rule);border-radius:6px;
 #map .supin{fill:none;stroke:var(--supplier);stroke-width:1.6;opacity:.8;vector-effect:non-scaling-stroke;stroke-linecap:round;stroke-linejoin:round}
 #map .supin.road{stroke-dasharray:5 3}
 #map .supin.on{opacity:1;stroke-width:3}
-#map .sup{fill:var(--supplier);stroke:var(--surface);stroke-width:1.2;vector-effect:non-scaling-stroke;cursor:pointer}
+#map .sup{fill:var(--supplier-mark);stroke:var(--surface);stroke-width:1.2;vector-effect:non-scaling-stroke;cursor:pointer}
 #map .sup.on{stroke:var(--ink);stroke-width:2.5}
-#map .slabel{font:600 10px var(--mono);fill:var(--supplier);paint-order:stroke;stroke:var(--land);stroke-width:3px;pointer-events:none}
+#map .slabel{font:600 10px var(--mono);fill:var(--supplier-mark);paint-order:stroke;stroke:var(--surface);stroke-width:3px;pointer-events:none}
 #map .capenote{font:500 10px var(--mono);fill:var(--supplier);paint-order:stroke;stroke:var(--sea);stroke-width:3px;pointer-events:none}
 #map .hub{fill:var(--ink);stroke:var(--surface);stroke-width:1.2;vector-effect:non-scaling-stroke}
 #map .clabel{font:500 10px var(--mono);fill:var(--ink);paint-order:stroke;stroke:var(--land);stroke-width:3px;pointer-events:none}
@@ -654,6 +656,11 @@ function loc(kind, id){
 }
 const city = name => PAYLOAD.geo.cities[String(name || "").toLowerCase()] || null;
 // Supplier -> Helmond as one or two polylines (the Cape route leaves the map and comes back).
+function supplierCountries(){
+  const out = {};
+  (R.data.suppliers || []).forEach(sp => { const c = String(sp.country || "").toUpperCase(); if (c) (out[c] = out[c] || []).push(sp); });
+  return out;
+}
 function supplierMode(sp){ const m = String(sp.inbound_mode || "").trim().toLowerCase(); return m || "sea"; }
 function supplierPath(sp){
   const p = loc("sup", sp.supplier_id); if (!p) return null;
@@ -666,7 +673,7 @@ function supplierPath(sp){
   if (p[1] > 100) start = start.concat(p[0] > 32 ? G.yellow_sea : [], G.east_asia);
   else if (p[1] > 60) start = start.concat(G.south_asia);
   else return {mode, segs: [[p, PAYLOAD.geo.cities.rotterdam, hlm]]};
-  return whatIf.redSea ? {mode, segs: [start.concat(G.suez)], via: "Suez"} : {mode, segs: [start.concat(G.cape_out), G.cape_in], via: "Cape"};
+  return whatIf.redSea ? {mode, segs: [start.concat(G.suez)], via: "Suez"} : {mode, segs: [start.concat(G.cape)], via: "Cape"};
 }
 function supplierStats(sp){
   const skus = new Set(String(sp.sku_ids || "").split(/[;,]/).map(x => x.trim()).filter(Boolean));
@@ -755,14 +762,16 @@ function drawCountries(){
   legendRange = [vmin, vmax];
   const bin = v => vmax === vmin ? 3 : 1 + Math.max(0, Math.min(4, Math.floor(5 * (v - vmin) / (vmax - vmin + 1e-9))));
   let h = "";
+  const supC = supplierCountries();
   BM.countries.forEach(c => {
-    const study = studyCountries.has(c.iso);
-    let fill = study ? "var(--land-study)" : "var(--land)";
+    const study = studyCountries.has(c.iso), sup = !study && supC[c.iso];
+    let fill = study ? "var(--land-study)" : sup ? "var(--supplier-land)" : "var(--land)";
     if (study && metric.kind === "cat" && cats[c.iso]) fill = `var(--s-${cats[c.iso]})`;
     if (study && metric.kind === "seq" && values[c.iso] != null) fill = `var(--q${bin(values[c.iso])})`;
     const tipv = metric.kind === "cat" ? (cats[c.iso] ? E.LABELS[cats[c.iso]] : "no data") : (values[c.iso] != null ? fmt(values[c.iso], metric.dp) : "no data");
-    h += `<path class="country${study ? " study" : ""}" d="${c.d}" style="fill:${fill}"` +
-         (study ? ` data-kind="country" data-id="${c.iso}" data-tip="${esc(CNAME(c.iso))}: ${esc(metric.label)} ${esc(tipv)} · click for detail"` : "") + `/>`;
+    h += `<path class="country${study ? " study" : sup ? " supc" : ""}" d="${c.d}" style="fill:${fill}"` +
+         (study ? ` data-kind="country" data-id="${c.iso}" data-tip="${esc(CNAME(c.iso))}: ${esc(metric.label)} ${esc(tipv)} · click for detail"` :
+          sup ? ` data-kind="supc" data-id="${c.iso}" data-tip="${esc(CNAME(c.iso))}: supplier country · ${sup.map(x => esc(x.name)).join(", ")} · click for detail"` : "") + `/>`;
   });
   $("gCountries").innerHTML = h;
   markSelection();
@@ -803,9 +812,8 @@ function drawOverlay(){
     });
   });
   if (sups.some(x => x.path.via === "Cape")) {
-    const [x1, y1] = proj(-3.4, 54.5), [x2, y2] = proj(-3.4, -2.6);
-    h += `<text class="capenote" x="${x1.toFixed(1)}" y="${(y1 - 6 * scale).toFixed(1)}" text-anchor="middle" style="font-size:${(10 * scale).toFixed(2)}px">↓ via Cape of Good Hope</text>`;
-    h += `<text class="capenote" x="${(x2 + 4 * scale).toFixed(1)}" y="${(y2 - 6 * scale).toFixed(1)}" style="font-size:${(10 * scale).toFixed(2)}px">↑ from the Cape</text>`;
+    const [x1, y1] = proj(-37.5, 22);
+    h += `<text class="capenote" x="${x1.toFixed(1)}" y="${y1.toFixed(1)}" text-anchor="middle" style="font-size:${(10 * scale).toFixed(2)}px">via Cape of Good Hope</text>`;
   }
   Object.values(lasts).forEach(l => { h += `<path class="last" d="${path([l.a, l.b])}"/>`; });
   Object.values(lanes).sort((a, b) => b.pallets - a.pallets).forEach(l => {
@@ -844,13 +852,14 @@ function drawOverlay(){
     h += `<g class="issue${sel("issue", n) ? " on" : ""}" data-kind="issue" data-id="${n}" data-tip="${esc(i.severity.toUpperCase())}: ${esc(i.title)} · click for detail"><path d="M${x},${y - s}L${x + s},${y + s * .8}L${x - s},${y + s * .8}Z" style="fill:var(--st-${i.severity})"/>` +
          `<text x="${x}" y="${y + s * .6}" text-anchor="middle" style="font-size:${(10 * scale).toFixed(2)}px">!</text></g>`;
   });
-  BM.countries.filter(c => studyCountries.has(c.iso) && c.c).forEach(c => {
+  const supC = supplierCountries();
+  BM.countries.filter(c => (studyCountries.has(c.iso) || supC[c.iso]) && c.c).forEach(c => {
     h += `<text class="clabel" x="${c.c[0]}" y="${c.c[1]}" text-anchor="middle" style="font-size:${(10 * scale).toFixed(2)}px">${esc(c.iso)}</text>`;
   });
   $("gOver").innerHTML = h;
 }
 const sel = (kind, id) => selected && selected.kind === kind && String(selected.id) === String(id);
-function markSelection(){ $("gCountries").querySelectorAll(".country.study").forEach(el => el.classList.toggle("sel", sel("country", el.dataset.id))); }
+function markSelection(){ $("gCountries").querySelectorAll(".country.study, .country.supc").forEach(el => el.classList.toggle("sel", sel(el.dataset.kind, el.dataset.id))); }
 function drawLegend(metric){
   let lg = "";
   if (metric.kind === "cat") lg += INS.map(s => `<span><i class="sw" style="background:var(--s-${s})"></i>${esc(SHORT[s])} cheapest</span>`).join("");
@@ -858,7 +867,7 @@ function drawLegend(metric){
   lg += `<span><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" style="stroke:var(--muted);stroke-width:3"/></svg>sea</span>`;
   lg += `<span><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" style="stroke:var(--muted);stroke-width:3;stroke-dasharray:6 4"/></svg>road</span>`;
   lg += `<span><svg width="12" height="12"><circle cx="6" cy="6" r="5" style="fill:var(--muted)"/></svg>distributor</span><span><svg width="12" height="12"><rect x="1" y="1" width="10" height="10" style="fill:var(--muted)"/></svg>3PL</span><span><svg width="14" height="14"><path d="M7,0L14,7L7,14L0,7Z" style="fill:var(--muted)"/></svg>owned</span><span class="faint">faded = not yet signed</span>`;
-  lg += `<span><svg width="14" height="12"><path d="M1,11L1,5L5,2L5,5L9,2L9,5L13,2L13,11Z" style="fill:var(--supplier)"/></svg>supplier</span><span><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" style="stroke:var(--supplier);stroke-width:2"/></svg>inbound to Helmond</span>`;
+  lg += `<span><i class="sw" style="background:var(--supplier-land)"></i>supplier country</span><span><svg width="14" height="12"><path d="M1,11L1,5L5,2L5,5L9,2L9,5L13,2L13,11Z" style="fill:var(--supplier-mark)"/></svg>supplier factory</span><span><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" style="stroke:var(--supplier);stroke-width:2"/></svg>inbound to Helmond</span>`;
   lg += ["critical","serious","warning","info"].map(s => `<span><svg width="12" height="11"><path d="M6,0L12,11L0,11Z" style="fill:var(--st-${s})"/></svg>${s}</span>`).join("");
   $("mapLegend").innerHTML = lg;
   $("mapLegendFs").innerHTML = lg;
@@ -921,7 +930,7 @@ function renderInfo(){
     const sp = (R.data.suppliers || []).find(x => String(x.supplier_id) === String(id)); if (!sp) { el.hidden = true; return; }
     const st = supplierStats(sp), pth = supplierPath(sp);
     const prod = Object.fromEntries(R.data.products.map(x => [x.sku, x]));
-    h = `<div class="ih"><span class="eyebrow"><i class="sw" style="background:var(--supplier)"></i> Supplier</span><h3>${esc(sp.name)}</h3></div>` +
+    h = `<div class="ih"><span class="eyebrow"><svg width="14" height="12"><path d="M1,11L1,5L5,2L5,5L9,2L9,5L13,2L13,11Z" style="fill:var(--supplier-mark)"/></svg> Supplier</span><h3>${esc(sp.name)}</h3></div>` +
       `<dl class="kv"><dt>Location</dt><dd>${esc(sp.city || "")} ${esc(CNAME(sp.country))}</dd><dt>Brands</dt><dd>${esc(String(sp.brands || "").split(";").filter(Boolean).join(", ") || "not set")}</dd>` +
       `<dt>To Helmond</dt><dd>${esc(supplierMode(sp))}${pth && pth.via ? `, via ${pth.via}` : ""} · <span class="num">${sp.lead_time_days != null ? fmt(sp.lead_time_days) + " days" : "lead time not set"}</span></dd>` +
       `<dt>Terms</dt><dd>${esc(sp.incoterm || "")} ${esc(sp.currency || "")}</dd>` +
@@ -929,6 +938,13 @@ function renderInfo(){
       `<ul class="ilist">${st.skus.map(k => `<li><span class="num">${esc(k)}</span> ${esc(prod[k] ? prod[k].description : "not in the product table")}${prod[k] && prod[k].country_of_origin ? ` <span class="faint">· origin ${esc(prod[k].country_of_origin)}</span>` : ""}</li>`).join("")}</ul>` +
       (pth && pth.via === "Cape" ? `<p class="faint">Asia to Europe sailings run via the Cape of Good Hope while the Red Sea stays disrupted. The Red Sea switch in Parameters draws the Suez route.</p>` : "") +
       `<div class="iact">${btn("zoom-sup", "Zoom here")}${btn("md-sup", "Edit supplier")}</div>`;
+  } else if (kind === "supc") {
+    const list = supplierCountries()[id] || [];
+    const prod = R.data.products.filter(x => String(x.country_of_origin || "").toUpperCase() === id);
+    h = `<div class="ih"><span class="eyebrow"><i class="sw" style="background:var(--supplier-land)"></i> Supplier country</span><h3>${esc(CNAME(id))}</h3></div>` +
+      `<dl class="kv"><dt>Suppliers</dt><dd>${list.length}</dd><dt>Brands</dt><dd>${esc([...new Set(list.flatMap(x => String(x.brands || "").split(";").filter(Boolean)))].join(", ") || "not set")}</dd>` +
+      `<dt>SKUs made here</dt><dd>${prod.length ? prod.map(x => esc(x.sku)).join(", ") : "none with this origin"}</dd></dl>` +
+      `<div class="iact">${list.map(x => `<button type="button" class="btn ghost sm" data-act="goto-sup" data-s="${esc(x.supplier_id)}">${esc(x.city || x.supplier_id)}</button>`).join("")}</div>`;
   } else if (kind === "hub") {
     h = `<div class="ih"><span class="eyebrow">Origin</span><h3>Helmond EU hub</h3></div><p>Every flow in this tool starts here. Stocked scenarios refill regional nodes from Helmond in consolidated loads.</p>`;
   }
@@ -942,6 +958,7 @@ $("mapInfo").addEventListener("click", e => {
   else if (act === "zoom-country") zoomToCountry(selected.id);
   else if (act === "goto-country") { select("country", b.dataset.c); zoomToCountry(b.dataset.c); }
   else if (act === "zoom-node") { const p = loc("dc", selected.id); if (p) zoomToPoint(p); }
+  else if (act === "goto-sup") { select("sup", b.dataset.s); }
   else if (act === "zoom-sup") { const p = loc("sup", selected.id); if (p) zoomToPoint(p, 200); }
   else if (act === "md-sup") { if (isFs()) exitFs(); MDUI.tab = "suppliers"; MDUI.filter = String(selected.id); showView("md"); }
   else if (act === "params") { openDrawer(); const g = document.querySelector('details.grp[data-g="dcs"]'); if (g) { g.open = true; g.scrollIntoView({block: "start"}); } }
