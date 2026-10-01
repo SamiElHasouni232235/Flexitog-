@@ -130,6 +130,12 @@ class Workspace:
             for c in default.columns:
                 if c not in df.columns:
                     df[c] = None
+            # Tables without a unique key get whole new groups, e.g. freight rows of a new leg.
+            group = P.TABLE_GROUPS.get(name)
+            if group and group in df.columns:
+                new_rows = default[~default[group].isin(df[group])]
+                if len(new_rows):
+                    df = pd.concat([df, new_rows], ignore_index=True)
         return df
 
     def save_params(self, name: str, df: pd.DataFrame) -> None:

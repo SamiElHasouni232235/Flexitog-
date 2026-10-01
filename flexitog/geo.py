@@ -105,37 +105,87 @@ def lane_path(port_or_border: str) -> dict | None:
     return {"mode": mode, "points": pts}
 
 
-# ---------------------------------------------------------------- supply side (supplier -> Helmond)
-# Sea legs run east to west. The dashboard joins: supplier port -> Asia leg -> Suez or Cape -> Helmond.
-SUPPLY_LEGS = {
-    "yellow_sea": [(34.5, 122.6), (31.5, 123.0)],
-    "east_asia": [(27.5, 121.8), (24.5, 119.9), (22.0, 116.0), (15.0, 111.8), (8.0, 107.0), (2.0, 104.8),
-                  (1.25, 103.9), (2.6, 101.3), (5.9, 97.6), (5.6, 81.0), (6.5, 77.0)],
-    "south_asia": [(21.0, 91.5), (15.0, 88.5), (5.6, 81.0), (6.5, 77.0)],
-    "arabian_sea_to_aden": [(9.5, 62.0), (12.3, 50.0)],
-    # Cape of Good Hope: south of Madagascar, round the Cape, up the West African coast, west of the Canaries
-    "cape": [(-2.0, 72.0), (-14.0, 62.0), (-27.5, 49.0), (-31.5, 38.0), (-35.5, 26.0), (-35.6, 19.8),
-             (-34.2, 17.0), (-29.0, 14.0), (-20.0, 10.0), (-8.0, 7.0), (0.0, 0.0), (3.5, -10.5), (8.0, -15.0),
-             (14.7, -18.2), (21.0, -18.0), (27.5, -19.0), (33.5, -12.5), (37.0, -10.0), (43.3, -9.9)],
-    "serbia_road": [(44.79, 20.45), (47.50, 19.04), (48.20, 16.37), (48.14, 11.58), (50.11, 8.68)],
-    "adriatic_road": [(42.43, 19.26), (42.65, 18.09), (43.51, 16.44), (45.81, 15.98), (46.06, 14.51),
-                      (47.80, 13.04), (48.14, 11.58), (50.11, 8.68)],
+# ---------------------------------------------------------------- route graph for the map
+# Sea lanes as a waypoint graph; the dashboard runs a shortest path between ports. Edges flagged
+# "redsea" (Bab el-Mandeb and the southern Red Sea) are closed unless the Red Sea switch is on, so
+# Asia-Europe traffic rounds the Cape of Good Hope. Coordinates are (lat, lon) and sit at sea.
+SEA_NODES = {
+    # North Europe and Atlantic coast
+    "rtm": (51.95, 4.13), "dover": (51.0, 1.6), "channel": (49.9, -2.5), "ushant": (48.6, -5.6),
+    "finisterre": (43.3, -9.9), "stvincent": (37.0, -9.8), "gib_w": (35.9, -6.6), "gib": (35.95, -5.6),
+    # Mediterranean
+    "alboran": (36.2, -2.5), "w_med": (37.6, 5.0), "sicily": (37.4, 11.3), "ionian": (35.5, 18.0),
+    "otranto": (39.8, 18.9), "adriatic_s": (41.2, 19.1), "crete_s": (34.2, 26.0), "aegean_s": (36.8, 25.0),
+    "aegean_n": (39.3, 24.8), "thessaloniki_app": (40.3, 23.0), "dardanelles": (40.2, 26.2), "marmara": (40.85, 28.3),
+    "e_med": (32.2, 31.0), "levant": (34.0, 34.0), "mersin_app": (36.4, 34.6), "port_said": (31.3, 32.35),
+    # Suez and Red Sea
+    "suez": (29.9, 32.55), "red_n": (27.0, 34.6), "red_c": (21.5, 38.4), "red_s": (15.0, 41.8), "bab": (12.6, 43.4),
+    # Gulf of Aden, Arabian Sea, Gulf
+    "aden": (12.3, 50.0), "arabian_w": (15.5, 56.0), "ras_al_hadd": (22.6, 59.9), "gulf_of_oman": (24.4, 58.0),
+    "hormuz": (26.5, 56.6), "gulf_e": (26.0, 54.8), "gulf_c": (26.6, 52.0), "gulf_w": (27.5, 50.5), "kuwait_app": (29.2, 48.6),
+    "arabian_c": (14.0, 65.0), "laccadive": (9.5, 62.0), "india_s": (6.5, 77.0), "sri_lanka": (5.6, 81.0),
+    # Bay of Bengal and East Asia
+    "bengal": (15.0, 88.5), "chattogram_app": (21.0, 91.5), "andaman": (6.2, 93.0), "malacca_n": (5.9, 97.6),
+    "malacca_s": (2.6, 101.3), "singapore": (1.25, 103.9), "anambas": (2.0, 104.8), "vietnam_s": (8.0, 107.0),
+    "scs": (15.0, 111.8), "hong_kong": (22.0, 116.0), "taiwan_strait": (24.5, 119.9), "ecs": (27.5, 121.8),
+    "ningbo_app": (29.8, 122.8), "yangtze": (31.5, 123.0), "yellow_sea": (34.5, 122.6),
+    # Cape of Good Hope and West Africa
+    "cape_1": (-2.0, 72.0), "cape_2": (-14.0, 62.0), "madagascar_s": (-27.5, 49.0), "cape_3": (-31.5, 38.0),
+    "cape_4": (-35.5, 26.0), "agulhas": (-35.6, 19.8), "cape_w": (-34.2, 17.0), "namibia": (-29.0, 14.0),
+    "angola": (-20.0, 10.0), "congo": (-8.0, 7.0), "guinea": (0.0, 0.0), "liberia": (3.5, -10.5),
+    "sierra_leone": (8.0, -15.0), "dakar": (14.7, -18.2), "blanc": (21.0, -18.0), "canaries_w": (27.5, -19.0),
+    "madeira": (33.5, -12.5),
 }
+SEA_CHAINS = [
+    ["rtm", "dover", "channel", "ushant", "finisterre", "stvincent", "gib_w", "gib", "alboran", "w_med", "sicily",
+     "ionian", "crete_s", "e_med", "port_said"],
+    ["ionian", "otranto", "adriatic_s"],
+    ["crete_s", "aegean_s", "aegean_n", "dardanelles", "marmara"], ["aegean_n", "thessaloniki_app"],
+    ["e_med", "levant", "mersin_app"],
+    ["port_said", "suez", "red_n", "red_c", "red_s", "bab", "aden"],
+    ["aden", "arabian_w", "ras_al_hadd", "gulf_of_oman", "hormuz", "gulf_e", "gulf_c", "gulf_w", "kuwait_app"],
+    ["aden", "laccadive", "india_s"], ["arabian_w", "arabian_c", "india_s"], ["arabian_c", "ras_al_hadd"],
+    ["india_s", "sri_lanka", "andaman", "malacca_n", "malacca_s", "singapore", "anambas", "vietnam_s", "scs",
+     "hong_kong", "taiwan_strait", "ecs", "ningbo_app", "yangtze", "yellow_sea"],
+    ["sri_lanka", "bengal", "chattogram_app"],
+    ["sri_lanka", "cape_1", "cape_2", "madagascar_s", "cape_3", "cape_4", "agulhas", "cape_w", "namibia", "angola",
+     "congo", "guinea", "liberia", "sierra_leone", "dakar", "blanc", "canaries_w", "madeira", "stvincent"],
+    ["madeira", "gib_w"], ["india_s", "cape_1"],
+]
+RED_SEA_EDGES = [("red_c", "red_s"), ("red_s", "bab")]
+# Ports a sea leg can start or end at (keys of CITIES).
+SEA_PORTS = ["rotterdam", "ambarlı", "mersin", "izmir", "alexandria", "casablanca", "tanger med", "algiers", "radès",
+             "jebel ali", "dammam", "jeddah", "hamad", "shuwaikh", "khalifa bin salman", "sohar", "ningbo", "qingdao",
+             "shanghai", "shenzhen", "chattogram", "durrës", "thessaloniki", "karachi"]
+ROAD_NODES = {
+    "helmond": (51.48, 5.66), "frankfurt": (50.11, 8.68), "munich": (48.14, 11.58), "salzburg": (47.80, 13.04),
+    "vienna": (48.20, 16.37), "budapest": (47.50, 19.04), "ljubljana": (46.06, 14.51), "zagreb": (45.81, 15.98),
+    "split": (43.51, 16.44), "dubrovnik": (42.65, 18.09), "podgorica": (42.43, 19.26), "tirana": (41.33, 19.82),
+    "durrës": (41.32, 19.45), "skopje": (42.00, 21.43), "belgrade": (44.79, 20.45), "niš": (43.32, 21.90),
+    "leskovac": (43.00, 21.95), "sofia": (42.70, 23.32), "kapıkule": (41.72, 26.36), "istanbul": (41.01, 28.98),
+    "thessaloniki": (40.64, 22.94), "alexandroupoli": (40.85, 25.87),
+}
+ROAD_EDGES = [
+    ("helmond", "frankfurt"), ("frankfurt", "munich"), ("munich", "salzburg"), ("munich", "vienna"),
+    ("salzburg", "ljubljana"), ("ljubljana", "zagreb"), ("zagreb", "split"), ("split", "dubrovnik"),
+    ("dubrovnik", "podgorica"), ("podgorica", "tirana"), ("tirana", "durrës"), ("tirana", "skopje"),
+    ("skopje", "niš"), ("skopje", "sofia"), ("skopje", "thessaloniki"), ("niš", "leskovac"), ("leskovac", "skopje"),
+    ("niš", "belgrade"), ("niš", "sofia"), ("belgrade", "budapest"), ("belgrade", "zagreb"), ("zagreb", "budapest"),
+    ("budapest", "vienna"), ("sofia", "kapıkule"), ("kapıkule", "istanbul"), ("thessaloniki", "alexandroupoli"),
+    ("alexandroupoli", "kapıkule"),
+]
+CITIES.setdefault("thessaloniki", (40.64, 22.94))
 
 
-def supply_chains() -> dict:
-    """Waypoint chains for supplier inbound lines on the dashboard map, all ending in Helmond."""
-    rev = lambda *names: [pt for n in names for pt in reversed(WAYPOINTS[n])]  # noqa: E731
-    helmond = [CITIES["helmond"]]
-    europe_from_atlantic = rev("north_sea") + helmond
+def route_graph() -> dict:
+    """Sea and road graphs for the dashboard's shortest-path routing."""
+    red = {tuple(sorted(e)) for e in RED_SEA_EDGES}
+    sea_edges = []
+    for chain in SEA_CHAINS:
+        for a, b in zip(chain, chain[1:]):
+            sea_edges.append([a, b, "redsea" if tuple(sorted((a, b))) in red else ""])
     return {
-        "yellow_sea": SUPPLY_LEGS["yellow_sea"],
-        "east_asia": SUPPLY_LEGS["east_asia"],
-        "south_asia": SUPPLY_LEGS["south_asia"],
-        "suez": SUPPLY_LEGS["arabian_sea_to_aden"]
-                + rev("bab_el_mandeb", "red_sea", "suez", "east_med", "central_med", "west_med", "iberia", "north_sea")
-                + helmond,
-        "cape": SUPPLY_LEGS["cape"] + europe_from_atlantic,
-        "serbia_road": SUPPLY_LEGS["serbia_road"] + helmond,
-        "adriatic_road": SUPPLY_LEGS["adriatic_road"] + helmond,
+        "sea": {"nodes": SEA_NODES, "edges": sea_edges,
+                "ports": {k: CITIES[k] for k in SEA_PORTS if k in CITIES}},
+        "road": {"nodes": ROAD_NODES, "edges": [list(e) for e in ROAD_EDGES]},
     }

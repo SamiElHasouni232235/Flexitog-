@@ -69,8 +69,17 @@ margin, minimum order value, handoffs) and owned warehouse fixed cost. All ship 
 
 ## Engine rules (phase 2)
 
-- Cost to serve = all cost between Helmond stock and goods at the customer. Goods value and
-  recoverable import VAT are excluded. Each step records who pays: FlexiTog, partner or customer.
+- Cost to serve = all cost between the supplier and goods at the customer, including supplier
+  freight. Goods value and recoverable import VAT are excluded. Each step records who pays:
+  FlexiTog, partner or customer.
+- Stock sourcing: each order's pallets are split by the supplier of each SKU. The baseline always
+  ships from Helmond stock, so it carries supplier to Helmond freight. A distributor, 3PL or owned
+  warehouse is refilled per supplier either via Helmond (supplier to Helmond, Helmond handling, EU
+  export, main leg) or straight from the supplier (`direct` freight rates plus origin export
+  documents). `direct_sourcing_mode` in General: 0 always via Helmond, 1 direct when cheaper per
+  pallet (default), 2 direct whenever a rate exists. A supplier with `direct_to_partners` = no always
+  goes via Helmond. `risk_premium_direct_sourcing_pct` adds a routing penalty scaled by the share
+  sourced direct. Scorecards show the direct share per region and model.
 - Baseline: one shipment per order, so minimum charges and per-shipment fees apply in full.
   FlexiTog pays handling, export docs, freight and insurance to port. Customer pays clearance,
   duty, compliance and inland delivery.
@@ -144,9 +153,11 @@ HTML file that runs the whole simulator in the browser, with no Python and no se
   zoom and jump actions.
 - World map: every country (Natural Earth 1:50m, Antarctica left out), finer detail in Europe, Africa
   and Asia, Russia and Fiji split cleanly at the date line. Zoom out to see the whole world.
-- Suppliers: supplier countries are filled blue, each supplier has a dark navy factory marker and a
-  blue inbound route to Helmond (dashed = road). Asia sea routes run round the Cape of Good Hope, or via
-  Suez with the Red Sea switch on. The Suppliers button (or S) frames the supply base. Click a supplier
+- Suppliers: supplier countries are filled blue, each supplier has a dark navy factory marker, a
+  blue line where stock goes to Helmond and a navy line where it goes straight to a partner node
+  (dashed = road, width = pallets in view). Sea legs (supplier, direct and Helmond outbound) follow
+  a shortest path on a sea-lane graph (`geo.route_graph`): round the Cape of Good Hope, or via Suez
+  with the Red Sea switch on; Jeddah stays reachable via Suez. The Suppliers button (or S) frames the supply base. Click a supplier
   country or factory for brands, SKUs, origin, lead time and share of the batch. Blue is reserved for
   suppliers: distributor-held stock is plum and the country value scale is violet.
 
@@ -172,7 +183,7 @@ Parameters, plus shortcuts to the main master data tabs.
 - Report extract: a standard cross-border supply chain report for all regions or one. Sections:
   executive summary, scope and method, scenario scorecard, landed cost breakdown, lead time breakdown,
   demand profile, network (logistics providers and lanes), supply base (suppliers and brand mix),
-  trade compliance by country, risk and issue register, data quality, recommendations, and an order
+  stock sourcing (via Helmond or direct, per region, model and lane), trade compliance by country, risk and issue register, data quality, recommendations, and an order
   appendix. Export as an Excel workbook (one sheet
   per section plus all orders), an HTML report or a CSV of every order and scenario.
 

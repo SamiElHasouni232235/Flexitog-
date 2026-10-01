@@ -20,8 +20,10 @@ DATASETS = [
      "distributor.", "CRM or ERP debtor master.", "Import data > Customers"),
     ("Freight rates", "param", "freight", "High",
      "Largest cost line in every scenario. Need single-shipment (groupage/LCL) and consolidated "
-     "(FTL/FCL) rates, minimum charges and transit days.",
-     "Forwarder quotes and invoices of the last 12 months. Logistics team.",
+     "(FTL/FCL) rates, minimum charges and transit days, for supplier to Helmond, Helmond to each "
+     "market, and supplier straight to each partner country (direct refill).",
+     "Forwarder quotes and invoices of the last 12 months. Supplier and forwarder quotes for direct "
+     "delivery to partners. Logistics team.",
      "Parameters > Freight rates per leg (load file)"),
     ("Partners", "entity", "distribution_centers", "High",
      "Every distributor, 3PL and warehouse option with the countries it serves, its minimum order value, "

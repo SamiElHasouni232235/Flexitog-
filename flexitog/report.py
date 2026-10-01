@@ -343,6 +343,6 @@ document.getElementById("mtable").innerHTML = `<thead><tr><th>Method</th><th>Reg
 document.getElementById("dtable").innerHTML = `<thead><tr><th>Priority</th><th>Dataset</th><th>Why it matters</th><th>Where to get it</th><th>Upload in tool</th></tr></thead><tbody>` +
   D.datasets.map(d => `<tr><td><span class="prio ${esc(d.priority)}">${esc(d.priority)}</span></td><td><b>${esc(d.sheet)}</b></td><td>${esc(d.why)}</td><td>${esc(d.where)}</td><td>${esc(d.target)}</td></tr>`).join("") + "</tbody>";
 
-document.getElementById("foot").textContent = "Built by the FlexiTog route simulator. Cost to serve covers everything between Helmond stock and goods at the customer, excluding the goods themselves and recoverable import VAT. Stocked scenarios assume stock on hand in the region.";
+document.getElementById("foot").textContent = "Built by the FlexiTog route simulator. Cost to serve covers everything between the supplier and goods at the customer, excluding the goods themselves and recoverable import VAT. Stocked scenarios assume stock on hand in the region.";
 </script>
 """

@@ -16,20 +16,21 @@ from .importer import coerce_frame, enrich
 SUPPLIERS = [
     {"supplier_id": "SUP-AL1", "name": "Placeholder garment maker Albania", "country": "AL", "city": "Durrës",
      "sku_ids": "FT-JKT-100;FT-JKT-200;FT-TRS-100;FT-OVR-100", "lead_time_days": 35, "incoterm": "DAP",
-     "currency": "EUR", "brands": "FlexiTog", "inbound_mode": "road",
+     "currency": "EUR", "brands": "FlexiTog", "inbound_mode": "road", "direct_to_partners": True,
      "notes": "Cut-make-trim for the FlexiTog line. Road via Montenegro and Croatia, or ferry to Bari"},
     {"supplier_id": "SUP-CN1", "name": "Placeholder workwear maker China (Ningbo)", "country": "CN", "city": "Ningbo",
      "sku_ids": "RW-PRK-100;RW-GLV-100", "lead_time_days": 90, "incoterm": "FOB", "currency": "USD",
-     "brands": "RefrigiWear", "inbound_mode": "sea"},
+     "brands": "RefrigiWear", "inbound_mode": "sea", "direct_to_partners": True},
     {"supplier_id": "SUP-CN2", "name": "Placeholder glove maker China (Qingdao)", "country": "CN", "city": "Qingdao",
      "sku_ids": "GF-GLV-200", "lead_time_days": 85, "incoterm": "FOB", "currency": "USD",
-     "brands": "Gold Freeze", "inbound_mode": "sea"},
+     "brands": "Gold Freeze", "inbound_mode": "sea", "direct_to_partners": True},
     {"supplier_id": "SUP-BD1", "name": "Placeholder garment maker Bangladesh (Chattogram)", "country": "BD",
      "city": "Chattogram", "sku_ids": "RW-VST-100;GF-BAL-100;GF-TRS-200", "lead_time_days": 95, "incoterm": "FOB",
-     "currency": "USD", "brands": "RefrigiWear;Gold Freeze", "inbound_mode": "sea"},
+     "currency": "USD", "brands": "RefrigiWear;Gold Freeze", "inbound_mode": "sea", "direct_to_partners": True},
     {"supplier_id": "SUP-RS1", "name": "Placeholder footwear and hosiery maker Serbia", "country": "RS",
      "city": "Leskovac", "sku_ids": "RW-BOT-100;GF-SOC-100", "lead_time_days": 30, "incoterm": "FCA",
-     "currency": "EUR", "brands": "RefrigiWear;Gold Freeze", "inbound_mode": "road"},
+     "currency": "EUR", "brands": "RefrigiWear;Gold Freeze", "inbound_mode": "road",
+     "direct_to_partners": True},
 ]
 
 DCS = [

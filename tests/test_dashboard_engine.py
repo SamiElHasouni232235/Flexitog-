@@ -64,7 +64,7 @@ def test_batch_scorecard_matches_python(ws, tmp_path):
     for r in sc.to_dict("records"):
         j = jsc[(r["region"], r["scenario"])]
         for k in ("coverage", "cost_per_unit_eur", "customer_cost_per_unit_eur", "lead_time_days", "hassle",
-                  "flexitog_paperwork", "proven_lane_share", "placeholder_cost_share"):
+                  "flexitog_paperwork", "proven_lane_share", "placeholder_cost_share", "direct_share"):
             if pd.isna(r[k]):
                 assert j[k] is None, (r["region"], r["scenario"], k)
             else:
@@ -195,3 +195,23 @@ def test_history_batch_matches_python(ws, tmp_path):
                 assert j[k] is None
             else:
                 assert j[k] == pytest.approx(r[k], rel=1e-9, abs=1e-9), (r["region"], r["scenario"], k)
+
+
+@pytest.mark.parametrize("mode", [0, 2])
+def test_parity_in_each_direct_sourcing_mode(ws, tmp_path, mode):
+    g = ws.load_params("general")
+    g.loc[g["parameter"] == "direct_sourcing_mode", "value"] = mode
+    ws.save_params("general", g)
+    payload = build_payload(ws)
+    js = run_js(payload, tmp_path)
+    _, sc = python_side(ws, payload)
+    jsc = {(r["group"], r["scenario"]): r for r in js["sc"]}
+    for r in sc.to_dict("records"):
+        j = jsc[(r["region"], r["scenario"])]
+        for k in ("cost_per_unit_eur", "direct_share", "lead_time_days"):
+            if pd.isna(r[k]):
+                assert j[k] is None
+            else:
+                assert j[k] == pytest.approx(r[k], rel=1e-9, abs=1e-9), (r["region"], r["scenario"], k)
+    shares = [r["direct_share"] for r in sc.to_dict("records") if r["scenario"] != "cif_baseline" and pd.notna(r["direct_share"])]
+    assert (max(shares) == 0) if mode == 0 else (min(shares) > 0.99)

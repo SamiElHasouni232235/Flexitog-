@@ -502,7 +502,7 @@ def page_engine():
         column_config={"placeholder_cost_share": st.column_config.ProgressColumn(
             "placeholder share", min_value=0, max_value=1, format="percent")},
     )
-    st.caption("Cost to serve = everything between Helmond stock and goods at the customer, excluding the goods "
+    st.caption("Cost to serve = everything between the supplier and goods at the customer, excluding the goods "
                "themselves and recoverable import VAT. Hassle columns feed phase 3.")
 
     r = ev.selected

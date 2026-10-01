@@ -188,6 +188,7 @@ def run_batch(orders: pd.DataFrame, lines: pd.DataFrame, data: Data, progress=No
                     "customer_paperwork_steps": r.customer_paperwork_steps,
                     "flexitog_paperwork": r.paperwork(FLEXITOG), "partner_paperwork": r.paperwork(PARTNER),
                     "placeholder_cost_share": r.placeholder_cost_share,
+                    "direct_pallets": r.direct_share * r.pallets,
                     **{f"hassle_{k}": fn(r, data) for k, (_, _, fn) in HASSLE_METHODS.items()},
                 })
             rows.append(row)
@@ -231,6 +232,8 @@ def scorecard(results: pd.DataFrame, method: str = "customer_first") -> pd.DataF
             "flexitog_paperwork": ok["flexitog_paperwork"].mean() if len(ok) else np.nan,
             "proven_lane_share": (ok["lane_status"] == "proven").mean() if len(ok) else np.nan,
             "placeholder_cost_share": ok["placeholder_cost_share"].mean() if len(ok) else np.nan,
+            "direct_share": ok["direct_pallets"].sum() / ok["pallets"].sum()
+            if len(ok) and ok["pallets"].sum() else np.nan,
         })
     sc = pd.DataFrame(out)
     order = {s: i for i, s in enumerate(["cif_baseline"] + IN_SCOPE)}

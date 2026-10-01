@@ -74,7 +74,11 @@ def test_override_forces_selected_route(ws):
 
 
 def test_proven_lane_wins_over_cheaper_unproven(ws):
-    """Make DIST-SA an existing partner on a proven lane: it should win despite a small cost gap."""
+    """Make DIST-SA an existing partner on a proven lane: it should win despite a small cost gap.
+    Direct sourcing is off here: the proven lane is Helmond -> DIST-SA."""
+    g = ws.load_params("general")
+    g.loc[g["parameter"] == "direct_sourcing_mode", "value"] = 0
+    ws.save_params("general", g)
     dcs = ws.load("distribution_centers")
     dcs.loc[dcs["dc_id"] == "DIST-SA", "status"] = "existing"
     ws.save("distribution_centers", dcs)
@@ -179,3 +183,53 @@ def test_seed_brands_and_origins(ws):
     assert {"CN", "BD", "RS", "AL"} == set(sup["country"])
     supplied = {s for ids in sup["sku_ids"] for s in str(ids).split(";")}
     assert supplied == set(products.index)
+
+
+def _set_general(ws, name, value):
+    g = ws.load_params("general")
+    g.loc[g["parameter"] == name, "value"] = value
+    ws.save_params("general", g)
+
+
+def test_stocked_nodes_refill_direct_from_supplier_when_cheaper(ws):
+    order, lines = order_for(ws, "T-SA-001")
+    jafz = by_key(evaluate(order, lines, Data.from_workspace(ws)))["3PL-JAFZ"]
+    assert jafz.direct_share == pytest.approx(1.0)
+    assert all(g["direct_eur_per_pallet"] < g["via_helmond_eur_per_pallet"] for g in jafz.sourcing)
+    cats = [s.category for s in jafz.steps]
+    assert "inbound" in cats and not any(s.step.startswith("Pick and load at Helmond") for s in jafz.steps)
+    assert jafz.main_leg is None
+
+    _set_general(ws, "direct_sourcing_mode", 0)
+    via = by_key(evaluate(order, lines, Data.from_workspace(ws)))["3PL-JAFZ"]
+    assert via.direct_share == 0 and via.main_leg is not None
+    assert via.cost_to_serve > jafz.cost_to_serve
+    assert any(s.step.startswith("Inbound SUP-") for s in via.steps)
+
+
+def test_baseline_counts_supplier_inbound_and_never_goes_direct(ws):
+    order, lines = order_for(ws, "T-SA-001")
+    base = evaluate(order, lines, Data.from_workspace(ws)).baseline
+    inbound = [s for s in base.steps if s.category == "inbound"]
+    assert {s.party for s in inbound} == {"Supplier SUP-AL1", "Supplier SUP-CN1"}
+    assert base.direct_share == 0
+    pallets = sum(g["pallets"] for g in base.sourcing)
+    assert pallets == pytest.approx(order["pallet_count"])
+
+
+def test_supplier_can_be_barred_from_direct_shipping(ws):
+    sup = ws.load("suppliers")
+    sup.loc[sup["supplier_id"] == "SUP-AL1", "direct_to_partners"] = False
+    ws.save("suppliers", sup)
+    order, lines = order_for(ws, "T-SA-001")
+    jafz = by_key(evaluate(order, lines, Data.from_workspace(ws)))["3PL-JAFZ"]
+    paths = {g["supplier_id"]: g["path"] for g in jafz.sourcing}
+    assert paths == {"SUP-AL1": "helmond", "SUP-CN1": "direct"}
+    assert 0 < jafz.direct_share < 1 and jafz.main_leg is not None
+
+
+def test_old_freight_file_gains_direct_rates(ws):
+    f = ws.load_params("freight")
+    ws.save_params("freight", f[f["leg"] != "direct"].drop(columns=["origin_country"]))
+    f2 = ws.load_params("freight")
+    assert (f2["leg"] == "direct").sum() == (P.default_table("freight")["leg"] == "direct").sum()

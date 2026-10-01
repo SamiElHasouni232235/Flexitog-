@@ -149,6 +149,29 @@ class Data:
             rows = rows[rows["mode"] == prefer_mode]
         return rows.sort_values("eur_per_pallet").iloc[0].to_dict()
 
+    def direct_freight(self, origin: str, dest: str) -> dict | None:
+        """Cheapest non-air direct rate from a supplier country to a node country."""
+        f = self.freight
+        if "origin_country" not in f.columns:
+            return None
+        rows = f[(f["leg"] == "direct") & (f["mode"] != "air") & (f["origin_country"].astype(str) == origin)
+                 & (f["dest_country"] == dest)]
+        return rows.sort_values("eur_per_pallet", kind="stable").iloc[0].to_dict() if len(rows) else None
+
+    _sku_supplier: dict | None = field(default=None, repr=False)
+
+    def sku_supplier(self) -> dict[str, dict]:
+        """SKU -> first supplier row listing it in sku_ids."""
+        if self._sku_supplier is None:
+            out: dict[str, dict] = {}
+            for sp in self.suppliers.to_dict("records"):
+                for sku in str(sp.get("sku_ids") or "").replace(",", ";").split(";"):
+                    sku = sku.strip()
+                    if sku and sku not in out:
+                        out[sku] = sp
+            self._sku_supplier = out
+        return self._sku_supplier
+
     def compliance_rows(self, country: str) -> pd.DataFrame:
         return self.compliance[self.compliance["country"] == country]
 
@@ -192,6 +215,13 @@ class Route:
     vat_eur: float = 0.0
     min_order_value_eur: float = 0.0
     risk_premium_pct: float = 0.0
+    sourcing: list[dict] = field(default_factory=list)  # per supplier group: path, pallets, cost per pallet
+    main_leg: dict | None = None
+
+    @property
+    def direct_share(self) -> float:
+        """Share of the order's pallets refilled straight from the supplier."""
+        return sum(g["pallets"] for g in self.sourcing if g["path"] == "direct") / self.pallets if self.pallets else 0.0
 
     @property
     def key(self) -> str:
@@ -346,6 +376,7 @@ class OrderContext:
     skus: list[str]
     supplier: dict | None
     issues: list[str]
+    supply: list[dict] = field(default_factory=list)  # [{supplier: dict | None, share: pallet share}]
 
 
 def order_context(order: dict, lines: pd.DataFrame, data: Data) -> OrderContext:
@@ -378,7 +409,35 @@ def order_context(order: dict, lines: pd.DataFrame, data: Data) -> OrderContext:
     return OrderContext(order=order, customer=customer, country=country, lines=ol,
                         value=float(ol["value"].sum()), units=float(ol["quantity"].sum()), pallets=pallets,
                         duty_weights=ol[["sku", "value", "eu_origin"]], cert_skus=cert,
-                        skus=ol["sku"].astype(str).tolist(), supplier=supplier, issues=issues)
+                        skus=ol["sku"].astype(str).tolist(), supplier=supplier, issues=issues,
+                        supply=supply_groups(ol, data, supplier))
+
+
+def supply_groups(ol: pd.DataFrame, data: Data, supplier: dict | None) -> list[dict]:
+    """Split the order's pallets by the supplier of each SKU (pallet share from units per pallet,
+    value share when units per pallet is missing). An order that starts at a supplier is one group."""
+    if supplier is not None:
+        return [{"supplier": supplier, "share": 1.0}]
+    upp = data.products.set_index("sku")["units_per_pallet"].to_dict() if len(data.products) else {}
+    weights = []
+    for sku, qty, value in zip(ol["sku"].astype(str), ol["quantity"], ol["value"]):
+        u = num(upp.get(sku))
+        weights.append((sku, float(qty) / u if u > 0 else 0.0, float(value)))
+    total = sum(w for _, w, _ in weights)
+    if total <= 0:
+        total = sum(v for _, _, v in weights)
+        weights = [(k, v, v) for k, _, v in weights]
+    if total <= 0:
+        weights = [(k, 1.0, 0.0) for k, _, _ in weights]
+        total = float(len(weights)) or 1.0
+    groups: dict[str, dict] = {}
+    m = data.sku_supplier()
+    for sku, w, _ in weights:
+        sp = m.get(sku)
+        key = str(sp["supplier_id"]) if sp else ""
+        g = groups.setdefault(key, {"supplier": sp, "share": 0.0})
+        g["share"] += w / total
+    return list(groups.values())
 
 
 # ====================================================================== lanes
@@ -528,51 +587,111 @@ def build_route(ctx: OrderContext, data: Data, scenario: str, dc: dict | None = 
         prem += data.g(f"risk_premium_dc_{route.dc_status}_pct")[0]
     route.risk_premium_pct = prem
 
-    # ---- supplier inbound (same for every scenario, days only hit the baseline)
-    if ctx.supplier:
-        mode = ctx.supplier.get("inbound_mode")
-        f = data.freight_option("inbound", "NL", prefer_mode="sea" if blank(mode) else str(mode).strip().lower())
-        cost = max(num(f["min_charge_eur"]), num(f["eur_per_pallet"]) * Pal) if f else 0.0
-        route.steps.append(Step(
-            step=f"Inbound {ctx.supplier['supplier_id']} -> Helmond", category="freight", cost_eur=cost,
-            days=0.0 if stocked else num(ctx.supplier.get("lead_time_days")),
-            party=f"Supplier {ctx.supplier['supplier_id']}", source=str(f["source"]) if f else P.PLACEHOLDER,
-            note="stock pre-positioned, supplier lead time not on order path" if stocked else "make-to-order"))
-
-    # ---- Helmond
+    # ---- sourcing: supplier -> Helmond, or (stocked scenarios) supplier -> node direct
     h, hsrc = data.g("helmond_outbound_handling_eur_per_pallet")
-    proc_days, _ = data.lead("order_processing_helmond")
-    route.steps.append(Step(step="Pick and load at Helmond", category="handling", cost_eur=h * Pal,
-                            days=0.0 if stocked else proc_days, party="FlexiTog Helmond", source=hsrc,
-                            note="replenishment, not on order path" if stocked else ""))
     exp, esrc = data.g("export_docs_eur_per_shipment")
     coo, _ = data.g("certificate_of_origin_eur")
-    exp_days, _ = data.lead("export_clearance_eu")
-    route.steps.append(Step(step="EU export declaration + CoO", category="export_docs",
-                            cost_eur=(exp + coo) * alloc, days=0.0 if stocked else exp_days,
-                            party="Forwarder", customs=True, doc_steps=2, source=esrc))
-
-    # ---- main freight Helmond -> node country
     prefer_port = (dc.get("port_of_entry") if dc else ctx.customer.get("destination_port")) or None
     f = data.freight_option("main", node_country, prefer_port=prefer_port)
-    if f is None:
-        route.issues.append(f"No main freight rate to {node_country}")
-        freight = 0.0
-        transit = 0.0
-    else:
-        rate = num(f["eur_per_pallet"]) * factor * Pal
-        freight = rate if stocked else max(num(f["min_charge_eur"]), rate)
-        transit = num(f["transit_days"])
-        route.steps.append(Step(
-            step=f"Main freight Helmond -> {f.get('port_or_border') or node_country} ({f['mode']})",
-            category="freight", cost_eur=freight, days=0.0 if stocked else transit, party="Forwarder",
-            source=str(f["source"]),
-            note=f"consolidated replenishment x{factor:g}" if stocked else "single shipment, min charge applies"))
+    main_pp = num(f["eur_per_pallet"]) * factor if f is not None else None
+    via_fixed_pp = h + ((exp + coo) * alloc / Pal if Pal > 0 else 0.0)
+    dmode, _ = data.g("direct_sourcing_mode")
+    d_replen, _ = data.g("direct_replenishment_pallets_per_shipment")
+    o_docs, osrc = data.g("origin_export_docs_eur_per_shipment")
+    make_to_order = ctx.supplier is not None and not stocked
+    for grp in ctx.supply:
+        sp, pal = grp["supplier"], Pal * grp["share"]
+        inb = None
+        if sp is not None:
+            mode = sp.get("inbound_mode")
+            inb = data.freight_option("inbound", "NL", prefer_mode="sea" if blank(mode) else str(mode).strip().lower())
+        inbound_pp = num(inb["eur_per_pallet"]) if inb is not None else 0.0
+        via_pp = inbound_pp + via_fixed_pp + main_pp if main_pp is not None else None
+        g = {"supplier_id": str(sp["supplier_id"]) if sp is not None else "", "pallets": pal, "path": "helmond",
+             "via_helmond_eur_per_pallet": via_pp, "direct_eur_per_pallet": None, "direct_mode": "", "direct_port": ""}
+        df_ = None
+        allowed = sp is not None and stocked and dc is not None and dmode > 0 and \
+            (blank(sp.get("direct_to_partners")) or str(sp.get("direct_to_partners")).strip().lower() not in ("false", "0", "no"))
+        if allowed:
+            df_ = data.direct_freight(str(sp.get("country") or ""), node_country)
+        if df_ is not None:
+            direct_pp = num(df_["eur_per_pallet"]) + (o_docs / d_replen if d_replen > 0 else o_docs)
+            g.update(direct_eur_per_pallet=direct_pp, direct_mode=str(df_["mode"]), direct_port=str(df_.get("port_or_border") or ""))
+            if dmode >= 2 or via_pp is None or direct_pp < via_pp:
+                g["path"] = "direct"
+        grp_inb = inb
+        g["_freight"], g["_inbound"] = df_, grp_inb
+        route.sourcing.append(g)
+
+    helmond_pal = sum(g["pallets"] for g in route.sourcing if g["path"] == "helmond")
+    direct_freight = 0.0
+    for g in route.sourcing:
+        sp_id = g["supplier_id"]
+        if g["path"] == "direct":
+            df_ = g["_freight"]
+            cost = num(df_["eur_per_pallet"]) * g["pallets"]
+            direct_freight += cost
+            route.steps.append(Step(
+                step=f"Direct refill {sp_id} -> {route.dc_id} ({df_['mode']})", category="inbound", cost_eur=cost,
+                party=f"Supplier {sp_id}", source=str(df_["source"]),
+                note=f"supplier ships straight to the node, {g['pallets']:.2f} pallet(s), refill not on order path"))
+            route.steps.append(Step(
+                step=f"Origin export declaration + CoO ({df_['origin_country']})", category="export_docs",
+                cost_eur=o_docs * g["pallets"] / d_replen if d_replen > 0 else o_docs, party=f"Supplier {sp_id}",
+                customs=True, doc_steps=2, source=osrc, note=f"per refill of {d_replen:g} pallets"))
+        elif make_to_order:
+            inb = g["_inbound"]
+            cost = max(num(inb["min_charge_eur"]), num(inb["eur_per_pallet"]) * Pal) if inb is not None else 0.0
+            route.steps.append(Step(
+                step=f"Inbound {sp_id} -> Helmond", category="inbound", cost_eur=cost,
+                days=num(ctx.supplier.get("lead_time_days")), party=f"Supplier {sp_id}",
+                source=str(inb["source"]) if inb is not None else P.PLACEHOLDER, note="make-to-order"))
+        elif sp_id:
+            inb = g["_inbound"]
+            route.steps.append(Step(
+                step=f"Inbound {sp_id} -> Helmond ({inb['mode'] if inb is not None else 'no rate'})", category="inbound",
+                cost_eur=num(inb["eur_per_pallet"]) * g["pallets"] if inb is not None else 0.0,
+                party=f"Supplier {sp_id}", source=str(inb["source"]) if inb is not None else P.PLACEHOLDER,
+                note=f"stock replenishment into Helmond, {g['pallets']:.2f} pallet(s)"))
+        del g["_freight"], g["_inbound"]
+    unknown = [grp for grp in ctx.supply if grp["supplier"] is None]
+    if unknown:
+        route.warnings.append("SKU(s) without a supplier: inbound freight to Helmond not counted")
+    direct_share = route.direct_share
+    if direct_share > 0:
+        route.risk_premium_pct += data.g("risk_premium_direct_sourcing_pct")[0] * direct_share
+
+    # ---- Helmond (only for the pallets that go through it)
+    proc_days, _ = data.lead("order_processing_helmond")
+    exp_days, _ = data.lead("export_clearance_eu")
+    freight = 0.0
+    transit = 0.0
+    if helmond_pal > 0 or not stocked:
+        route.steps.append(Step(step="Pick and load at Helmond", category="handling", cost_eur=h * helmond_pal,
+                                days=0.0 if stocked else proc_days, party="FlexiTog Helmond", source=hsrc,
+                                note="replenishment, not on order path" if stocked else ""))
+        route.steps.append(Step(step="EU export declaration + CoO", category="export_docs",
+                                cost_eur=(exp + coo) * alloc * (helmond_pal / Pal if Pal > 0 else 1.0),
+                                days=0.0 if stocked else exp_days,
+                                party="Forwarder", customs=True, doc_steps=2, source=esrc))
+        # ---- main freight Helmond -> node country
+        if f is None:
+            route.issues.append(f"No main freight rate to {node_country}")
+        else:
+            rate = num(f["eur_per_pallet"]) * factor * helmond_pal
+            freight = rate if stocked else max(num(f["min_charge_eur"]), rate)
+            transit = num(f["transit_days"])
+            route.main_leg = {"mode": str(f["mode"]), "port": str(f.get("port_or_border") or ""), "country": node_country}
+            route.steps.append(Step(
+                step=f"Main freight Helmond -> {f.get('port_or_border') or node_country} ({f['mode']})",
+                category="freight", cost_eur=freight, days=0.0 if stocked else transit, party="Forwarder",
+                source=str(f["source"]),
+                note=f"consolidated replenishment x{factor:g}" if stocked else "single shipment, min charge applies"))
     ins_pct, isrc = data.g("cargo_insurance_pct_of_value")
-    insurance = (V + freight) * ins_pct / 100
+    insurance = (V + freight + direct_freight) * ins_pct / 100
     route.steps.append(Step(step="Cargo insurance", category="insurance", cost_eur=insurance,
                             party="Forwarder", source=isrc))
-    cif = V + freight + insurance
+    cif = V + freight + direct_freight + insurance
 
     # ---- entry into node country
     comp_lead = 0.0

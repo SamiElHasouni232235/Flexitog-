@@ -51,6 +51,19 @@
       if (preferMode && rows.some(x => x.mode === preferMode)) rows = rows.filter(x => x.mode === preferMode);
       return rows.map((x, i) => [x, i]).sort((a, b) => num(a[0].eur_per_pallet) - num(b[0].eur_per_pallet) || a[1] - b[1])[0][0];
     };
+    d.directFreight = (origin, dest) => {
+      const rows = P.freight.filter(x => x.leg === "direct" && x.mode !== "air" && str(x.origin_country) === origin && x.dest_country === dest);
+      return rows.length ? rows.map((x, i) => [x, i]).sort((a, b) => num(a[0].eur_per_pallet) - num(b[0].eur_per_pallet) || a[1] - b[1])[0][0] : null;
+    };
+    let skuSup = null;
+    d.skuSupplier = () => {
+      if (!skuSup) {
+        skuSup = {};
+        (raw.suppliers || []).forEach(sp => String(sp.sku_ids == null ? "" : sp.sku_ids).replace(/,/g, ";").split(";").forEach(k => {
+          k = k.trim(); if (k && !(k in skuSup)) skuSup[k] = sp; }));
+      }
+      return skuSup;
+    };
     d.complianceRows = c => P.compliance.filter(x => x.country === c);
     d.ownedFixed = c => P.owned_fixed.find(x => x.location === c) || null;
     return d;
@@ -107,7 +120,24 @@
     if (!blank(order.supplier_id)) supplier = data.suppliers.find(s => str(s.supplier_id) === str(order.supplier_id)) || null;
     return { order, customer: customer || {}, country, lines: ol,
              value: ol.reduce((a, l) => a + l.value, 0), units: ol.reduce((a, l) => a + l.quantity, 0),
-             pallets, certSkus: ol.filter(l => l.cert).map(l => l.sku), skus: ol.map(l => l.sku), supplier, issues };
+             pallets, certSkus: ol.filter(l => l.cert).map(l => l.sku), skus: ol.map(l => l.sku), supplier, issues,
+             supply: supplyGroups(ol, data, supplier, prod) };
+  }
+
+  // Split the order's pallets by the supplier of each SKU (mirrors engine.supply_groups).
+  function supplyGroups(ol, data, supplier, prod) {
+    if (supplier) return [{ supplier, share: 1 }];
+    let weights = ol.map(l => { const u = num((prod[l.sku] || {}).units_per_pallet); return [l.sku, u > 0 ? l.quantity / u : 0, l.value]; });
+    let total = weights.reduce((a, w) => a + w[1], 0);
+    if (total <= 0) { total = weights.reduce((a, w) => a + w[2], 0); weights = weights.map(w => [w[0], w[2], w[2]]); }
+    if (total <= 0) { weights = weights.map(w => [w[0], 1, 0]); total = weights.length || 1; }
+    const m = data.skuSupplier(), groups = new Map();
+    weights.forEach(([sku, w]) => {
+      const sp = m[sku] || null, key = sp ? str(sp.supplier_id) : "";
+      if (!groups.has(key)) groups.set(key, { supplier: sp, share: 0 });
+      groups.get(key).share += w / total;
+    });
+    return [...groups.values()];
   }
 
   // ------------------------------------------------------------------ lanes
@@ -216,39 +246,89 @@
     if (route.dc_status === "potential" || route.dc_status === "candidate") prem += data.g(`risk_premium_dc_${route.dc_status}_pct`)[0];
     route.risk_premium_pct = prem;
 
-    if (ctx.supplier) {
-      const f = data.freightOption("inbound", "NL", null, blank(ctx.supplier.inbound_mode) ? "sea" : str(ctx.supplier.inbound_mode).trim().toLowerCase());
-      const cost = f ? Math.max(num(f.min_charge_eur), num(f.eur_per_pallet) * Pal) : 0;
-      route.steps.push(step({ step: `Inbound ${ctx.supplier.supplier_id} -> Helmond`, category: "freight", cost_eur: cost,
-        days: stocked ? 0 : num(ctx.supplier.lead_time_days), party: `Supplier ${ctx.supplier.supplier_id}`,
-        source: f ? str(f.source) : PLACEHOLDER, leg: "inbound" }));
-    }
+    // sourcing: supplier -> Helmond, or (stocked scenarios) supplier -> node direct
     const [h, hsrc] = data.g("helmond_outbound_handling_eur_per_pallet");
-    const [procDays] = data.lead("order_processing_helmond");
-    route.steps.push(step({ step: "Pick and load at Helmond", category: "handling", cost_eur: h * Pal,
-      days: stocked ? 0 : procDays, party: "FlexiTog Helmond", source: hsrc }));
     const [exp, esrc] = data.g("export_docs_eur_per_shipment");
     const [coo] = data.g("certificate_of_origin_eur");
-    const [expDays] = data.lead("export_clearance_eu");
-    route.steps.push(step({ step: "EU export declaration + CoO", category: "export_docs", cost_eur: (exp + coo) * alloc,
-      days: stocked ? 0 : expDays, party: "Forwarder", customs: true, doc_steps: 2, source: esrc }));
-
     const preferPort = (dc ? dc.port_of_entry : ctx.customer.destination_port) || null;
     const f = data.freightOption("main", nodeCountry, preferPort);
+    const mainPp = f ? num(f.eur_per_pallet) * factor : null;
+    const viaFixedPp = h + (Pal > 0 ? (exp + coo) * alloc / Pal : 0);
+    const [dmode] = data.g("direct_sourcing_mode");
+    const [dReplen] = data.g("direct_replenishment_pallets_per_shipment");
+    const [oDocs, osrc] = data.g("origin_export_docs_eur_per_shipment");
+    const makeToOrder = !!ctx.supplier && !stocked;
+    route.sourcing = [];
+    const meta = [];
+    ctx.supply.forEach(grp => {
+      const sp = grp.supplier, pal = Pal * grp.share;
+      const inb = sp ? data.freightOption("inbound", "NL", null, blank(sp.inbound_mode) ? "sea" : str(sp.inbound_mode).trim().toLowerCase()) : null;
+      const inboundPp = inb ? num(inb.eur_per_pallet) : 0;
+      const viaPp = mainPp !== null ? inboundPp + viaFixedPp + mainPp : null;
+      const g = { supplier_id: sp ? str(sp.supplier_id) : "", supplier_country: sp ? str(sp.country) : "", pallets: pal, path: "helmond",
+                  via_helmond_eur_per_pallet: viaPp, direct_eur_per_pallet: null, direct_mode: "", direct_port: "" };
+      const dts = sp ? sp.direct_to_partners : null;
+      const allowed = !!sp && stocked && !!dc && dmode > 0 && (blank(dts) || !["false", "0", "no"].includes(String(dts).trim().toLowerCase()));
+      const dfr = allowed ? data.directFreight(str(sp.country), nodeCountry) : null;
+      if (dfr) {
+        const directPp = num(dfr.eur_per_pallet) + (dReplen > 0 ? oDocs / dReplen : oDocs);
+        Object.assign(g, { direct_eur_per_pallet: directPp, direct_mode: str(dfr.mode), direct_port: str(dfr.port_or_border) });
+        if (dmode >= 2 || viaPp === null || directPp < viaPp) g.path = "direct";
+      }
+      route.sourcing.push(g); meta.push({ dfr, inb });
+    });
+    const helmondPal = route.sourcing.reduce((a, g) => a + (g.path === "helmond" ? g.pallets : 0), 0);
+    let directFreight = 0;
+    route.sourcing.forEach((g, i) => {
+      const { dfr, inb } = meta[i], spId = g.supplier_id;
+      if (g.path === "direct") {
+        const cost = num(dfr.eur_per_pallet) * g.pallets;
+        directFreight += cost;
+        route.steps.push(step({ step: `Direct refill ${spId} -> ${route.dc_id} (${dfr.mode})`, category: "inbound", cost_eur: cost,
+          party: `Supplier ${spId}`, source: str(dfr.source), leg: "direct",
+          note: `supplier ships straight to the node, ${g.pallets.toFixed(2)} pallet(s), refill not on order path` }));
+        route.steps.push(step({ step: `Origin export declaration + CoO (${dfr.origin_country})`, category: "export_docs",
+          cost_eur: dReplen > 0 ? oDocs * g.pallets / dReplen : oDocs, party: `Supplier ${spId}`, customs: true, doc_steps: 2,
+          source: osrc, note: `per refill of ${dReplen} pallets` }));
+      } else if (makeToOrder) {
+        const cost = inb ? Math.max(num(inb.min_charge_eur), num(inb.eur_per_pallet) * Pal) : 0;
+        route.steps.push(step({ step: `Inbound ${spId} -> Helmond`, category: "inbound", cost_eur: cost,
+          days: num(ctx.supplier.lead_time_days), party: `Supplier ${spId}`, source: inb ? str(inb.source) : PLACEHOLDER,
+          leg: "inbound", note: "make-to-order" }));
+      } else if (spId) {
+        route.steps.push(step({ step: `Inbound ${spId} -> Helmond (${inb ? inb.mode : "no rate"})`, category: "inbound",
+          cost_eur: inb ? num(inb.eur_per_pallet) * g.pallets : 0, party: `Supplier ${spId}`,
+          source: inb ? str(inb.source) : PLACEHOLDER, leg: "inbound",
+          note: `stock replenishment into Helmond, ${g.pallets.toFixed(2)} pallet(s)` }));
+      }
+    });
+    if (ctx.supply.some(g => !g.supplier)) route.warnings.push("SKU(s) without a supplier: inbound freight to Helmond not counted");
+    route.direct_share = Pal ? route.sourcing.reduce((a, g) => a + (g.path === "direct" ? g.pallets : 0), 0) / Pal : 0;
+    if (route.direct_share > 0) route.risk_premium_pct += data.g("risk_premium_direct_sourcing_pct")[0] * route.direct_share;
+
+    const [procDays] = data.lead("order_processing_helmond");
+    const [expDays] = data.lead("export_clearance_eu");
     let freight = 0, transit = 0;
-    if (!f) route.issues.push(`No main freight rate to ${nodeCountry}`);
-    else {
-      const rate = num(f.eur_per_pallet) * factor * Pal;
-      freight = stocked ? rate : Math.max(num(f.min_charge_eur), rate);
-      transit = num(f.transit_days);
-      route.main_leg = { mode: f.mode, port: str(f.port_or_border), country: nodeCountry };
-      route.steps.push(step({ step: `Main freight Helmond -> ${f.port_or_border || nodeCountry} (${f.mode})`, category: "freight",
-        cost_eur: freight, days: stocked ? 0 : transit, party: "Forwarder", source: str(f.source), leg: "main" }));
+    if (helmondPal > 0 || !stocked) {
+      route.steps.push(step({ step: "Pick and load at Helmond", category: "handling", cost_eur: h * helmondPal,
+        days: stocked ? 0 : procDays, party: "FlexiTog Helmond", source: hsrc }));
+      route.steps.push(step({ step: "EU export declaration + CoO", category: "export_docs",
+        cost_eur: (exp + coo) * alloc * (Pal > 0 ? helmondPal / Pal : 1),
+        days: stocked ? 0 : expDays, party: "Forwarder", customs: true, doc_steps: 2, source: esrc }));
+      if (!f) route.issues.push(`No main freight rate to ${nodeCountry}`);
+      else {
+        const rate = num(f.eur_per_pallet) * factor * helmondPal;
+        freight = stocked ? rate : Math.max(num(f.min_charge_eur), rate);
+        transit = num(f.transit_days);
+        route.main_leg = { mode: f.mode, port: str(f.port_or_border), country: nodeCountry };
+        route.steps.push(step({ step: `Main freight Helmond -> ${f.port_or_border || nodeCountry} (${f.mode})`, category: "freight",
+          cost_eur: freight, days: stocked ? 0 : transit, party: "Forwarder", source: str(f.source), leg: "main" }));
+      }
     }
     const [insPct, isrc] = data.g("cargo_insurance_pct_of_value");
-    const insurance = (V + freight) * insPct / 100;
+    const insurance = (V + freight + directFreight) * insPct / 100;
     route.steps.push(step({ step: "Cargo insurance", category: "insurance", cost_eur: insurance, party: "Forwarder", source: isrc }));
-    const cif = V + freight + insurance;
+    const cif = V + freight + directFreight + insurance;
 
     let compLead = 0;
     if (cross) {
@@ -385,7 +465,7 @@
           lead_time_days: M.lead(r), lane_status: r.lane_status, customs_touchpoints: M.customs(r), handoffs: M.handoffs(r),
           doc_steps: M.docSteps(r), customer_steps: M.customerSteps(r), customer_paperwork_steps: M.customerPaperworkSteps(r),
           flexitog_paperwork: M.paperwork(r, FLEXITOG), partner_paperwork: M.paperwork(r, PARTNER),
-          placeholder_cost_share: M.placeholderShare(r),
+          placeholder_cost_share: M.placeholderShare(r), direct_pallets: (r.direct_share || 0) * r.pallets,
           hassle: Object.fromEntries(Object.entries(HASSLE).map(([k, fn]) => [k, fn(r, data)])),
         });
         rows.push(row);
@@ -410,6 +490,7 @@
       flexitog_paperwork: mean(ok, r => r.flexitog_paperwork),
       proven_lane_share: mean(ok, r => (r.lane_status === "proven" ? 1 : 0)),
       placeholder_cost_share: mean(ok, r => r.placeholder_cost_share),
+      direct_share: sum(ok, "pallets") ? sum(ok, "direct_pallets") / sum(ok, "pallets") : null,
       pallets: sum(ok, "pallets"),
     };
   }

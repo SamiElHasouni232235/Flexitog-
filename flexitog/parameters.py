@@ -58,12 +58,24 @@ GENERAL = _rows([
      "source_note": "Customer-first hassle score: clearance, duty or compliance step the customer handles"},
     {"parameter": "hassle_weight_customer_other", "value": 1, "unit": "points/step",
      "source_note": "Customer-first hassle score: other step the customer arranges (e.g. inland transport)"},
+    # Direct sourcing: a distributor, 3PL or owned warehouse refilled straight from the supplier.
+    {"parameter": "direct_sourcing_mode", "value": 1, "unit": "0 never / 1 when cheaper / 2 always",
+     "source_note": ("Stocked scenarios only. 1 = per supplier, ship direct to the node when that costs less "
+                     "per pallet than going through Helmond. 2 = direct whenever a direct rate exists")},
+    {"parameter": "direct_replenishment_pallets_per_shipment", "value": 20, "unit": "pallets",
+     "source_note": "One 40 ft container or one truck per supplier per refill. Spreads origin export fees"},
+    {"parameter": "origin_export_docs_eur_per_shipment", "value": 110, "unit": "EUR/shipment",
+     "source_note": "Export declaration and certificate of origin in the supplier country, via its forwarder"},
+    {"parameter": "risk_premium_direct_sourcing_pct", "value": 5, "unit": "% of cost",
+     "source_note": ("Routing score penalty, scaled by the share of pallets sourced direct: new lanes, no "
+                     "quality check or relabelling at Helmond")},
 ])
 
 
 # ---------------------------------------------------------------- freight
 # leg: main = Helmond to destination country/port; domestic = in-country delivery;
-# inbound = supplier to Helmond (used when an order starts at a supplier).
+# inbound = supplier to Helmond (stock replenishment, and orders that start at a supplier);
+# direct = supplier country (origin_country) straight to a partner node's country.
 
 FREIGHT = _rows([
     # Türkiye: road via Balkans, customs union partner.
@@ -135,6 +147,67 @@ FREIGHT = _rows([
     {"leg": "inbound", "dest_country": "NL", "mode": "road", "port_or_border": "Balkans road",
      "eur_per_pallet": 110, "min_charge_eur": 250, "transit_days": 5,
      "source_note": "Albania / Serbia groupage truck to Helmond. Replace with the forwarder's quote"},
+    # Supplier straight to a partner node (direct sourcing). Rates per pallet in a full container or truck.
+    {"leg": "direct", "origin_country": "CN", "dest_country": "AE", "mode": "sea", "port_or_border": "Jebel Ali",
+     "eur_per_pallet": 85, "min_charge_eur": 0, "transit_days": 20,
+     "source_note": "FCL share Ningbo/Qingdao-Jebel Ali. Consolidated refill rate, replace with a quote"},
+    {"leg": "direct", "origin_country": "CN", "dest_country": "SA", "mode": "sea", "port_or_border": "Dammam",
+     "eur_per_pallet": 95, "min_charge_eur": 0, "transit_days": 22,
+     "source_note": "FCL share China-Dammam. Consolidated refill rate, replace with a quote"},
+    {"leg": "direct", "origin_country": "CN", "dest_country": "TR", "mode": "sea", "port_or_border": "Ambarlı",
+     "eur_per_pallet": 115, "min_charge_eur": 0, "transit_days": 38,
+     "source_note": "China-Ambarlı, Cape routing while the Red Sea is disrupted. Consolidated refill rate, replace with a quote"},
+    {"leg": "direct", "origin_country": "CN", "dest_country": "MA", "mode": "sea", "port_or_border": "Tanger Med",
+     "eur_per_pallet": 110, "min_charge_eur": 0, "transit_days": 32,
+     "source_note": "China-Tanger Med (Asia-Europe main line call), Cape routing. Consolidated refill rate, replace with a quote"},
+    {"leg": "direct", "origin_country": "CN", "dest_country": "EG", "mode": "sea", "port_or_border": "Alexandria",
+     "eur_per_pallet": 120, "min_charge_eur": 0, "transit_days": 38,
+     "source_note": "China-Alexandria, Cape routing. Consolidated refill rate, replace with a quote"},
+    {"leg": "direct", "origin_country": "BD", "dest_country": "AE", "mode": "sea", "port_or_border": "Jebel Ali",
+     "eur_per_pallet": 80, "min_charge_eur": 0, "transit_days": 16,
+     "source_note": "Chattogram-Jebel Ali via Colombo. Consolidated refill rate, replace with a quote"},
+    {"leg": "direct", "origin_country": "BD", "dest_country": "SA", "mode": "sea", "port_or_border": "Dammam",
+     "eur_per_pallet": 90, "min_charge_eur": 0, "transit_days": 18,
+     "source_note": "Chattogram-Dammam via Colombo. Consolidated refill rate, replace with a quote"},
+    {"leg": "direct", "origin_country": "BD", "dest_country": "TR", "mode": "sea", "port_or_border": "Ambarlı",
+     "eur_per_pallet": 125, "min_charge_eur": 0, "transit_days": 40,
+     "source_note": "Chattogram-Ambarlı, Cape routing. Consolidated refill rate, replace with a quote"},
+    {"leg": "direct", "origin_country": "BD", "dest_country": "MA", "mode": "sea", "port_or_border": "Tanger Med",
+     "eur_per_pallet": 120, "min_charge_eur": 0, "transit_days": 34,
+     "source_note": "Chattogram-Tanger Med, Cape routing. Consolidated refill rate, replace with a quote"},
+    {"leg": "direct", "origin_country": "BD", "dest_country": "EG", "mode": "sea", "port_or_border": "Alexandria",
+     "eur_per_pallet": 125, "min_charge_eur": 0, "transit_days": 40,
+     "source_note": "Chattogram-Alexandria, Cape routing. Consolidated refill rate, replace with a quote"},
+    {"leg": "direct", "origin_country": "AL", "dest_country": "TR", "mode": "road", "port_or_border": "Kapıkule",
+     "eur_per_pallet": 105, "min_charge_eur": 0, "transit_days": 4,
+     "source_note": "Durrës-Istanbul groupage via North Macedonia and Bulgaria. Consolidated refill rate, replace with a quote"},
+    {"leg": "direct", "origin_country": "AL", "dest_country": "MA", "mode": "sea", "port_or_border": "Tanger Med",
+     "eur_per_pallet": 150, "min_charge_eur": 0, "transit_days": 9,
+     "source_note": "Durrës-Tanger Med short sea with transhipment. Consolidated refill rate, replace with a quote"},
+    {"leg": "direct", "origin_country": "AL", "dest_country": "EG", "mode": "sea", "port_or_border": "Alexandria",
+     "eur_per_pallet": 140, "min_charge_eur": 0, "transit_days": 8,
+     "source_note": "Durrës-Alexandria short sea. Consolidated refill rate, replace with a quote"},
+    {"leg": "direct", "origin_country": "AL", "dest_country": "AE", "mode": "sea", "port_or_border": "Jebel Ali",
+     "eur_per_pallet": 190, "min_charge_eur": 0, "transit_days": 38,
+     "source_note": "Durrës-Jebel Ali, Cape routing while the Red Sea is disrupted (about 16 days via Suez). Consolidated refill rate, replace with a quote"},
+    {"leg": "direct", "origin_country": "AL", "dest_country": "SA", "mode": "sea", "port_or_border": "Jeddah",
+     "eur_per_pallet": 165, "min_charge_eur": 0, "transit_days": 18,
+     "source_note": "Durrës-Jeddah via Suez (northern Red Sea), then truck to the node. Consolidated refill rate, replace with a quote"},
+    {"leg": "direct", "origin_country": "RS", "dest_country": "TR", "mode": "road", "port_or_border": "Kapıkule",
+     "eur_per_pallet": 90, "min_charge_eur": 0, "transit_days": 3,
+     "source_note": "Leskovac-Istanbul truck via Bulgaria. Consolidated refill rate, replace with a quote"},
+    {"leg": "direct", "origin_country": "RS", "dest_country": "MA", "mode": "sea", "port_or_border": "Tanger Med",
+     "eur_per_pallet": 160, "min_charge_eur": 0, "transit_days": 10,
+     "source_note": "Truck to Thessaloniki, short sea to Tanger Med. Consolidated refill rate, replace with a quote"},
+    {"leg": "direct", "origin_country": "RS", "dest_country": "EG", "mode": "sea", "port_or_border": "Alexandria",
+     "eur_per_pallet": 140, "min_charge_eur": 0, "transit_days": 7,
+     "source_note": "Truck to Thessaloniki, short sea to Alexandria. Consolidated refill rate, replace with a quote"},
+    {"leg": "direct", "origin_country": "RS", "dest_country": "AE", "mode": "sea", "port_or_border": "Jebel Ali",
+     "eur_per_pallet": 195, "min_charge_eur": 0, "transit_days": 37,
+     "source_note": "Truck to Thessaloniki, sea via the Cape while the Red Sea is disrupted. Consolidated refill rate, replace with a quote"},
+    {"leg": "direct", "origin_country": "RS", "dest_country": "SA", "mode": "sea", "port_or_border": "Jeddah",
+     "eur_per_pallet": 170, "min_charge_eur": 0, "transit_days": 18,
+     "source_note": "Truck to Thessaloniki, sea via Suez to Jeddah, then truck to the node. Consolidated refill rate, replace with a quote"},
 ])
 
 
@@ -305,6 +378,8 @@ DEFAULT_TABLES: dict[str, tuple[str, pd.DataFrame]] = {
 # Unique key column per table, used to merge new defaults into saved files.
 TABLE_KEYS = {"general": "parameter", "scenarios": "scenario", "duties": "country",
               "owned_fixed": "location", "lead_times": "step"}
+# Tables without a unique key: new values of this column are added to saved files as a group.
+TABLE_GROUPS = {"freight": "leg"}
 
 
 def default_table(name: str) -> pd.DataFrame:
