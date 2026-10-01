@@ -215,3 +215,22 @@ def test_parity_in_each_direct_sourcing_mode(ws, tmp_path, mode):
                 assert j[k] == pytest.approx(r[k], rel=1e-9, abs=1e-9), (r["region"], r["scenario"], k)
     shares = [r["direct_share"] for r in sc.to_dict("records") if r["scenario"] != "cif_baseline" and pd.notna(r["direct_share"])]
     assert (max(shares) == 0) if mode == 0 else (min(shares) > 0.99)
+
+
+@pytest.mark.parametrize("group,field,value", [("delivery", "pick", "fastest"), ("supply", "pick", "cheapest"),
+                                               ("refill", "allowed_modes", "road")])
+def test_parity_under_mode_policies(ws, tmp_path, group, field, value):
+    m = ws.load_params("modes")
+    m.loc[m["leg_group"] == group, field] = value
+    ws.save_params("modes", m)
+    payload = build_payload(ws)
+    js = run_js(payload, tmp_path)
+    _, sc = python_side(ws, payload)
+    jsc = {(r["group"], r["scenario"]): r for r in js["sc"]}
+    for r in sc.to_dict("records"):
+        j = jsc[(r["region"], r["scenario"])]
+        for k in ("coverage", "cost_per_unit_eur", "lead_time_days", "direct_share"):
+            if pd.isna(r[k]):
+                assert j[k] is None, (group, r["region"], r["scenario"], k)
+            else:
+                assert j[k] == pytest.approx(r[k], rel=1e-9, abs=1e-9), (group, r["region"], r["scenario"], k)

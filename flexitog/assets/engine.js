@@ -14,6 +14,12 @@
   const STUDY_REGIONS = ["Türkiye", "North Africa", "Gulf/GCC"];
   const PAPERWORK = new Set(["export_docs", "clearance", "duty", "import_fees", "compliance"]);
   const DC_OVERRIDES = ["margin_pct", "inbound_eur_per_pallet", "storage_eur_per_pallet_month", "outbound_eur_per_order"];
+  const DEFAULT_MODES = [
+    { leg_group: "supply", allowed_modes: "sea;road", pick: "preferred", preferred_mode: "sea" },
+    { leg_group: "refill", allowed_modes: "sea;road", pick: "preferred", preferred_mode: "sea" },
+    { leg_group: "export", allowed_modes: "sea;road", pick: "cheapest", preferred_mode: "" },
+    { leg_group: "delivery", allowed_modes: "road;air", pick: "cheapest", preferred_mode: "road" },
+  ];
   const LABELS = { cif_baseline: "Baseline: CIF to port", distributor: "Distributor-held stock",
                    "3pl": "3PL presence", owned_warehouse: "Owned non-EU warehouse" };
 
@@ -38,22 +44,39 @@
       const r = P.lead_times.find(x => x.step === step);
       return r ? [num(r.days), str(r.source)] : [0, PLACEHOLDER];
     };
-    d.freightOption = (leg, dest, preferPort, preferMode) => {
-      let f = P.freight.filter(x => (preferMode === "air" ? x.mode === "air" : x.mode !== "air"));
-      let rows = f.filter(x => x.leg === leg && x.dest_country === dest);
-      if (!rows.length) rows = f.filter(x => x.leg === leg && x.dest_country === "*");
+    // Allowed modes, pick rule and preferred mode per leg group (mirrors Data.mode_policy).
+    d.modePolicy = group => {
+      let r = (P.modes || []).find(x => x.leg_group === group);
+      if (!r) r = DEFAULT_MODES.find(x => x.leg_group === group);
+      const allowed = (blank(r.allowed_modes) ? "" : String(r.allowed_modes)).replace(/,/g, ";").split(";").map(x => x.trim().toLowerCase()).filter(Boolean);
+      return [allowed, blank(r.pick) ? "cheapest" : String(r.pick).trim().toLowerCase(), blank(r.preferred_mode) ? "" : String(r.preferred_mode).trim().toLowerCase()];
+    };
+    // The freight row a leg uses, within the modes its group allows (mirrors Data.pick_freight).
+    d.pickFreight = (group, leg, dest, origin, preferPort, ownMode) => {
+      const [allowed, pick, pref] = d.modePolicy(group);
+      let f = P.freight.filter(x => x.leg === leg && allowed.includes(String(x.mode).toLowerCase()));
+      if (leg === "inbound" || leg === "direct") {
+        const o = x => (blank(x.origin_country) ? "" : String(x.origin_country).trim());
+        const exact = f.filter(x => o(x) === str(origin));
+        if (leg === "direct") f = exact;
+        else { const em = new Set(exact.map(x => x.mode)); f = exact.concat(f.filter(x => (o(x) === "" || o(x) === "*") && !em.has(x.mode))); }
+      }
+      const exact = f.filter(x => x.dest_country === dest), em = new Set(exact.map(x => x.mode));
+      let rows = exact.concat(f.filter(x => x.dest_country === "*" && !em.has(x.mode)));
       if (!rows.length) return null;
+      if (pick === "preferred") {
+        const own = blank(ownMode) ? "" : String(ownMode).trim().toLowerCase();
+        const want = group === "supply" && allowed.includes(own) && rows.some(x => x.mode === own) ? own : pref;
+        if (want && rows.some(x => x.mode === want)) rows = rows.filter(x => x.mode === want);
+      }
       if (preferPort) {
         const key = String(preferPort).toLowerCase();
-        const hit = rows.filter(x => { const p = str(x.port_or_border).toLowerCase(); return !!p && (p.includes(key) || key.includes(p.split(" ")[0])); });
+        const hit = rows.filter(x => { const p = str(x.port_or_border).toLowerCase(); return !!p && p !== "nan" && (p.includes(key) || key.includes(p.split(" ")[0])); });
         if (hit.length) rows = hit;
       }
-      if (preferMode && rows.some(x => x.mode === preferMode)) rows = rows.filter(x => x.mode === preferMode);
-      return rows.map((x, i) => [x, i]).sort((a, b) => num(a[0].eur_per_pallet) - num(b[0].eur_per_pallet) || a[1] - b[1])[0][0];
-    };
-    d.directFreight = (origin, dest) => {
-      const rows = P.freight.filter(x => x.leg === "direct" && x.mode !== "air" && str(x.origin_country) === origin && x.dest_country === dest);
-      return rows.length ? rows.map((x, i) => [x, i]).sort((a, b) => num(a[0].eur_per_pallet) - num(b[0].eur_per_pallet) || a[1] - b[1])[0][0] : null;
+      const k = pick === "fastest" ? (a, b) => num(a[0].transit_days) - num(b[0].transit_days) || num(a[0].eur_per_pallet) - num(b[0].eur_per_pallet) || a[1] - b[1]
+                                   : (a, b) => num(a[0].eur_per_pallet) - num(b[0].eur_per_pallet) || a[1] - b[1];
+      return rows.map((x, i) => [x, i]).sort(k)[0][0];
     };
     let skuSup = null;
     d.skuSupplier = () => {
@@ -75,7 +98,7 @@
                            vat_eur: 0, min_order_value_eur: 0, risk_premium_pct: 0 }, fields);
   }
   const step = (o) => Object.assign({ cost_eur: 0, days: 0, paid_by: FLEXITOG, party: "", customs: false,
-                                      doc_steps: 0, source: PLACEHOLDER, note: "" }, o);
+                                      doc_steps: 0, source: PLACEHOLDER, note: "", leg: "", mode: "", pallets: 0 }, o);
   const M = {
     key: r => r.dc_id || r.scenario,
     label: r => (r.dc_id ? `${LABELS[r.scenario]} | ${r.dc_name}` : LABELS[r.scenario]),
@@ -93,6 +116,7 @@
     customerPaperworkSteps: r => r.steps.filter(s => s.paid_by === CUSTOMER && PAPERWORK.has(s.category)).length,
     paperwork: (r, who) => r.steps.reduce((a, s) => a + (s.paid_by === who && PAPERWORK.has(s.category) ? (s.customs ? 1 : 0) + s.doc_steps : 0), 0),
     placeholderShare: r => { const t = M.cost(r); return t ? r.steps.reduce((a, s) => a + (s.source === PLACEHOLDER ? s.cost_eur : 0), 0) / t : 1; },
+    modeMix: r => { const o = {}; r.steps.forEach(s => { if (s.leg && s.mode) { o[s.leg] = o[s.leg] || {}; o[s.leg][s.mode] = (o[s.leg][s.mode] || 0) + s.pallets; } }); return o; },
     byCategory: r => { const o = {}; r.steps.forEach(s => { o[s.category] = (o[s.category] || 0) + s.cost_eur; }); return o; },
   };
 
@@ -251,7 +275,7 @@
     const [exp, esrc] = data.g("export_docs_eur_per_shipment");
     const [coo] = data.g("certificate_of_origin_eur");
     const preferPort = (dc ? dc.port_of_entry : ctx.customer.destination_port) || null;
-    const f = data.freightOption("main", nodeCountry, preferPort);
+    const f = data.pickFreight(stocked ? "refill" : "export", "main", nodeCountry, null, preferPort);
     const mainPp = f ? num(f.eur_per_pallet) * factor : null;
     const viaFixedPp = h + (Pal > 0 ? (exp + coo) * alloc / Pal : 0);
     const [dmode] = data.g("direct_sourcing_mode");
@@ -262,14 +286,14 @@
     const meta = [];
     ctx.supply.forEach(grp => {
       const sp = grp.supplier, pal = Pal * grp.share;
-      const inb = sp ? data.freightOption("inbound", "NL", null, blank(sp.inbound_mode) ? "sea" : str(sp.inbound_mode).trim().toLowerCase()) : null;
+      const inb = sp ? data.pickFreight("supply", "inbound", "NL", str(sp.country), null, sp.inbound_mode) : null;
       const inboundPp = inb ? num(inb.eur_per_pallet) : 0;
       const viaPp = mainPp !== null ? inboundPp + viaFixedPp + mainPp : null;
       const g = { supplier_id: sp ? str(sp.supplier_id) : "", supplier_country: sp ? str(sp.country) : "", pallets: pal, path: "helmond",
                   via_helmond_eur_per_pallet: viaPp, direct_eur_per_pallet: null, direct_mode: "", direct_port: "" };
       const dts = sp ? sp.direct_to_partners : null;
       const allowed = !!sp && stocked && !!dc && dmode > 0 && (blank(dts) || !["false", "0", "no"].includes(String(dts).trim().toLowerCase()));
-      const dfr = allowed ? data.directFreight(str(sp.country), nodeCountry) : null;
+      const dfr = allowed ? data.pickFreight("supply", "direct", nodeCountry, str(sp.country), null, sp.inbound_mode) : null;
       if (dfr) {
         const directPp = num(dfr.eur_per_pallet) + (dReplen > 0 ? oDocs / dReplen : oDocs);
         Object.assign(g, { direct_eur_per_pallet: directPp, direct_mode: str(dfr.mode), direct_port: str(dfr.port_or_border) });
@@ -285,7 +309,7 @@
         const cost = num(dfr.eur_per_pallet) * g.pallets;
         directFreight += cost;
         route.steps.push(step({ step: `Direct refill ${spId} -> ${route.dc_id} (${dfr.mode})`, category: "inbound", cost_eur: cost,
-          party: `Supplier ${spId}`, source: str(dfr.source), leg: "direct",
+          party: `Supplier ${spId}`, source: str(dfr.source), leg: "direct", mode: str(dfr.mode), pallets: g.pallets,
           note: `supplier ships straight to the node, ${g.pallets.toFixed(2)} pallet(s), refill not on order path` }));
         route.steps.push(step({ step: `Origin export declaration + CoO (${dfr.origin_country})`, category: "export_docs",
           cost_eur: dReplen > 0 ? oDocs * g.pallets / dReplen : oDocs, party: `Supplier ${spId}`, customs: true, doc_steps: 2,
@@ -294,14 +318,15 @@
         const cost = inb ? Math.max(num(inb.min_charge_eur), num(inb.eur_per_pallet) * Pal) : 0;
         route.steps.push(step({ step: `Inbound ${spId} -> Helmond`, category: "inbound", cost_eur: cost,
           days: num(ctx.supplier.lead_time_days), party: `Supplier ${spId}`, source: inb ? str(inb.source) : PLACEHOLDER,
-          leg: "inbound", note: "make-to-order" }));
+          leg: "inbound", mode: inb ? str(inb.mode) : "", pallets: Pal, note: "make-to-order" }));
       } else if (spId) {
         route.steps.push(step({ step: `Inbound ${spId} -> Helmond (${inb ? inb.mode : "no rate"})`, category: "inbound",
           cost_eur: inb ? num(inb.eur_per_pallet) * g.pallets : 0, party: `Supplier ${spId}`,
-          source: inb ? str(inb.source) : PLACEHOLDER, leg: "inbound",
+          source: inb ? str(inb.source) : PLACEHOLDER, leg: "inbound", mode: inb ? str(inb.mode) : "", pallets: g.pallets,
           note: `stock replenishment into Helmond, ${g.pallets.toFixed(2)} pallet(s)` }));
       }
     });
+    route.sourcing.forEach((g, i) => { if (g.supplier_id && !meta[i].inb && g.path === "helmond") route.issues.push(`No supply rate for ${g.supplier_id} to Helmond in the allowed modes`); });
     if (ctx.supply.some(g => !g.supplier)) route.warnings.push("SKU(s) without a supplier: inbound freight to Helmond not counted");
     route.direct_share = Pal ? route.sourcing.reduce((a, g) => a + (g.path === "direct" ? g.pallets : 0), 0) / Pal : 0;
     if (route.direct_share > 0) route.risk_premium_pct += data.g("risk_premium_direct_sourcing_pct")[0] * route.direct_share;
@@ -322,7 +347,8 @@
         transit = num(f.transit_days);
         route.main_leg = { mode: f.mode, port: str(f.port_or_border), country: nodeCountry };
         route.steps.push(step({ step: `Main freight Helmond -> ${f.port_or_border || nodeCountry} (${f.mode})`, category: "freight",
-          cost_eur: freight, days: stocked ? 0 : transit, party: "Forwarder", source: str(f.source), leg: "main" }));
+          cost_eur: freight, days: stocked ? 0 : transit, party: "Forwarder", source: str(f.source), leg: "main",
+          mode: str(f.mode), pallets: stocked ? helmondPal : Pal }));
       }
     }
     const [insPct, isrc] = data.g("cargo_insurance_pct_of_value");
@@ -366,7 +392,7 @@
 
     if (cross) {
       const group = REGIONAL_GROUP[data.regionFor(country)];
-      const rf = group ? data.freightOption("regional", group) : null;
+      const rf = group ? data.pickFreight("delivery", "regional", group) : null;
       const [xDays] = data.lead("export_clearance_eu");
       route.steps.push(step({ step: `Free-zone exit / re-export ${nodeCountry}`, category: "clearance", days: xDays,
         party: nodeParty, paid_by: importPayer, customs: true, doc_steps: 1, source: PLACEHOLDER }));
@@ -376,7 +402,8 @@
         regional = Math.max(num(rf.min_charge_eur), num(rf.eur_per_pallet) * Pal);
         route.regional_leg = { mode: rf.mode, from: nodeCountry, to: country };
         route.steps.push(step({ step: `Regional freight ${nodeCountry} -> ${country} (${rf.mode})`, category: "freight",
-          cost_eur: regional, days: num(rf.transit_days), party: "Regional carrier", paid_by: importPayer, source: str(rf.source), leg: "regional" }));
+          cost_eur: regional, days: num(rf.transit_days), party: "Regional carrier", paid_by: importPayer, source: str(rf.source), leg: "regional",
+          mode: str(rf.mode), pallets: Pal }));
       }
       const crossLead = importBlock(data, ctx, route, country, cif + regional, 1, importPayer, brokerParty, true);
       route.steps.push(step({ step: "Compliance wait (beyond clearance)", category: "compliance",
@@ -386,10 +413,10 @@
       route.steps.push(step({ step: "Compliance wait (beyond transit)", category: "compliance", days: compLead - transit,
         party: brokerParty, paid_by: importPayer }));
     }
-    const dm = data.freightOption("domestic", country);
+    const dm = data.pickFreight("delivery", "domestic", country);
     if (!dm) route.warnings.push(`No domestic delivery rate for ${country}`);
     else {
-      route.steps.push(step({ step: `Delivery to ${ctx.customer.city || "customer"}`, category: "freight",
+      route.steps.push(step({ step: `Delivery to ${ctx.customer.city || "customer"} (${dm.mode})`, category: "freight", mode: str(dm.mode), pallets: Pal,
         cost_eur: Math.max(num(dm.min_charge_eur), num(dm.eur_per_pallet) * Pal), days: num(dm.transit_days),
         paid_by: scenario === "cif_baseline" ? CUSTOMER : importPayer,
         party: scenario === "cif_baseline" ? "Customer's local carrier" : "Local carrier", source: str(dm.source), leg: "domestic" }));

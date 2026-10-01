@@ -95,7 +95,13 @@ margin, minimum order value, handoffs) and owned warehouse fixed cost. All ship 
 - Recommendation = lowest cost x (1 + risk premium). Premiums for occasional/unproven lanes and
   potential/candidate nodes steer toward proven lanes. Routes below minimum order value are excluded.
 - Lane status comes from the lanes table and from sales history (`shipped_via` order count, 12 months).
-- Air freight is never used as a fallback. A country with no surface rate is infeasible.
+- Transport modes (Parameters > Transport modes per leg): each kind of leg has allowed modes and a
+  pick rule. Defaults: supply (supplier to Helmond or to a partner) by sea, preferring sea and
+  using a supplier's own mode first; refill (Helmond to a partner) preferring sea; export (CIF
+  baseline) the cheapest of sea and road; delivery to customers (regional and in-country) by road
+  or air, cheapest first. Pick `fastest` on delivery to use air. Air is used only where a group
+  allows it. A leg with no rate in its allowed modes makes the route infeasible. Inbound and direct
+  rates can be specific to the supplier country (`origin_country`).
 - Hassle metrics per route: customs touchpoints, handoffs between parties, documentation steps,
   steps the customer handles itself. Phase 3 lets you pick the scoring method.
 
@@ -146,6 +152,10 @@ HTML file that runs the whole simulator in the browser, with no Python and no se
   Parameters > Apply changes from the interactive dashboard writes back into the workspace.
 - Region cards, scorecard small multiples, order explorer with route override, issues list and the
   data request table.
+- Map filters: modes shown (sea, road, air) and one supplier at a time. Air legs to customers draw
+  as dotted arcs.
+- Parameters drawer, Transport modes: tick allowed modes per leg and choose preferred, cheapest or
+  fastest.
 - Map navigation: drag to pan, Ctrl/⌘ + scroll or pinch to zoom (plain scroll in full screen),
   double-click to zoom in (Shift + double-click out), + / − / arrows / 0 on the keyboard, F for full screen.
   Full screen uses the browser's full screen when allowed and a page overlay otherwise; the parameter
@@ -183,7 +193,8 @@ Parameters, plus shortcuts to the main master data tabs.
 - Report extract: a standard cross-border supply chain report for all regions or one. Sections:
   executive summary, scope and method, scenario scorecard, landed cost breakdown, lead time breakdown,
   demand profile, network (logistics providers and lanes), supply base (suppliers and brand mix),
-  stock sourcing (via Helmond or direct, per region, model and lane), trade compliance by country, risk and issue register, data quality, recommendations, and an order
+  stock sourcing (via Helmond or direct, per region, model and lane), transport modes (policy and
+  mode mix per leg), trade compliance by country, risk and issue register, data quality, recommendations, and an order
   appendix. Export as an Excel workbook (one sheet
   per section plus all orders), an HTML report or a CSV of every order and scenario.
 

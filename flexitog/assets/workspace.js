@@ -679,12 +679,27 @@ function reportData(){
     if (x.via_helmond_eur_per_pallet != null) { L.via += x.via_helmond_eur_per_pallet * x.pallets; L.vpal += x.pallets; }
   }));
   const directLanes = Object.values(dLanes).sort((a, b) => b.pallets - a.pallets);
+  // transport mode mix per region and scenario, pallet-weighted
+  const mixText = o => { const t = Object.values(o).reduce((a, v) => a + v, 0); return t ? Object.entries(o).sort((a, b) => b[1] - a[1]).map(([m, v]) => `${m} ${Math.round(100 * v / t)}%`).join(", ") : "–"; };
+  const modeMix = [];
+  regs.forEach(rg => SC.forEach(sc => {
+    const g = okRows.filter(r => r.region === rg && r.scenario === sc); if (!g.length) return;
+    const sup = {}, main = {}, cust = {};
+    g.forEach(r => {
+      const mm = E.M.modeMix(r.route);
+      ["inbound", "direct"].forEach(k => Object.entries(mm[k] || {}).forEach(([m, v]) => { sup[m] = (sup[m] || 0) + v; }));
+      Object.entries(mm.main || {}).forEach(([m, v]) => { main[m] = (main[m] || 0) + v; });
+      Object.entries(mm.regional || mm.domestic || {}).forEach(([m, v]) => { cust[m] = (cust[m] || 0) + v; });
+    });
+    modeMix.push({region: rg, scenario: sc, supply: mixText(sup), main: mixText(main), customer: mixText(cust), lead: g.reduce((a, r) => a + r.lead_time_days, 0) / g.length});
+  }));
+  const modePolicy = (R.data.params.modes || []).map(m => ({group: m.leg_group, allowed: m.allowed_modes, pick: m.pick, preferred: m.preferred_mode}));
   const [dMode] = R.data.g("direct_sourcing_mode");
   const brands = Object.values(brandMix).map(b => Object.assign(b, {skus: [...b.skus], share: b.value / totalVal})).sort((a, b) => b.value - a.value);
   const dSum = sourcing.filter(x => x.share > 0);
   if (dSum.length) recs.push(`Direct sourcing to partner stock is cheaper per pallet in ${dSum.length} region-model combination(s). Agree direct delivery terms, labelling and quality checks with the suppliers before relying on it.`);
   const changes = diff().length + (whatIf.redSea ? 1 : 0) + (whatIf.euAll ? 1 : 0) + excluded.size;
-  return {regs, sc, costs, leads, demand, compliance, nodes, lanes: Object.values(lanes), issues, quality, placeholderShare, findings, recs, orders, changes, suppliers, brands, sourcing, directLanes, dMode,
+  return {regs, sc, costs, leads, demand, compliance, nodes, lanes: Object.values(lanes), issues, quality, placeholderShare, findings, recs, orders, changes, suppliers, brands, sourcing, directLanes, dMode, modeMix, modePolicy,
     generated: new Date().toLocaleString("en-GB"), batchOrders: BATCH.orders.length, source: BATCH.source};
 }
 function reportHtml(D){
@@ -723,14 +738,17 @@ function reportHtml(D){
     + (D.directLanes.length ? t(["Direct lane (best model per order)", "Mode", "Pallets", "Orders", "Direct €/pallet", "Via Helmond €/pallet"],
       D.directLanes.map(l => `<tr><td>${esc(l.supplier)} → ${esc(l.node)}${l.port ? ` <span class="faint">${esc(l.port)}</span>` : ""}</td><td>${esc(l.mode)}</td>${n(l.pallets, 1)}${n(l.orders, 0)}${n(l.pallets ? l.cost / l.pallets : null, 0)}${n(l.vpal ? l.via / l.vpal : null, 0)}</tr>`)) : "<p class=\"faint\">No direct lanes in use.</p>"),
     `Setting: ${esc(modeText)}. Per supplier, a distributor, 3PL or owned warehouse is refilled either through Helmond (supplier to Helmond, Helmond handling, EU export, main leg) or straight from the supplier (direct freight plus origin export documents). The CIF baseline always ships from Helmond stock.`);
-  h += sec(10, "Trade compliance by country", t(["Country", "Duty EU origin %", "Duty standard %", "VAT %", "Preference proof", "Broker €", "Clearance days", "Certificates and documents"],
+  h += sec(10, "Transport modes", t(["Leg", "Allowed modes", "Pick", "Preferred"], D.modePolicy.map(m => `<tr><td>${esc(m.group)}</td><td>${esc(String(m.allowed || "").split(";").join(", "))}</td><td>${esc(m.pick)}</td><td>${esc(m.preferred || "–")}</td></tr>`))
+    + t(["Region", "Scenario", "Supply legs", "Helmond leg", "Leg to customer", "Lead days"], D.modeMix.map(x => `<tr><td>${esc(x.region)}</td><td>${esc(E.LABELS[x.scenario])}</td><td>${esc(x.supply)}</td><td>${esc(x.main)}</td><td>${esc(x.customer)}</td>${n(x.lead, 1)}</tr>`)),
+    "Share of pallets per mode. Supply legs = supplier to Helmond or to the partner. Leg to customer = the cross-border regional leg where there is one, otherwise in-country delivery.");
+  h += sec(11, "Trade compliance by country", t(["Country", "Duty EU origin %", "Duty standard %", "VAT %", "Preference proof", "Broker €", "Clearance days", "Certificates and documents"],
     D.compliance.map(c => `<tr><td>${esc(CNAME(c.country))}</td>${n(c.eu, 1)}${n(c.std, 1)}${n(c.vat, 1)}<td>${esc(c.pref || "")}</td>${n(c.broker, 0)}${n(c.days, 0)}<td>${esc(c.items.join("; ") || "none recorded")}</td></tr>`)),
     "Duty per order is value-weighted by SKU origin: EU-origin lines use the preferential rate with the preference proof shown.");
-  h += sec(11, "Risk and issue register", t(["Severity", "Issue", "Countries", "Detail", "Lever", "Source"],
+  h += sec(12, "Risk and issue register", t(["Severity", "Issue", "Countries", "Detail", "Lever", "Source"],
     D.issues.map(i => `<tr><td><span class="sev ${i.severity}">${esc(i.severity)}</span></td><td><b>${esc(i.title)}</b></td><td>${esc((i.countries || []).join(", "))}</td><td>${esc(i.detail)}</td><td>${esc(i.lever || "")}</td><td>${i.kind === "briefing" ? "briefing note, verify" : "computed"}</td></tr>`)));
-  h += sec(12, "Data quality", t(["Table", "Rows", "Placeholder", "Real"], D.quality.map(q => `<tr><td>${esc(q.table)}</td>${n(q.rows, 0)}${n(q.placeholder, 0)}${n(q.real, 0)}</tr>`)),
+  h += sec(13, "Data quality", t(["Table", "Rows", "Placeholder", "Real"], D.quality.map(q => `<tr><td>${esc(q.table)}</td>${n(q.rows, 0)}${n(q.placeholder, 0)}${n(q.real, 0)}</tr>`)),
     `Placeholder share of simulated cost: <b>${pct(D.placeholderShare)}</b>.`);
-  h += sec(13, "Recommendations and next steps", `<ol>${D.recs.map(r => `<li>${esc(r)}</li>`).join("")}</ol>`);
+  h += sec(14, "Recommendations and next steps", `<ol>${D.recs.map(r => `<li>${esc(r)}</li>`).join("")}</ol>`);
   if (REP.appendix) h += sec("A", "Appendix: order results (best in-scope model per order)", t(["Order", "Customer", "Country", "Value €", "Pallets", "Best model", "Node", "Cost/unit €", "Baseline €/unit", "Lead days", "Baseline days", "Customer pays €", "Baseline customer €"],
     D.orders.slice(0, 150).map(o => `<tr><td>${esc(o.order_id)}</td><td>${esc(o.customer_id)}</td><td>${esc(o.country)}</td>${n(o.value, 0)}${n(o.pallets, 0)}<td>${esc(o.best)}</td><td>${esc(o.node)}</td>${n(o.cost_unit)}${n(o.base_cost_unit)}${n(o.lead, 0)}${n(o.base_lead, 0)}${n(o.customer_pays, 0)}${n(o.base_customer_pays, 0)}</tr>`))
     + (D.orders.length > 150 ? `<p class="faint">First 150 of ${D.orders.length} orders. The Excel export has all of them.</p>` : ""));
@@ -776,6 +794,8 @@ $("repXlsx").addEventListener("click", () => {
   add("Suppliers", [["Supplier ID", "Name", "Country", "City", "Brands", "SKUs", "Mode to Helmond", "Lead time days", "Incoterm", "Share of order value"], ...D.suppliers.map(x => [x.id, x.name, x.country, x.city, x.brands, x.skus.join(", "), x.mode, x.lead, x.incoterm, r2(x.share)])]);
   add("Stock sourcing", [["Region", "Scenario", "Pallets sourced direct", "Direct EUR/pallet", "Via Helmond EUR/pallet"], ...D.sourcing.map(x => [x.region, E.LABELS[x.scenario], r2(x.share), r2(x.direct_pp), r2(x.via_pp)]),
     [], ["Direct lane", "Mode", "Pallets", "Orders", "Direct EUR/pallet", "Via Helmond EUR/pallet"], ...D.directLanes.map(l => [l.supplier + " -> " + l.node, l.mode, r2(l.pallets), l.orders, r2(l.pallets ? l.cost / l.pallets : null), r2(l.vpal ? l.via / l.vpal : null)])]);
+  add("Transport modes", [["Leg", "Allowed modes", "Pick", "Preferred"], ...D.modePolicy.map(m => [m.group, m.allowed, m.pick, m.preferred]), [],
+    ["Region", "Scenario", "Supply legs", "Helmond leg", "Leg to customer", "Lead days"], ...D.modeMix.map(x => [x.region, E.LABELS[x.scenario], x.supply, x.main, x.customer, r2(x.lead)])]);
   add("Brand mix", [["Brand", "Origin", "SKUs", "Units", "Order value EUR", "Share"], ...D.brands.map(b => [b.brand, b.origin, b.skus.join(", "), b.units, Math.round(b.value), r2(b.share)])]);
   add("Trade compliance", [["Country", "Duty EU origin %", "Duty standard %", "VAT %", "Preference proof", "Broker EUR", "Clearance days", "Certificates and documents"], ...D.compliance.map(c => [CNAME(c.country), c.eu, c.std, c.vat, c.pref, c.broker, c.days, c.items.join("; ")])]);
   add("Risks", [["Severity", "Issue", "Countries", "Detail", "Lever", "Source"], ...D.issues.map(i => [i.severity, i.title, (i.countries || []).join(", "), i.detail, i.lever || "", i.kind === "briefing" ? "briefing note, verify" : "computed"])]);

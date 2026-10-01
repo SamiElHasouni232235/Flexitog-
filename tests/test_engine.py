@@ -163,15 +163,25 @@ def test_new_default_parameters_merge_into_old_files(ws):
 
 
 def test_supplier_inbound_uses_the_suppliers_mode(ws):
-    """Albania and Serbia ship by road to Helmond, China and Bangladesh by sea."""
+    """Supply goes by sea by default, on the rate for the supplier's country. A supplier set to road
+    uses the road rate, since road is an allowed supply mode."""
     order, lines = order_for(ws, "T-SA-001")
-    data = Data.from_workspace(ws)
-    inbound = lambda sup: next(s for s in evaluate({**order, "supplier_id": sup}, lines, data).baseline.steps  # noqa: E731
-                               if s.step.startswith("Inbound"))
-    road, sea = inbound("SUP-AL1"), inbound("SUP-CN1")
-    assert road.cost_eur == pytest.approx(max(250, 110 * order["pallet_count"]))
-    assert sea.cost_eur == pytest.approx(max(300, 140 * order["pallet_count"]))
-    assert road.days == 35 and sea.days == 90
+    pal = order["pallet_count"]
+
+    def inbound(sup):
+        data = Data.from_workspace(ws)
+        return next(s for s in evaluate({**order, "supplier_id": sup}, lines, data).baseline.steps
+                    if s.step.startswith("Inbound"))
+    al, cn = inbound("SUP-AL1"), inbound("SUP-CN1")
+    assert (al.mode, cn.mode) == ("sea", "sea")
+    assert al.cost_eur == pytest.approx(max(280, 120 * pal)) and cn.cost_eur == pytest.approx(max(300, 135 * pal))
+    assert al.days == 35 and cn.days == 90  # supplier lead time, make-to-order
+
+    sup = ws.load("suppliers")
+    sup.loc[sup["supplier_id"] == "SUP-AL1", "inbound_mode"] = "road"
+    ws.save("suppliers", sup)
+    road = inbound("SUP-AL1")
+    assert road.mode == "road" and road.cost_eur == pytest.approx(max(250, 110 * pal))
 
 
 def test_seed_brands_and_origins(ws):
@@ -233,3 +243,50 @@ def test_old_freight_file_gains_direct_rates(ws):
     ws.save_params("freight", f[f["leg"] != "direct"].drop(columns=["origin_country"]))
     f2 = ws.load_params("freight")
     assert (f2["leg"] == "direct").sum() == (P.default_table("freight")["leg"] == "direct").sum()
+
+
+def _set_modes(ws, group, **fields):
+    m = ws.load_params("modes")
+    for k, v in fields.items():
+        m.loc[m["leg_group"] == group, k] = v
+    ws.save_params("modes", m)
+
+
+def test_default_modes_supply_by_sea_deliver_by_road(ws):
+    order, lines = order_for(ws, "T-SA-001")
+    routes = by_key(evaluate(order, lines, Data.from_workspace(ws)))
+    for r in routes.values():
+        mix = r.mode_mix
+        assert set(mix.get("inbound", {})) | set(mix.get("direct", {})) <= {"sea"}
+        assert set(mix.get("regional", {})) | set(mix.get("domestic", {})) <= {"road"}
+        assert "air" not in str(mix)
+
+
+def test_fastest_delivery_switches_to_air(ws):
+    order, lines = order_for(ws, "T-SA-001")
+    base = by_key(evaluate(order, lines, Data.from_workspace(ws)))["3PL-JAFZ"]
+    _set_modes(ws, "delivery", pick="fastest")
+    fast = by_key(evaluate(order, lines, Data.from_workspace(ws)))["3PL-JAFZ"]
+    assert fast.mode_mix["regional"] == {"air": order["pallet_count"]}
+    assert fast.mode_mix["domestic"] == {"air": order["pallet_count"]}
+    assert fast.lead_time_days < base.lead_time_days and fast.cost_to_serve > base.cost_to_serve
+
+
+def test_mode_filters_make_legs_infeasible_without_a_rate(ws):
+    _set_modes(ws, "supply", allowed_modes="road")
+    order, lines = order_for(ws, "T-SA-001")
+    ev = evaluate(order, lines, Data.from_workspace(ws))
+    assert not ev.baseline.feasible
+    assert any("No supply rate for SUP-CN1" in i for i in ev.baseline.issues)
+
+
+def test_air_export_only_when_allowed(ws):
+    customers = ws.load("customers")
+    customers = pd.concat([customers, pd.DataFrame([{"customer_id": "C-JO", "name": "x", "country": "JO",
+                                                     "city": "Amman", "data_source": "manual"}])], ignore_index=True)
+    ws.save("customers", customers)
+    order, lines = order_for(ws, "T-SA-001")
+    assert not evaluate({**order, "customer_id": "C-JO"}, lines, Data.from_workspace(ws)).baseline.feasible
+    _set_modes(ws, "export", allowed_modes="sea;road;air")
+    base = evaluate({**order, "customer_id": "C-JO"}, lines, Data.from_workspace(ws)).baseline
+    assert base.mode_mix["main"] == {"air": order["pallet_count"]}

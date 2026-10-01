@@ -68,6 +68,7 @@ class Data:
     lead_times: pd.DataFrame
     scenarios: pd.DataFrame
     owned_fixed: pd.DataFrame
+    modes: pd.DataFrame
 
     @classmethod
     def from_workspace(cls, ws) -> "Data":
@@ -129,34 +130,59 @@ class Data:
             return num(rows.iloc[0]["days"]), str(rows.iloc[0]["source"])
         return 0.0, P.PLACEHOLDER
 
-    def freight_option(self, leg: str, dest: str, prefer_port: str | None = None,
-                       prefer_mode: str | None = None) -> dict | None:
-        f = self.freight
-        # Air is an emergency option: used only when asked for, never as a silent fallback.
-        f = f[f["mode"] == "air"] if prefer_mode == "air" else f[f["mode"] != "air"]
-        rows = f[(f["leg"] == leg) & (f["dest_country"] == dest)]
+    def mode_policy(self, group: str) -> tuple[list[str], str, str]:
+        """Allowed modes, pick rule and preferred mode for a leg group (supply, refill, export, delivery)."""
+        m = self.modes
+        rows = m[m["leg_group"] == group] if len(m) and "leg_group" in m.columns else m.iloc[0:0]
         if rows.empty:
-            rows = f[(f["leg"] == leg) & (f["dest_country"] == "*")]
+            d = P.default_table("modes")
+            rows = d[d["leg_group"] == group]
+        r = rows.iloc[0]
+        allowed = [x.strip().lower() for x in str("" if blank(r.get("allowed_modes")) else r["allowed_modes"])
+                   .replace(",", ";").split(";") if x.strip()]
+        pick = "cheapest" if blank(r.get("pick")) else str(r["pick"]).strip().lower()
+        pref = "" if blank(r.get("preferred_mode")) else str(r["preferred_mode"]).strip().lower()
+        return allowed, pick, pref
+
+    def pick_freight(self, group: str, leg: str, dest: str, origin: str | None = None,
+                     prefer_port: str | None = None, own_mode: str | None = None) -> dict | None:
+        """The freight row a leg uses, within the modes its group allows.
+
+        Rows for the exact destination (and origin, for supplier legs) come first; wildcard rows
+        add modes the exact rows lack. Air is used only where the group allows it.
+        """
+        allowed, pick, pref = self.mode_policy(group)
+        f = self.freight
+        f = f[(f["leg"] == leg) & f["mode"].astype(str).str.lower().isin(allowed)]
+        if leg in ("inbound", "direct"):
+            o = f["origin_country"].map(lambda v: "" if blank(v) else str(v).strip()) if "origin_country" in f.columns \
+                else pd.Series("", index=f.index)
+            exact = f[o == str(origin or "")]
+            if leg == "direct":
+                f = exact
+            else:
+                generic = f[o.isin(["", "*"])]
+                f = pd.concat([exact, generic[~generic["mode"].isin(exact["mode"])]])
+        exact = f[f["dest_country"] == dest]
+        star = f[f["dest_country"] == "*"]
+        rows = pd.concat([exact, star[~star["mode"].isin(exact["mode"])]])
         if rows.empty:
             return None
+        if pick == "preferred":
+            own = "" if blank(own_mode) else str(own_mode).strip().lower()
+            want = own if group == "supply" and own in allowed and (rows["mode"] == own).any() else pref
+            if want and (rows["mode"] == want).any():
+                rows = rows[rows["mode"] == want]
         if prefer_port:
             key = str(prefer_port).lower()
             hit = rows[rows["port_or_border"].astype(str).str.lower().map(
-                lambda p: bool(p) and (key in p or p.split(" ")[0] in key))]
+                lambda p: bool(p) and p != "nan" and (key in p or p.split(" ")[0] in key))]
             if len(hit):
                 rows = hit
-        if prefer_mode and (rows["mode"] == prefer_mode).any():
-            rows = rows[rows["mode"] == prefer_mode]
-        return rows.sort_values("eur_per_pallet").iloc[0].to_dict()
-
-    def direct_freight(self, origin: str, dest: str) -> dict | None:
-        """Cheapest non-air direct rate from a supplier country to a node country."""
-        f = self.freight
-        if "origin_country" not in f.columns:
-            return None
-        rows = f[(f["leg"] == "direct") & (f["mode"] != "air") & (f["origin_country"].astype(str) == origin)
-                 & (f["dest_country"] == dest)]
-        return rows.sort_values("eur_per_pallet", kind="stable").iloc[0].to_dict() if len(rows) else None
+        cols = ["transit_days", "eur_per_pallet"] if pick == "fastest" else ["eur_per_pallet"]
+        rows = rows.assign(**{f"_k{i}": pd.to_numeric(rows[c], errors="coerce").fillna(0) for i, c in enumerate(cols)})
+        return rows.sort_values([f"_k{i}" for i in range(len(cols))], kind="stable").iloc[0].drop(
+            [f"_k{i}" for i in range(len(cols))]).to_dict()
 
     _sku_supplier: dict | None = field(default=None, repr=False)
 
@@ -194,6 +220,9 @@ class Step:
     doc_steps: int = 0
     source: str = P.PLACEHOLDER
     note: str = ""
+    leg: str = ""       # transport legs: inbound, direct, main, regional, domestic
+    mode: str = ""      # transport mode of that leg
+    pallets: float = 0.0
 
 
 @dataclass
@@ -217,6 +246,16 @@ class Route:
     risk_premium_pct: float = 0.0
     sourcing: list[dict] = field(default_factory=list)  # per supplier group: path, pallets, cost per pallet
     main_leg: dict | None = None
+
+    @property
+    def mode_mix(self) -> dict[str, dict[str, float]]:
+        """Pallets per transport mode for each leg type (inbound, direct, main, regional, domestic)."""
+        out: dict[str, dict[str, float]] = {}
+        for s in self.steps:
+            if s.leg and s.mode:
+                out.setdefault(s.leg, {})
+                out[s.leg][s.mode] = out[s.leg].get(s.mode, 0.0) + s.pallets
+        return out
 
     @property
     def direct_share(self) -> float:
@@ -592,7 +631,7 @@ def build_route(ctx: OrderContext, data: Data, scenario: str, dc: dict | None = 
     exp, esrc = data.g("export_docs_eur_per_shipment")
     coo, _ = data.g("certificate_of_origin_eur")
     prefer_port = (dc.get("port_of_entry") if dc else ctx.customer.get("destination_port")) or None
-    f = data.freight_option("main", node_country, prefer_port=prefer_port)
+    f = data.pick_freight("refill" if stocked else "export", "main", node_country, prefer_port=prefer_port)
     main_pp = num(f["eur_per_pallet"]) * factor if f is not None else None
     via_fixed_pp = h + ((exp + coo) * alloc / Pal if Pal > 0 else 0.0)
     dmode, _ = data.g("direct_sourcing_mode")
@@ -603,8 +642,8 @@ def build_route(ctx: OrderContext, data: Data, scenario: str, dc: dict | None = 
         sp, pal = grp["supplier"], Pal * grp["share"]
         inb = None
         if sp is not None:
-            mode = sp.get("inbound_mode")
-            inb = data.freight_option("inbound", "NL", prefer_mode="sea" if blank(mode) else str(mode).strip().lower())
+            inb = data.pick_freight("supply", "inbound", "NL", origin=str(sp.get("country") or ""),
+                                    own_mode=sp.get("inbound_mode"))
         inbound_pp = num(inb["eur_per_pallet"]) if inb is not None else 0.0
         via_pp = inbound_pp + via_fixed_pp + main_pp if main_pp is not None else None
         g = {"supplier_id": str(sp["supplier_id"]) if sp is not None else "", "pallets": pal, "path": "helmond",
@@ -613,7 +652,8 @@ def build_route(ctx: OrderContext, data: Data, scenario: str, dc: dict | None = 
         allowed = sp is not None and stocked and dc is not None and dmode > 0 and \
             (blank(sp.get("direct_to_partners")) or str(sp.get("direct_to_partners")).strip().lower() not in ("false", "0", "no"))
         if allowed:
-            df_ = data.direct_freight(str(sp.get("country") or ""), node_country)
+            df_ = data.pick_freight("supply", "direct", node_country, origin=str(sp.get("country") or ""),
+                                    own_mode=sp.get("inbound_mode"))
         if df_ is not None:
             direct_pp = num(df_["eur_per_pallet"]) + (o_docs / d_replen if d_replen > 0 else o_docs)
             g.update(direct_eur_per_pallet=direct_pp, direct_mode=str(df_["mode"]), direct_port=str(df_.get("port_or_border") or ""))
@@ -621,6 +661,7 @@ def build_route(ctx: OrderContext, data: Data, scenario: str, dc: dict | None = 
                 g["path"] = "direct"
         grp_inb = inb
         g["_freight"], g["_inbound"] = df_, grp_inb
+        g["_no_inbound"] = sp is not None and inb is None
         route.sourcing.append(g)
 
     helmond_pal = sum(g["pallets"] for g in route.sourcing if g["path"] == "helmond")
@@ -633,6 +674,7 @@ def build_route(ctx: OrderContext, data: Data, scenario: str, dc: dict | None = 
             direct_freight += cost
             route.steps.append(Step(
                 step=f"Direct refill {sp_id} -> {route.dc_id} ({df_['mode']})", category="inbound", cost_eur=cost,
+                leg="direct", mode=str(df_["mode"]), pallets=g["pallets"],
                 party=f"Supplier {sp_id}", source=str(df_["source"]),
                 note=f"supplier ships straight to the node, {g['pallets']:.2f} pallet(s), refill not on order path"))
             route.steps.append(Step(
@@ -644,16 +686,21 @@ def build_route(ctx: OrderContext, data: Data, scenario: str, dc: dict | None = 
             cost = max(num(inb["min_charge_eur"]), num(inb["eur_per_pallet"]) * Pal) if inb is not None else 0.0
             route.steps.append(Step(
                 step=f"Inbound {sp_id} -> Helmond", category="inbound", cost_eur=cost,
+                leg="inbound", mode=str(inb["mode"]) if inb is not None else "", pallets=Pal,
                 days=num(ctx.supplier.get("lead_time_days")), party=f"Supplier {sp_id}",
                 source=str(inb["source"]) if inb is not None else P.PLACEHOLDER, note="make-to-order"))
         elif sp_id:
             inb = g["_inbound"]
             route.steps.append(Step(
                 step=f"Inbound {sp_id} -> Helmond ({inb['mode'] if inb is not None else 'no rate'})", category="inbound",
+                leg="inbound", mode=str(inb["mode"]) if inb is not None else "", pallets=g["pallets"],
                 cost_eur=num(inb["eur_per_pallet"]) * g["pallets"] if inb is not None else 0.0,
                 party=f"Supplier {sp_id}", source=str(inb["source"]) if inb is not None else P.PLACEHOLDER,
                 note=f"stock replenishment into Helmond, {g['pallets']:.2f} pallet(s)"))
         del g["_freight"], g["_inbound"]
+        no_inb = g.pop("_no_inbound")
+        if no_inb and g["path"] == "helmond":
+            route.issues.append(f"No supply rate for {sp_id} to Helmond in the allowed modes")
     unknown = [grp for grp in ctx.supply if grp["supplier"] is None]
     if unknown:
         route.warnings.append("SKU(s) without a supplier: inbound freight to Helmond not counted")
@@ -684,6 +731,7 @@ def build_route(ctx: OrderContext, data: Data, scenario: str, dc: dict | None = 
             route.main_leg = {"mode": str(f["mode"]), "port": str(f.get("port_or_border") or ""), "country": node_country}
             route.steps.append(Step(
                 step=f"Main freight Helmond -> {f.get('port_or_border') or node_country} ({f['mode']})",
+                leg="main", mode=str(f["mode"]), pallets=helmond_pal if stocked else Pal,
                 category="freight", cost_eur=freight, days=0.0 if stocked else transit, party="Forwarder",
                 source=str(f["source"]),
                 note=f"consolidated replenishment x{factor:g}" if stocked else "single shipment, min charge applies"))
@@ -734,7 +782,7 @@ def build_route(ctx: OrderContext, data: Data, scenario: str, dc: dict | None = 
     # ---- node -> customer country (hub serving a neighbour)
     if cross_border:
         group = REGIONAL_GROUP.get(region_for(country))
-        rf = data.freight_option("regional", group) if group else None
+        rf = data.pick_freight("delivery", "regional", group) if group else None
         exp_days, _ = data.lead("export_clearance_eu")
         route.steps.append(Step(step=f"Free-zone exit / re-export {node_country}", category="clearance",
                                 days=exp_days, party=node_party, paid_by=import_payer, customs=True,
@@ -745,6 +793,7 @@ def build_route(ctx: OrderContext, data: Data, scenario: str, dc: dict | None = 
         else:
             regional = max(num(rf["min_charge_eur"]), num(rf["eur_per_pallet"]) * Pal)
             route.steps.append(Step(step=f"Regional freight {node_country} -> {country} ({rf['mode']})",
+                                    leg="regional", mode=str(rf["mode"]), pallets=Pal,
                                     category="freight", cost_eur=regional, days=num(rf["transit_days"]),
                                     party="Regional carrier", paid_by=import_payer, source=str(rf["source"])))
         # Cross-border delivery ships per order, so per-shipment costs apply in full.
@@ -760,12 +809,13 @@ def build_route(ctx: OrderContext, data: Data, scenario: str, dc: dict | None = 
                                 days=comp_lead - transit, party=broker_party, paid_by=import_payer))
 
     # ---- last mile
-    d = data.freight_option("domestic", country)
+    d = data.pick_freight("delivery", "domestic", country)
     if d is None:
         route.warnings.append(f"No domestic delivery rate for {country}")
     else:
         dom_payer = CUSTOMER if scenario == "cif_baseline" else import_payer
-        route.steps.append(Step(step=f"Delivery to {ctx.customer.get('city') or 'customer'}", category="freight",
+        route.steps.append(Step(step=f"Delivery to {ctx.customer.get('city') or 'customer'} ({d['mode']})", category="freight",
+                                leg="domestic", mode=str(d["mode"]), pallets=Pal,
                                 cost_eur=max(num(d["min_charge_eur"]), num(d["eur_per_pallet"]) * Pal),
                                 days=num(d["transit_days"]), paid_by=dom_payer,
                                 party="Customer's local carrier" if scenario == "cif_baseline" else "Local carrier",

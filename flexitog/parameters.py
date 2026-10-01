@@ -73,7 +73,8 @@ GENERAL = _rows([
 
 
 # ---------------------------------------------------------------- freight
-# leg: main = Helmond to destination country/port; domestic = in-country delivery;
+# leg: main = Helmond to destination country/port; regional = node to a neighbour country;
+# domestic = in-country delivery;
 # inbound = supplier to Helmond (stock replenishment, and orders that start at a supplier);
 # direct = supplier country (origin_country) straight to a partner node's country.
 
@@ -133,6 +134,12 @@ FREIGHT = _rows([
     {"leg": "regional", "dest_country": "NAF", "mode": "sea", "port_or_border": "Short sea",
      "eur_per_pallet": 160, "min_charge_eur": 350, "transit_days": 7,
      "source_note": "Tanger Med to EG/TN/DZ. Poor intra-Maghreb connections"},
+    {"leg": "regional", "dest_country": "GCC", "mode": "air", "port_or_border": "Dubai air cargo",
+     "eur_per_pallet": 480, "min_charge_eur": 250, "transit_days": 1,
+     "source_note": "Dubai to GCC capitals, about EUR 1.6/kg at 300 kg per pallet"},
+    {"leg": "regional", "dest_country": "NAF", "mode": "air", "port_or_border": "Air cargo",
+     "eur_per_pallet": 750, "min_charge_eur": 350, "transit_days": 2,
+     "source_note": "Tangier/Casablanca to Cairo, Tunis, Algiers. Morocco-Algeria land border is closed"},
     # In-country delivery from port/warehouse to the customer city.
     {"leg": "domestic", "dest_country": "*", "mode": "road", "port_or_border": "",
      "eur_per_pallet": 55, "min_charge_eur": 90, "transit_days": 2,
@@ -140,13 +147,34 @@ FREIGHT = _rows([
     {"leg": "domestic", "dest_country": "SA", "mode": "road", "port_or_border": "",
      "eur_per_pallet": 80, "min_charge_eur": 120, "transit_days": 3,
      "source_note": "Long distances Dammam-Riyadh-Jeddah"},
-    # Supplier to Helmond. Used only when the order starts at a supplier.
+    {"leg": "domestic", "dest_country": "*", "mode": "air", "port_or_border": "Domestic air cargo",
+     "eur_per_pallet": 420, "min_charge_eur": 200, "transit_days": 1,
+     "source_note": "Domestic air cargo plus airport handling and delivery, about EUR 1.4/kg at 300 kg"},
+    {"leg": "domestic", "dest_country": "SA", "mode": "air", "port_or_border": "Saudia Cargo",
+     "eur_per_pallet": 380, "min_charge_eur": 200, "transit_days": 1,
+     "source_note": "Dammam/Jeddah to Riyadh by air"},
+    # Supplier to Helmond (stock replenishment). origin_country blank = any supplier country.
     {"leg": "inbound", "dest_country": "NL", "mode": "sea", "port_or_border": "Rotterdam",
      "eur_per_pallet": 140, "min_charge_eur": 300, "transit_days": 35,
      "source_note": "Asia-Rotterdam LCL + drayage to Helmond. Replace per supplier"},
-    {"leg": "inbound", "dest_country": "NL", "mode": "road", "port_or_border": "Balkans road",
+    {"leg": "inbound", "origin_country": "AL", "dest_country": "NL", "mode": "road", "port_or_border": "Balkans road",
      "eur_per_pallet": 110, "min_charge_eur": 250, "transit_days": 5,
-     "source_note": "Albania / Serbia groupage truck to Helmond. Replace with the forwarder's quote"},
+     "source_note": "Albania groupage truck to Helmond via Montenegro and Croatia. Replace with the forwarder's quote"},
+    {"leg": "inbound", "origin_country": "RS", "dest_country": "NL", "mode": "road", "port_or_border": "Balkans road",
+     "eur_per_pallet": 105, "min_charge_eur": 250, "transit_days": 4,
+     "source_note": "Serbia groupage truck to Helmond via Hungary and Austria. Replace with the forwarder's quote"},
+    {"leg": "inbound", "origin_country": "CN", "dest_country": "NL", "mode": "sea", "port_or_border": "Rotterdam",
+     "eur_per_pallet": 135, "min_charge_eur": 300, "transit_days": 40,
+     "source_note": "Ningbo/Qingdao-Rotterdam FCL share + drayage, Cape routing"},
+    {"leg": "inbound", "origin_country": "BD", "dest_country": "NL", "mode": "sea", "port_or_border": "Rotterdam",
+     "eur_per_pallet": 145, "min_charge_eur": 300, "transit_days": 42,
+     "source_note": "Chattogram-Rotterdam via Colombo + drayage, Cape routing"},
+    {"leg": "inbound", "origin_country": "AL", "dest_country": "NL", "mode": "sea", "port_or_border": "Rotterdam",
+     "eur_per_pallet": 120, "min_charge_eur": 280, "transit_days": 14,
+     "source_note": "Durrës-Rotterdam feeder via Gibraltar + drayage"},
+    {"leg": "inbound", "origin_country": "RS", "dest_country": "NL", "mode": "sea", "port_or_border": "Rotterdam",
+     "eur_per_pallet": 130, "min_charge_eur": 280, "transit_days": 16,
+     "source_note": "Truck to Thessaloniki, feeder to Rotterdam + drayage"},
     # Supplier straight to a partner node (direct sourcing). Rates per pallet in a full container or truck.
     {"leg": "direct", "origin_country": "CN", "dest_country": "AE", "mode": "sea", "port_or_border": "Jebel Ali",
      "eur_per_pallet": 85, "min_charge_eur": 0, "transit_days": 20,
@@ -181,6 +209,12 @@ FREIGHT = _rows([
     {"leg": "direct", "origin_country": "AL", "dest_country": "TR", "mode": "road", "port_or_border": "Kapıkule",
      "eur_per_pallet": 105, "min_charge_eur": 0, "transit_days": 4,
      "source_note": "Durrës-Istanbul groupage via North Macedonia and Bulgaria. Consolidated refill rate, replace with a quote"},
+    {"leg": "direct", "origin_country": "AL", "dest_country": "TR", "mode": "sea", "port_or_border": "Ambarlı",
+     "eur_per_pallet": 100, "min_charge_eur": 0, "transit_days": 6,
+     "source_note": "Durrës-Ambarlı short sea. Consolidated refill rate, replace with a quote"},
+    {"leg": "direct", "origin_country": "RS", "dest_country": "TR", "mode": "sea", "port_or_border": "Ambarlı",
+     "eur_per_pallet": 95, "min_charge_eur": 0, "transit_days": 6,
+     "source_note": "Truck to Thessaloniki, short sea to Ambarlı. Consolidated refill rate, replace with a quote"},
     {"leg": "direct", "origin_country": "AL", "dest_country": "MA", "mode": "sea", "port_or_border": "Tanger Med",
      "eur_per_pallet": 150, "min_charge_eur": 0, "transit_days": 9,
      "source_note": "Durrës-Tanger Med short sea with transhipment. Consolidated refill rate, replace with a quote"},
@@ -355,6 +389,22 @@ SCENARIOS = _rows([
                      "warehouse fixed cost table, spread per pallet")},
 ])
 
+# ---------------------------------------------------------------- transport modes
+# Which modes each kind of leg may use and how the engine picks among the allowed rates.
+# pick: preferred = the preferred mode when a rate exists (for supply legs a supplier's own
+# inbound mode comes first), cheapest = lowest EUR/pallet, fastest = fewest transit days.
+MODES = _rows([
+    {"leg_group": "supply", "legs": "inbound; direct", "allowed_modes": "sea;road", "pick": "preferred",
+     "preferred_mode": "sea", "source_note": "Supplier to Helmond, and supplier straight to a partner node"},
+    {"leg_group": "refill", "legs": "main (stocked scenarios)", "allowed_modes": "sea;road", "pick": "preferred",
+     "preferred_mode": "sea", "source_note": "Helmond to a distributor, 3PL or owned warehouse"},
+    {"leg_group": "export", "legs": "main (CIF baseline)", "allowed_modes": "sea;road", "pick": "cheapest",
+     "preferred_mode": "", "source_note": "Helmond to the customer's port or border, one shipment per order"},
+    {"leg_group": "delivery", "legs": "regional; domestic", "allowed_modes": "road;air", "pick": "cheapest",
+     "preferred_mode": "road", "source_note": ("Partner node or port to the customer: cross-border regional leg and "
+                                               "in-country delivery. Set pick to fastest to use air")},
+])
+
 OWNED_FIXED = _rows([
     {"location": "AE", "fixed_cost_eur_per_year": 220000, "expected_pallets_per_year": 1500,
      "source_note": "Small FZ unit (1,000 m2) + 3 FTE + entity costs"},
@@ -370,13 +420,14 @@ DEFAULT_TABLES: dict[str, tuple[str, pd.DataFrame]] = {
     "duties": ("Customs duty and VAT per country", DUTIES),
     "compliance": ("Compliance and certification costs", COMPLIANCE),
     "lead_times": ("Lead time per non-transport step", LEAD_TIMES),
+    "modes": ("Transport modes per leg", MODES),
     "scenarios": ("Scenario defaults (handling, margin, MOV, handoffs)", SCENARIOS),
     "owned_fixed": ("Owned warehouse fixed cost", OWNED_FIXED),
 }
 
 
 # Unique key column per table, used to merge new defaults into saved files.
-TABLE_KEYS = {"general": "parameter", "scenarios": "scenario", "duties": "country",
+TABLE_KEYS = {"general": "parameter", "scenarios": "scenario", "duties": "country", "modes": "leg_group",
               "owned_fixed": "location", "lead_times": "step"}
 # Tables without a unique key: new values of this column are added to saved files as a group.
 TABLE_GROUPS = {"freight": "leg"}

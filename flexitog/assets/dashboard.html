@@ -100,6 +100,8 @@ select{background:var(--surface);border:1px solid var(--rule);border-radius:6px;
 #map .lane{fill:none;stroke-linecap:round;stroke-linejoin:round;opacity:.85;vector-effect:non-scaling-stroke}
 #map .lane.road{stroke-dasharray:6 4}
 #map .last{fill:none;stroke:var(--muted);opacity:.5;stroke-width:1;vector-effect:non-scaling-stroke}
+#map .last.air{stroke:var(--ink);opacity:.7;stroke-width:1.4;stroke-dasharray:1 4;stroke-linecap:round}
+#map .last.road{stroke-dasharray:5 3}
 #map .cust{fill:var(--muted);stroke:var(--surface);stroke-width:.8;vector-effect:non-scaling-stroke}
 #map .node{stroke:var(--surface);stroke-width:1.4;vector-effect:non-scaling-stroke;cursor:default}
 #map .node.cand{fill-opacity:.35;stroke-dasharray:2 2}
@@ -234,6 +236,8 @@ details.grp .gbody{padding:0 12px 12px;display:flex;flex-direction:column;gap:8p
 .ptable td.lbl{color:var(--ink);min-width:96px}
 .ptable td.lbl small{display:block;color:var(--faint);font-size:10.5px}
 .ptable input[type=number],.ptable input[type=text],.ptable select{width:100%;min-width:54px;background:var(--surface);border:1px solid var(--rule);border-radius:4px;padding:3px 5px;font:12px var(--mono)}
+.ptable select.mpick{min-width:100px}.ptable select.mpref{min-width:62px}
+.ptable.modes td,.ptable.modes th{padding:4px 3px}.ptable.modes td.lbl{min-width:0}
 .ptable input.chg,.ptable select.chg{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
 .src{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:5px;vertical-align:middle}
 .src.placeholder{background:var(--st-warning)} .src.real{background:#0ca30c}
@@ -407,6 +411,8 @@ details.custom .iact{display:flex;gap:6px;margin-top:8px}
             <span class="fs-only mbrand">FlexiTog routes</span>
             <div class="ctl"><label for="mapScenario">Routes on map</label><select id="mapScenario"></select></div>
             <div class="ctl"><label for="mapMetric">Colour countries by</label><select id="mapMetric"></select></div>
+            <div class="ctl"><label>Modes shown</label><div class="seg" id="modeSeg" role="group" aria-label="Transport modes shown"></div></div>
+            <div class="ctl"><label for="mapSupplier">Supplier</label><select id="mapSupplier"></select></div>
             <div class="ctl fs-only"><label>Region</label><div class="seg" id="regionSegFs"></div></div>
           </div>
           <div class="mgroup">
@@ -526,7 +532,7 @@ let W = clone(BASE);                      // working copy the drawer edits
 let whatIf = {redSea: false, euAll: false};
 let excluded = new Set();
 const ui = {region: "All", mapScenario: "best", mapMetric: "best", method: "customer_first", country: null,
-            orderId: null, override: "auto", zoom: 1, center: null};
+            orderId: null, override: "auto", zoom: 1, center: null, modes: new Set(["sea", "road", "air"]), supplier: "all"};
 let R = null;                             // latest results
 
 function tableRef(t){ return t.startsWith("p:") ? W.params[t.slice(2)] : W[t]; }
@@ -704,9 +710,9 @@ function roadRoute(a, b){
   return (ROUTES[key] = ids ? {pts: [a, ...ids.map(k => GR.road.nodes[k]), b], via: ""} : null);
 }
 // Supplier -> Helmond, and supplier -> partner node (direct refill).
-function supplierPath(sp){
+function supplierPath(sp, modeUsed){
   const p = loc("sup", sp.supplier_id); if (!p) return null;
-  const mode = supplierMode(sp), hlm = PAYLOAD.geo.cities.helmond;
+  const mode = modeUsed || supplierMode(sp), hlm = PAYLOAD.geo.cities.helmond;
   if (mode === "road") { const r = roadRoute(p, hlm); return r && {mode, pts: r.pts, via: ""}; }
   const r = seaRoute(p, PAYLOAD.geo.cities.rotterdam);
   return r && {mode, pts: r.pts.concat([hlm]), via: r.via};
@@ -718,6 +724,11 @@ function directPath(spId, dcId, mode, port){
   const pp = city(port), r = pp ? seaRoute(a, pp) : seaRoute(a, b);
   return r && {mode, pts: pp ? r.pts.concat([b]) : r.pts, via: r.via};
 }
+// Mode of the leg that reaches the customer: the cross-border regional leg if any, else the domestic one.
+function deliveryMode(rt){ const st = rt.steps.filter(x => x.leg === "regional" || x.leg === "domestic"); const r = st.find(x => x.leg === "regional"); return (r || st[0] || {}).mode || "road"; }
+// A gentle arc for air legs, so they read as flights rather than roads.
+function arc(a, b){ const m = [(a[0] + b[0]) / 2 + Math.abs(b[1] - a[1]) * 0.12, (a[1] + b[1]) / 2]; const out = []; for (let i = 0; i <= 12; i++) { const t = i / 12; out.push([(1 - t) * (1 - t) * a[0] + 2 * (1 - t) * t * m[0] + t * t * b[0], (1 - t) * (1 - t) * a[1] + 2 * (1 - t) * t * m[1] + t * t * b[1]]); } return out; }
+const supOk = id => ui.supplier === "all" || ui.supplier === id;
 // Outbound sea lanes follow the same graph from Rotterdam; road lanes keep their drawn corridor.
 function lanePoints(lp){
   if (!lp) return null;
@@ -832,7 +843,7 @@ function scheduleOverlay(){ clearTimeout(overlayTimer); overlayTimer = setTimeou
 function drawOverlay(){
   const scale = view[2] / 1000; drawnW = view[2];
   const rows = rowsFor(ui.mapScenario).filter(r => r.available && (ui.region === "All" || r.region === ui.region));
-  const lanes = {}, lasts = {}, custs = {}, nodes = {}, direct = {}, viaHlm = {};
+  const lanes = {}, lasts = {}, custs = {}, nodes = {}, direct = {}, viaHlm = {}, inMode = {};
   rows.forEach(r => {
     const rt = r.route, sc = r.scenario === "best" ? r.bestOf : r.scenario;
     (rt.sourcing || []).forEach(g => {
@@ -844,10 +855,11 @@ function drawOverlay(){
         if (g.via_helmond_eur_per_pallet == null) D.viaKnown = false; else D.via += g.via_helmond_eur_per_pallet * g.pallets;
       } else viaHlm[g.supplier_id] = (viaHlm[g.supplier_id] || 0) + g.pallets;
     });
+    rt.steps.forEach(x => { if (x.leg === "inbound" && x.mode) { const id = x.party.replace("Supplier ", ""); inMode[id] = x.mode; } });
     if (rt.dc_id && rt.direct_share > 0 && !rt.main_leg) { const n = nodes[rt.dc_id] = nodes[rt.dc_id] || {orders: 0, pallets: 0, countries: {}, direct: 0}; n.orders += 1; n.pallets += r.pallets; n.direct = (n.direct || 0) + rt.direct_share * r.pallets; n.countries[r.country] = (n.countries[r.country] || 0) + 1; }
     if (rt.dc_id && !rt.main_leg) {
       const end = loc("dc", rt.dc_id), cl = loc("cust", r.customer_id);
-      if (end && cl) { const k2 = end.join() + "|" + cl.join(); lasts[k2] = lasts[k2] || {a: end, b: cl}; }
+      if (end && cl) { const dm = deliveryMode(rt), k2 = end.join() + "|" + cl.join() + "|" + dm; lasts[k2] = lasts[k2] || {a: end, b: cl, mode: dm}; }
       if (cl) { const cu = custs[r.customer_id] = custs[r.customer_id] || {p: cl, pallets: 0, orders: 0, id: r.customer_id, country: r.country}; cu.pallets += r.pallets; cu.orders += 1; }
     }
     const ml = rt.main_leg; if (!ml) return;
@@ -860,7 +872,7 @@ function drawOverlay(){
     if (rt.dc_id) { const n = nodes[rt.dc_id] = nodes[rt.dc_id] || {orders: 0, pallets: 0, countries: {}, direct: 0}; n.orders += 1; n.pallets += r.pallets; n.direct += (rt.direct_share || 0) * r.pallets; n.countries[r.country] = (n.countries[r.country] || 0) + 1; }
     const end = rt.dc_id ? loc("dc", rt.dc_id) : (lp ? lp.points[lp.points.length - 1] : null);
     const cl = loc("cust", r.customer_id);
-    if (end && cl) { const k2 = end.join() + "|" + cl.join(); lasts[k2] = lasts[k2] || {a: end, b: cl}; }
+    if (end && cl) { const dm = deliveryMode(rt), k2 = end.join() + "|" + cl.join() + "|" + dm; lasts[k2] = lasts[k2] || {a: end, b: cl, mode: dm}; }
     if (cl) { const cu = custs[r.customer_id] = custs[r.customer_id] || {p: cl, pallets: 0, orders: 0, id: r.customer_id, country: r.country}; cu.pallets += r.pallets; cu.orders += 1; }
   });
   const issues = issuesAll().filter(i => i.lat != null && (ui.region === "All" || (i.countries || []).some(c => R.data.regionFor(c) === ui.region)));
@@ -873,14 +885,15 @@ function drawOverlay(){
   const sw = p => (1.2 + 4.5 * Math.sqrt(p / maxS)).toFixed(1);
   let viaCape = false;
   sups.forEach(sp => {
-    const pal = viaHlm[sp.supplier_id]; if (!pal) return;
-    const sp2 = supplierPath(sp); if (!sp2) return;
+    const pal = viaHlm[sp.supplier_id]; if (!pal || !supOk(sp.supplier_id)) return;
+    const sp2 = supplierPath(sp, inMode[sp.supplier_id]); if (!sp2 || !ui.modes.has(sp2.mode)) return;
     viaCape = viaCape || sp2.via === "Cape";
     const t = `${sp.name} → Helmond (${sp2.mode}${sp2.via ? ", via " + sp2.via : ""}) · ${fmt(pal, 1)} pallets in this view · click for detail`;
     h += `<path class="supin${sp2.mode === "road" ? " road" : ""}${sel("sup", sp.supplier_id) ? " on" : ""}" d="${path(sp2.pts)}" style="stroke-width:${sw(pal)}px"/>`;
     h += `<path class="hit" d="${path(sp2.pts)}" data-kind="sup" data-id="${esc(sp.supplier_id)}" data-tip="${esc(t)}"/>`;
   });
   Object.values(direct).sort((a, b) => b.pallets - a.pallets).forEach(d => {
+    if (!supOk(d.sup) || !ui.modes.has(d.mode)) return;
     const dp = directPath(d.sup, d.dc, d.mode, d.port); if (!dp) return;
     viaCape = viaCape || dp.via === "Cape";
     const dcName = (R.data.dcs.find(x => x.dc_id === d.dc) || {}).name || d.dc;
@@ -892,9 +905,9 @@ function drawOverlay(){
     const [x1, y1] = proj(-37.5, 22);
     h += `<text class="capenote" x="${x1.toFixed(1)}" y="${y1.toFixed(1)}" text-anchor="middle" style="font-size:${(10 * scale).toFixed(2)}px">via Cape of Good Hope</text>`;
   }
-  Object.values(lasts).forEach(l => { h += `<path class="last" d="${path([l.a, l.b])}"/>`; });
+  Object.values(lasts).forEach(l => { if (!ui.modes.has(l.mode)) return; h += `<path class="last ${esc(l.mode)}" d="${path(l.mode === "air" ? arc(l.a, l.b) : [l.a, l.b])}"/>`; });
   Object.values(lanes).sort((a, b) => b.pallets - a.pallets).forEach(l => {
-    if (!l.pts) return;
+    if (!l.pts || !ui.modes.has(l.mode) || ui.supplier !== "all") return;
     const w = 1.5 + 6 * Math.sqrt(l.pallets / maxP);
     const t = `${E.LABELS[l.sc]}: Helmond → ${l.port || l.country} (${l.mode}) · ${fmt(l.pallets)} pallets, ${l.orders} orders · click for detail`;
     h += `<path class="lane ${l.mode === "road" ? "road" : ""}${sel("lane", l.key) ? " on" : ""}" d="${path(l.pts)}" style="stroke:var(--s-${l.sc});stroke-width:${w.toFixed(1)}px"/>`;
@@ -916,6 +929,7 @@ function drawOverlay(){
     else h += `<path class="${cls}" d="M${X},${y - s * 1.3}L${X + s * 1.3},${y}L${X},${y + s * 1.3}L${X - s * 1.3},${y}Z" style="${st}" ${a}/>`;
   });
   sups.forEach(sp => {
+    if (!supOk(sp.supplier_id)) return;
     const p = loc("sup", sp.supplier_id), [x, y] = proj(p[0], p[1]), s = 6.5 * scale;
     const d = `M${x - s},${y + s}L${x - s},${y - s * .2}L${x - s * .33},${y - s * .75}L${x - s * .33},${y - s * .2}L${x + s * .33},${y - s * .75}L${x + s * .33},${y - s * .2}L${x + s},${y - s * .75}L${x + s},${y + s}Z`;
     const t = `Supplier ${sp.name} · ${String(sp.brands || "").split(";").join(", ") || "no brand set"} · ${sp.lead_time_days != null ? fmt(sp.lead_time_days) + " days to Helmond" : ""} · click for detail`;
@@ -943,6 +957,7 @@ function drawLegend(metric){
   else lg += `<span>${esc(metric.label)} <span class="ramp">${[1,2,3,4,5].map(i => `<i style="background:var(--q${i})"></i>`).join("")}</span> <span class="num">${fmt(legendRange[0], metric.dp)} → ${fmt(legendRange[1], metric.dp)}</span></span>`;
   lg += `<span><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" style="stroke:var(--muted);stroke-width:3"/></svg>sea</span>`;
   lg += `<span><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" style="stroke:var(--muted);stroke-width:3;stroke-dasharray:6 4"/></svg>road</span>`;
+  lg += `<span><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" style="stroke:var(--ink);stroke-width:2;stroke-dasharray:1 4;stroke-linecap:round"/></svg>air (to customer)</span>`;
   lg += `<span><svg width="12" height="12"><circle cx="6" cy="6" r="5" style="fill:var(--muted)"/></svg>distributor</span><span><svg width="12" height="12"><rect x="1" y="1" width="10" height="10" style="fill:var(--muted)"/></svg>3PL</span><span><svg width="14" height="14"><path d="M7,0L14,7L7,14L0,7Z" style="fill:var(--muted)"/></svg>owned</span><span class="faint">faded = not yet signed</span>`;
   lg += `<span><i class="sw" style="background:var(--supplier-land)"></i>supplier country</span><span><svg width="14" height="12"><path d="M1,11L1,5L5,2L5,5L9,2L9,5L13,2L13,11Z" style="fill:var(--supplier-mark)"/></svg>supplier factory</span><span><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" style="stroke:var(--supplier);stroke-width:3"/></svg>supplier → Helmond</span><span><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" style="stroke:var(--supplier-mark);stroke-width:3"/></svg>supplier → partner, direct</span>`;
   lg += ["critical","serious","warning","info"].map(s => `<span><svg width="12" height="11"><path d="M6,0L12,11L0,11Z" style="fill:var(--st-${s})"/></svg>${s}</span>`).join("");
@@ -1329,6 +1344,12 @@ function initControls(){
   $("method").innerHTML = [["customer_first","Customer-first paperwork"],["customs_touchpoints","Customs touchpoints"],["handoffs","Handoffs"],["doc_steps","Documentation steps"]].map(([k,l]) => `<option value="${k}">${l}</option>`).join("");
   $("mapScenario").addEventListener("change", e => { ui.mapScenario = e.target.value; drawCountries(); drawOverlay(); renderInfo(); });
   $("mapMetric").addEventListener("change", e => { ui.mapMetric = e.target.value; drawCountries(); });
+  $("modeSeg").innerHTML = [["sea", "Sea"], ["road", "Road"], ["air", "Air"]].map(([k, l]) => `<button type="button" data-m="${k}" aria-pressed="true">${l}</button>`).join("");
+  $("modeSeg").querySelectorAll("button").forEach(b => b.addEventListener("click", () => {
+    const m = b.dataset.m; ui.modes.has(m) ? ui.modes.delete(m) : ui.modes.add(m);
+    b.setAttribute("aria-pressed", String(ui.modes.has(m))); drawOverlay();
+  }));
+  $("mapSupplier").addEventListener("change", e => { ui.supplier = e.target.value; drawOverlay(); renderInfo(); });
   $("method").addEventListener("change", e => { ui.method = e.target.value; renderView(); });
   $("zin").addEventListener("click", () => zoomCenter(1.4));
   $("zout").addEventListener("click", () => zoomCenter(1 / 1.4));
@@ -1339,7 +1360,10 @@ function initControls(){
 }
 
 // ============================================================ parameter drawer
+const MODE_LABELS = {supply: ["Supply", "Supplier to Helmond, or straight to a partner"], refill: ["Refill", "Helmond to a distributor, 3PL or owned warehouse"],
+  export: ["Export (baseline)", "Helmond to the customer's port or border"], delivery: ["Delivery to customer", "Partner or port to the customer, across borders and in-country"]};
 const GROUPS = [
+  {id: "modes", title: "Transport modes", t: "p:modes"},
   {id: "scen", title: "Scenario defaults", t: "p:scenarios", matrix: true, fields: [
     ["margin_pct", "Distributor margin %"], ["min_order_value_eur", "Minimum order value €"], ["inbound_eur_per_pallet", "Inbound €/pallet"],
     ["storage_eur_per_pallet_month", "Storage €/pallet/month"], ["avg_storage_months", "Months of stock held"], ["outbound_eur_per_order", "Pick + dispatch €/order"],
@@ -1376,6 +1400,15 @@ function renderDrawer(){
     if (g.matrix) {
       h += `<table class="ptable"><thead><tr><th></th>${tb.map(r => `<th>${esc(SHORT[r.scenario] || r.scenario)}</th>`).join("")}</tr></thead><tbody>` +
         g.fields.map(([f, l]) => `<tr><td class="lbl">${esc(l)}</td>${tb.map((r, i) => `<td>${(r.scenario === "cif_baseline" && f !== "min_order_value_eur") || (f === "margin_pct" && r.scenario !== "distributor") ? '<span class="faint">–</span>' : inputFor(g.t, i, f, r[f])}</td>`).join("")}</tr>`).join("") + `</tbody></table>`;
+    } else if (g.id === "modes") {
+      h += `<p class="faint" style="font-size:12px">Tick the modes each kind of leg may use. Pick decides among them: preferred mode first (a supplier's own mode first for supply), cheapest, or fastest. A leg with no rate in its allowed modes makes the route infeasible.</p>
+        <table class="ptable modes"><thead><tr><th>Leg</th><th>Sea</th><th>Road</th><th>Air</th><th>Pick</th><th>Preferred</th></tr></thead><tbody>` +
+        tb.map((r, i) => { const al = String(r.allowed_modes || "").split(/[;,]/).map(x => x.trim().toLowerCase()), b0 = BASE.params.modes[i] || {}, lab = MODE_LABELS[r.leg_group] || [r.leg_group, ""];
+          return `<tr><td class="lbl"><span class="src ${r.source === "real" ? "real" : "placeholder"}"></span>${esc(lab[0])}<small>${esc(lab[1])}</small></td>` +
+            ["sea", "road", "air"].map(m => `<td><input type="checkbox" data-mm="${i}" data-mode="${m}" ${al.includes(m) ? "checked" : ""} aria-label="${esc(lab[0])} by ${m}"></td>`).join("") +
+            `<td><select data-t="p:modes" data-i="${i}" data-f="pick" class="mpick${r.pick !== b0.pick ? " chg" : ""}" aria-label="${esc(lab[0])} pick">${["preferred", "cheapest", "fastest"].map(k => `<option${r.pick === k ? " selected" : ""}>${k}</option>`).join("")}</select></td>` +
+            `<td><select data-t="p:modes" data-i="${i}" data-f="preferred_mode" class="mpref${(r.preferred_mode || "") !== (b0.preferred_mode || "") ? " chg" : ""}" aria-label="${esc(lab[0])} preferred mode"><option value=""></option>${["sea", "road", "air"].map(k => `<option${r.preferred_mode === k ? " selected" : ""}>${k}</option>`).join("")}</select></td></tr>`; }).join("") +
+        `</tbody></table>`;
     } else if (g.id === "dcs") {
       h += `<p class="faint" style="font-size:12px">Untick a node to remove it. Blank rates use the scenario defaults.</p><table class="ptable"><thead><tr><th>Node</th><th>Use</th><th>Status</th><th>MOV €</th><th>Margin %</th><th>Storage €</th><th>Serves</th></tr></thead><tbody>` +
         tb.map((r, i) => r.dc_type === "helmond_hub" ? "" : `<tr><td class="lbl"><i class="sw" style="background:var(--s-${r.dc_type})"></i> ${esc(r.dc_id)}<small>${esc(r.name)}</small></td>
@@ -1396,6 +1429,12 @@ function renderDrawer(){
     const {t, i, f} = el.dataset; const row = tableRef(t)[+i];
     if (el.type === "number" || el.dataset.num) row[f] = el.value === "" ? null : Number(el.value); else row[f] = el.value;
     el.classList.toggle("chg", JSON.stringify(row[f]) !== JSON.stringify(baseRef(t)[+i][f]));
+    changed();
+  }));
+  $("dbody").querySelectorAll("input[data-mm]").forEach(el => el.addEventListener("change", () => {
+    const row = W.params.modes[+el.dataset.mm];
+    const on = new Set([...$("dbody").querySelectorAll(`input[data-mm="${el.dataset.mm}"]`)].filter(x => x.checked).map(x => x.dataset.mode));
+    row.allowed_modes = ["sea", "road", "air"].filter(m => on.has(m)).join(";");
     changed();
   }));
   $("dbody").querySelectorAll("input[data-ex]").forEach(el => el.addEventListener("change", () => { el.checked ? excluded.delete(el.dataset.ex) : excluded.add(el.dataset.ex); changed(); }));
@@ -1428,8 +1467,14 @@ $("copyChanges").addEventListener("click", () => {
 });
 
 // ============================================================ render
+function renderSupplierFilter(){
+  const sel = $("mapSupplier"), list = R.data.suppliers || [];
+  if (ui.supplier !== "all" && !list.some(sp => String(sp.supplier_id) === ui.supplier)) ui.supplier = "all";
+  sel.innerHTML = `<option value="all">All suppliers</option>` + list.map(sp => `<option value="${esc(sp.supplier_id)}"${String(sp.supplier_id) === ui.supplier ? " selected" : ""}>${esc(sp.city || sp.supplier_id)} · ${esc(String(sp.brands || "").split(";").join(", ") || sp.supplier_id)}</option>`).join("");
+}
 function renderView(){
   document.querySelectorAll("#regionSeg button, #regionSegFs button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.r === ui.region)));
+  renderSupplierFilter();
   renderChips(); renderRegions(); drawMap(); renderCountry(); renderSM(); renderOrder(); renderIssues();
 }
 load(); initControls(); compute(); renderView();
