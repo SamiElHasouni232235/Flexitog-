@@ -121,7 +121,9 @@ def build_html(ws) -> str:
     payload = json.dumps(build_payload(ws), ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
     template = (ASSETS / "dashboard.html").read_text(encoding="utf-8")
     engine = (ASSETS / "engine.js").read_text(encoding="utf-8")
-    xlsx = (ASSETS / "vendor" / "xlsx.full.min.js").read_text(encoding="utf-8")
+    # SheetJS keeps U+FFFD inside its codepage string tables. Escape it so the page has no raw
+    # replacement characters (the artifact publisher rejects them); the strings stay identical.
+    xlsx = (ASSETS / "vendor" / "xlsx.full.min.js").read_text(encoding="utf-8").replace("\ufffd", "\\ufffd")
     workspace = (ASSETS / "workspace.js").read_text(encoding="utf-8")
     for name, js in (("engine.js", engine), ("xlsx.full.min.js", xlsx), ("workspace.js", workspace)):
         if "</script" in js.lower():

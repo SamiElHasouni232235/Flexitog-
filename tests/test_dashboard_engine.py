@@ -115,6 +115,7 @@ def test_dashboard_html_is_self_contained(ws):
     for host in ("cdnjs", "jsdelivr", "unpkg"):
         assert host not in page
     assert "/*XLSX*/" not in page and "/*WORKSPACE*/" not in page
+    assert "\ufffd" not in page
     assert 'id="menuBtn"' in page and 'id="viewMD"' in page and 'id="viewReport"' in page
     assert "SheetJS" in page and "function renderMD" in page
     assert len(page.encode()) < 3_000_000
