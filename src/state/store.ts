@@ -2,10 +2,12 @@ import { useMemo } from 'react';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { seedAssumptions, seedWorkspace } from '../data/seed';
+import { resolveAssumptions } from '../engine/model';
 import { resolveStores } from '../engine/stores';
 import type {
   Assumption,
   AssumptionKey,
+  AssumptionValues,
   Criterion,
   DistributionCentre,
   Hub,
@@ -171,4 +173,10 @@ export function downloadText(filename: string, text: string, type = 'application
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+/** Shared assumption values without model overrides. */
+export function useAssumptionValues(): AssumptionValues {
+  const assumptions = useApp((s) => s.ws.assumptions);
+  return useMemo(() => resolveAssumptions(assumptions), [assumptions]);
 }

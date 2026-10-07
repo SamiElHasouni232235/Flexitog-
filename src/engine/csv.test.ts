@@ -61,3 +61,11 @@ describe('coverage', () => {
     expect(fr?.gap).toBe(true);
   });
 });
+
+describe('coverage status', () => {
+  it('marks Belgium as fully covered and Luxembourg as a gap', () => {
+    const cov = countryCoverage(seedHubs());
+    expect(cov.find((c) => c.country === 'BE')?.status).toBe('full');
+    expect(cov.find((c) => c.country === 'LU')?.status).toBe('gap');
+  });
+});

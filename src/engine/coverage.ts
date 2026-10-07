@@ -42,7 +42,8 @@ export interface CountryCoverage {
   covered: string[];
   uncovered: string[];
   share: number;
-  /** True when less than half of the reference cities sit inside a hub radius. */
+  /** full: every reference city inside a hub radius. partial: some. gap: none. */
+  status: 'full' | 'partial' | 'gap';
   gap: boolean;
 }
 
@@ -56,6 +57,7 @@ export function countryCoverage(hubs: Hub[]): CountryCoverage[] {
       (inside ? covered : uncovered).push(city.name);
     }
     const share = cities.length > 0 ? covered.length / cities.length : 0;
-    return { country, covered, uncovered, share, gap: share < 0.5 };
+    const status = covered.length === 0 ? 'gap' : uncovered.length === 0 ? 'full' : 'partial';
+    return { country, covered, uncovered, share, status, gap: status === 'gap' };
   });
 }
