@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:single": "vite build --config vite.single.config.ts && node -e \"require('fs').renameSync('preview/index.html','preview/supply-chain-benchmark.html')\""
   },
   "dependencies": {
     "leaflet": "^1.9.4",
@@ -27,6 +28,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "typescript": "^5.6.3",
     "vite": "^5.4.11",
+    "vite-plugin-singlefile": "^2.0.3",
     "vitest": "^2.1.8"
   }
 }

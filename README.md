@@ -28,6 +28,14 @@ npm run build      # production build in dist/
 npm run preview    # serve the production build
 ```
 
+### One-file preview
+
+```bash
+npm run build:single   # writes preview/supply-chain-benchmark.html
+```
+
+This puts the whole app in one HTML file. Double-click it to open it in a browser, with no install and no server. It saves your work in that browser, the same way as the normal app. Map tiles need an internet connection.
+
 The workspace saves in the browser (localStorage) on every change. Use the data screen to export or import a JSON file of the full workspace.
 
 ## Screens
