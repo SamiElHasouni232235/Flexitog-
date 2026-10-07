@@ -5,10 +5,10 @@ export function uid(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
-const PALETTE = ['#4b5563', '#2563eb', '#059669', '#d97706', '#dc2626', '#7c3aed', '#0891b2', '#be185d', '#65a30d'];
+const PALETTE = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7', '#e34948'];
 
 export function nextColour(used: string[]): string {
-  return PALETTE.find((c) => !used.includes(c)) ?? PALETTE[used.length % PALETTE.length] ?? '#4b5563';
+  return PALETTE.find((c) => !used.includes(c)) ?? PALETTE[used.length % PALETTE.length] ?? '#2a78d6';
 }
 
 export function blankModel(hubIds: string[], usedColours: string[]): Model {

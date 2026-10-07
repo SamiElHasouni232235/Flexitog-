@@ -234,7 +234,7 @@ export function seedModels(): Model[] {
     {
       id: 'model-baseline',
       name: 'Baseline',
-      colour: '#4b5563',
+      colour: '#2a78d6',
       description: 'Current way of working. Central DC replenishes five hubs that hold stock and pick store orders. Own staff and own vans.',
       strengths: ['Short lead time to stores', 'Full control over service', 'Known processes'],
       weaknesses: ['Stock spread over five sites', 'High fixed staff and rent', 'No hub for France'],
@@ -256,7 +256,7 @@ export function seedModels(): Model[] {
     {
       id: 'model-3pl',
       name: '3PL runs all hubs and delivery',
-      colour: '#2563eb',
+      colour: '#eb6834',
       description: 'A 3PL operates the five hubs and delivers to stores. The company keeps the DC and linehaul.',
       strengths: ['Variable cost', 'Less own staff to manage', 'Capacity on demand'],
       weaknesses: ['Long notice period', 'Less control over service', 'Tariff risk at renewal'],
@@ -278,7 +278,7 @@ export function seedModels(): Model[] {
     {
       id: 'model-crossdock',
       name: 'Cross-dock hubs with stock only at DC',
-      colour: '#059669',
+      colour: '#1baf7a',
       description: 'The DC picks every store order. Hubs only sort and dispatch, with no stock.',
       strengths: ['One stock point', 'Smaller hubs', 'Lower inventory'],
       weaknesses: ['Daily linehaul needed', 'DC needs more space and pickers', 'Longer order cut-off'],
@@ -300,7 +300,7 @@ export function seedModels(): Model[] {
     {
       id: 'model-3hubs',
       name: 'Consolidate to 3 hubs',
-      colour: '#d97706',
+      colour: '#eda100',
       description: 'Keep Venlo, Mannheim and München as stock hubs. Stores of Kontich and Kassel move to the nearest open hub.',
       strengths: ['Fewer sites', 'Lower rent', 'Less admin'],
       weaknesses: ['Longer van routes', 'Belgium served from Venlo', 'Transition effort'],
@@ -322,7 +322,7 @@ export function seedModels(): Model[] {
     {
       id: 'model-direct',
       name: 'Direct from DC by carrier',
-      colour: '#dc2626',
+      colour: '#e87ba4',
       description: 'Close all hubs. The DC picks every order and a parcel or pallet carrier delivers to stores.',
       strengths: ['No hubs', 'Fully variable delivery cost', 'Short notice'],
       weaknesses: ['Long transit to Belgium and Bavaria', 'Carrier cost per carton', 'DC needs more space'],

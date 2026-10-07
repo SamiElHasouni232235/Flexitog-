@@ -604,3 +604,60 @@ details.section > .content {
     grid-template-columns: 1fr;
   }
 }
+
+/* Heatmap cell tooltip */
+.heat td.score .cell-tip {
+  display: none;
+  position: absolute;
+  z-index: 20;
+  left: 50%;
+  top: 100%;
+  transform: translateX(-50%);
+  margin-top: 4px;
+  min-width: 220px;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  font-weight: 400;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 6px 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  pointer-events: none;
+}
+.heat td.score:hover .cell-tip,
+.heat td.score:focus .cell-tip {
+  display: flex;
+}
+.heat .table-wrap,
+.heat {
+  overflow: visible;
+}
+
+/* Recharts theming: CSS wins over SVG presentation attributes */
+.recharts-cartesian-grid line,
+.recharts-polar-grid line,
+.recharts-polar-grid polygon {
+  stroke: var(--border);
+}
+.recharts-text,
+.recharts-cartesian-axis-tick-value,
+.recharts-polar-angle-axis-tick-value {
+  fill: var(--text-muted);
+}
+.recharts-cartesian-axis-line,
+.recharts-cartesian-axis-tick-line {
+  stroke: var(--border-strong);
+}
+.recharts-legend-item-text {
+  color: var(--text) !important;
+}
+.recharts-bar-rectangle path {
+  stroke: var(--surface);
+  stroke-width: 2px;
+}
+.recharts-tooltip-cursor {
+  fill: var(--surface-2);
+}
