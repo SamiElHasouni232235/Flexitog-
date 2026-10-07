@@ -8,6 +8,7 @@ import { useApp, useAssumptionValues, useStores } from '../state/store';
 import { DataFlag, DummyBadge } from '../ui/DataFlag';
 import { fmtNum } from '../ui/format';
 import { Field, NumberInput } from '../ui/NumberInput';
+import { ConfirmButton } from '../ui/ConfirmButton';
 
 export const SCENARIO_TYPES: Array<{ value: ScenarioType; label: string }> = [
   { value: 'test-order', label: 'Test order' },
@@ -77,10 +78,8 @@ export function ScenariosPage() {
                 setSelectedId(copy.id);
               }}
               onDelete={() => {
-                if (confirm(`Delete scenario ${scenario.name}?`)) {
-                  removeScenario(scenario.id);
-                  setSelectedId(scenarios.find((s) => s.id !== scenario.id)?.id ?? '');
-                }
+                removeScenario(scenario.id);
+                setSelectedId(scenarios.find((s) => s.id !== scenario.id)?.id ?? '');
               }}
             />
           ) : (
@@ -103,9 +102,9 @@ function ScenarioEditor({ scenario, onDuplicate, onDelete }: { scenario: Scenari
           </h2>
           <div className="row">
             <button onClick={onDuplicate}>Duplicate</button>
-            <button className="danger" onClick={onDelete}>
+            <ConfirmButton className="danger" confirmLabel="Delete scenario" onConfirm={onDelete}>
               Delete
-            </button>
+            </ConfirmButton>
           </div>
         </div>
         <div className="fields">
@@ -286,9 +285,9 @@ function TestOrderEditor({ scenario }: { scenario: Scenario }) {
             >
               Add line
             </button>
-            <button className="danger" onClick={() => confirm('Remove all lines?') && setLines([])} disabled={t.lines.length === 0}>
+            <ConfirmButton className="danger" confirmLabel="Remove all lines" onConfirm={() => setLines([])} disabled={t.lines.length === 0}>
               Clear lines
-            </button>
+            </ConfirmButton>
           </div>
         </div>
         <datalist id="targets">

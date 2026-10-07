@@ -4,6 +4,7 @@ import type { MetricKey } from '../engine/types';
 import { useApp } from '../state/store';
 import { fmtNum, fmtPct } from '../ui/format';
 import { NumberInput } from '../ui/NumberInput';
+import { ConfirmButton } from '../ui/ConfirmButton';
 
 export function CriteriaPage() {
   const criteria = useApp((s) => s.ws.criteria);
@@ -106,9 +107,9 @@ export function CriteriaPage() {
                   </td>
                   <td className="small muted">{METRIC_BY_KEY.get(c.metric)?.description}</td>
                   <td>
-                    <button className="link" onClick={() => confirm(`Delete criterion ${c.name}?`) && removeCriterion(c.id)}>
+                    <ConfirmButton className="link" confirmLabel="Delete" onConfirm={() => removeCriterion(c.id)} ariaLabel={`Delete ${c.name}`}>
                       Delete
-                    </button>
+                    </ConfirmButton>
                   </td>
                 </tr>
               ))}

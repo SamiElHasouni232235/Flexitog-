@@ -3,6 +3,7 @@ import { useApp } from '../state/store';
 import { DataFlag } from '../ui/DataFlag';
 import { fmtNum } from '../ui/format';
 import { NumberInput } from '../ui/NumberInput';
+import { ConfirmButton } from '../ui/ConfirmButton';
 
 export function AssumptionsPage() {
   const assumptions = useApp((s) => s.ws.assumptions);
@@ -16,9 +17,9 @@ export function AssumptionsPage() {
           <h1>Cost assumptions</h1>
           <p>One shared table for every model. A model replaces a value for itself through cost overrides in the model builder.</p>
         </div>
-        <button className="danger" onClick={() => confirm('Reset every cost assumption to its dummy value?') && resetAssumptions()}>
+        <ConfirmButton className="danger" confirmLabel="Reset every assumption" onConfirm={resetAssumptions}>
           Reset all to dummy values
-        </button>
+        </ConfirmButton>
       </div>
       <div className="card">
         <div className="table-wrap">

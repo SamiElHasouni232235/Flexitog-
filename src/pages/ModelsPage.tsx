@@ -10,6 +10,7 @@ import { fmtEur, fmtNum } from '../ui/format';
 import { hubColour } from '../ui/hubColours';
 import { NetworkMap } from '../ui/NetworkMap';
 import { Field, NumberInput } from '../ui/NumberInput';
+import { ConfirmButton } from '../ui/ConfirmButton';
 
 const TAGS: ModelTag[] = ['network', '3PL', 'staffing', 'transport', 'other'];
 
@@ -72,18 +73,18 @@ export function ModelsPage() {
               >
                 Duplicate
               </button>
-              <button
+              <ConfirmButton
                 className="danger"
                 disabled={!model}
-                onClick={() => {
-                  if (model && confirm(`Delete model ${model.name}?`)) {
-                    removeModel(model.id);
-                    setSelectedId(models.find((m) => m.id !== model.id)?.id ?? '');
-                  }
+                confirmLabel="Delete model"
+                onConfirm={() => {
+                  if (!model) return;
+                  removeModel(model.id);
+                  setSelectedId(models.find((m) => m.id !== model.id)?.id ?? '');
                 }}
               >
                 Delete
-              </button>
+              </ConfirmButton>
             </div>
           </div>
           <div className="card">

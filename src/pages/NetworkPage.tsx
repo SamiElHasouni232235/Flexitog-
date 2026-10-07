@@ -8,6 +8,7 @@ import { fmtNum, fmtPct } from '../ui/format';
 import { DC_COLOUR, hubColour } from '../ui/hubColours';
 import { NetworkMap } from '../ui/NetworkMap';
 import { NumberInput } from '../ui/NumberInput';
+import { ConfirmButton } from '../ui/ConfirmButton';
 
 const COUNTRIES: CountryCode[] = ['NL', 'BE', 'LU', 'FR', 'DE'];
 const COUNTRY_NAMES: Record<CountryCode, string> = {
@@ -195,14 +196,9 @@ export function NetworkPage() {
                     <DataFlag isDummy={h.isDummy} onChange={(isDummy) => updateHub(h.id, { isDummy })} label={h.name} />
                   </td>
                   <td>
-                    <button
-                      className="link"
-                      onClick={() => {
-                        if (confirm(`Delete hub ${h.name}? Models lose this hub.`)) removeHub(h.id);
-                      }}
-                    >
+                    <ConfirmButton className="link" confirmLabel="Delete hub" onConfirm={() => removeHub(h.id)} ariaLabel={`Delete hub ${h.name}`}>
                       Delete
-                    </button>
+                    </ConfirmButton>
                   </td>
                 </tr>
               ))}

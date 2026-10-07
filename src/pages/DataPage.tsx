@@ -5,6 +5,7 @@ import type { Store } from '../engine/types';
 import { downloadText, useApp, useStores } from '../state/store';
 import { DummyBadge } from '../ui/DataFlag';
 import { fmtNum } from '../ui/format';
+import { ConfirmButton } from '../ui/ConfirmButton';
 
 function readFile(file: File): Promise<string> {
   return file.text();
@@ -31,7 +32,6 @@ export function DataPage() {
     if (!file) return;
     try {
       const raw = JSON.parse(await readFile(file));
-      if (!confirm('Replace the current workspace with this file?')) return;
       importWorkspace(raw);
       setJsonMsg(`Imported ${file.name}.`);
     } catch (e) {
@@ -75,8 +75,8 @@ export function DataPage() {
         <div className="card">
           <h2>Workspace file</h2>
           <p className="muted small">
-            The workspace saves in this browser automatically. Export a JSON file to share it or keep a version. Import replaces
-            everything.
+            The workspace saves in this browser automatically. Export a JSON file to share it or keep a version. Importing a file
+            replaces the whole workspace.
           </p>
           <div className="row">
             <button className="primary" onClick={exportJson}>
@@ -105,13 +105,12 @@ export function DataPage() {
             dummy, and sets dummy cost assumptions to 0 so you enter real values. The DC stays in place.
           </p>
           <div className="row">
-            <button onClick={() => confirm('Replace the workspace with the dummy data?') && resetToDummy()}>Reset to dummy data</button>
-            <button
-              className="danger"
-              onClick={() => confirm('Remove all records still marked as dummy data? Export first if you want a copy.') && clearDummy()}
-            >
+            <ConfirmButton confirmLabel="Replace workspace with dummy data" onConfirm={resetToDummy}>
+              Reset to dummy data
+            </ConfirmButton>
+            <ConfirmButton className="danger" confirmLabel="Remove all dummy records" onConfirm={clearDummy}>
               Clear all dummy data
-            </button>
+            </ConfirmButton>
           </div>
         </div>
       </div>
