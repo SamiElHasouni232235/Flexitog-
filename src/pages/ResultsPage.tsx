@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Bar,
   BarChart,
@@ -200,7 +200,12 @@ function RankingTable({ ranked, baseline, baselineId }: { ranked: Row[]; baselin
 
 function Heatmap({ ranked, criteria, blend }: { ranked: Row[]; criteria: Criterion[]; blend: number }) {
   const dark = useIsDark();
+  const [tip, setTip] = useState<{ x: number; y: number; title: string; lines: string[] } | null>(null);
   const totalW = criteria.reduce((s, c) => s + Math.max(0, c.weight), 0);
+  const show = (e: React.SyntheticEvent<HTMLElement>, title: string, lines: string[]) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    setTip({ x: r.left + r.width / 2, y: r.bottom + 4, title, lines });
+  };
   return (
     <div className="card">
       <h2>Score per criterion</h2>
@@ -237,7 +242,7 @@ function Heatmap({ ranked, criteria, blend }: { ranked: Row[]; criteria: Criteri
                   if (!s) return <td key={c.id} />;
                   const col = scoreColours(s.final, dark);
                   const unit = METRIC_BY_KEY.get(c.metric)?.unit ?? '';
-                  const tip = [
+                  const lines = [
                     c.metric === 'manual' ? 'Metric: rating only' : `Metric: ${fmtMetric(s.metricValue, unit)}`,
                     `Calculated score: ${s.calculated === null ? '–' : fmtNum(s.calculated, 2)}`,
                     `Rating: ${s.rating === null ? 'none' : `${s.rating} of 5 (score ${fmtNum(s.ratingScore, 2)})`}`,
@@ -247,19 +252,15 @@ function Heatmap({ ranked, criteria, blend }: { ranked: Row[]; criteria: Criteri
                     <td
                       key={c.id}
                       className="score"
-                      style={{ background: col.bg, color: col.fg, position: 'relative' }}
+                      style={{ background: col.bg, color: col.fg }}
                       tabIndex={0}
-                      aria-label={`${r.model.name}, ${c.name}. ${tip.join('. ')}`}
+                      aria-label={`${r.model.name}, ${c.name}. ${lines.join('. ')}`}
+                      onMouseEnter={(e) => show(e, `${r.model.name} · ${c.name}`, lines)}
+                      onFocus={(e) => show(e, `${r.model.name} · ${c.name}`, lines)}
+                      onMouseLeave={() => setTip(null)}
+                      onBlur={() => setTip(null)}
                     >
                       {fmtNum(s.final, 1)}
-                      <span className="cell-tip" role="tooltip">
-                        <strong>
-                          {r.model.name} · {c.name}
-                        </strong>
-                        {tip.map((t) => (
-                          <span key={t}>{t}</span>
-                        ))}
-                      </span>
                     </td>
                   );
                 })}
@@ -271,6 +272,14 @@ function Heatmap({ ranked, criteria, blend }: { ranked: Row[]; criteria: Criteri
           </tbody>
         </table>
       </div>
+      {tip && (
+        <div className="cell-tip" role="tooltip" style={{ left: tip.x, top: tip.y }}>
+          <strong>{tip.title}</strong>
+          {tip.lines.map((t) => (
+            <span key={t}>{t}</span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

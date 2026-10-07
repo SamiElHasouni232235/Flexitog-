@@ -605,20 +605,16 @@ details.section > .content {
   }
 }
 
-/* Heatmap cell tooltip */
-.heat td.score .cell-tip {
-  display: none;
-  position: absolute;
-  z-index: 20;
-  left: 50%;
-  top: 100%;
+/* Heatmap cell tooltip, fixed so the table scroll box does not clip it */
+.cell-tip {
+  position: fixed;
+  z-index: 2000;
   transform: translateX(-50%);
-  margin-top: 4px;
   min-width: 220px;
+  display: flex;
   flex-direction: column;
   gap: 2px;
-  text-align: left;
-  font-weight: 400;
+  font-size: 12px;
   background: var(--surface);
   color: var(--text);
   border: 1px solid var(--border-strong);
@@ -626,14 +622,6 @@ details.section > .content {
   padding: 6px 8px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   pointer-events: none;
-}
-.heat td.score:hover .cell-tip,
-.heat td.score:focus .cell-tip {
-  display: flex;
-}
-.heat .table-wrap,
-.heat {
-  overflow: visible;
 }
 
 /* Recharts theming: CSS wins over SVG presentation attributes */
