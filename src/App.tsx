@@ -9,6 +9,7 @@ import { ProductsPage } from './pages/ProductsPage';
 import { ResultsPage } from './pages/ResultsPage';
 import { ScenariosPage } from './pages/ScenariosPage';
 import { useApp } from './state/store';
+import { NavLink, onNavigate, pathFromHash } from './ui/nav';
 
 const ROUTES = [
   { path: 'network', label: 'Baseline network', page: NetworkPage },
@@ -22,7 +23,7 @@ const ROUTES = [
 ] as const;
 
 function currentPath(): string {
-  const p = window.location.hash.replace(/^#\/?/, '');
+  const p = pathFromHash();
   return ROUTES.some((r) => r.path === p) ? p : 'network';
 }
 
@@ -45,7 +46,11 @@ export function App() {
   useEffect(() => {
     const onHash = () => setPath(currentPath());
     window.addEventListener('hashchange', onHash);
-    return () => window.removeEventListener('hashchange', onHash);
+    const off = onNavigate((p) => setPath(ROUTES.some((r) => r.path === p) ? p : 'network'));
+    return () => {
+      window.removeEventListener('hashchange', onHash);
+      off();
+    };
   }, []);
   useTheme();
   const ws = useApp((s) => s.ws);
@@ -82,10 +87,10 @@ export function App() {
       <div className="body">
         <nav className="sidenav" aria-label="Screens">
           {ROUTES.map((r, i) => (
-            <a key={r.path} href={`#/${r.path}`} aria-current={r.path === path ? 'page' : undefined}>
+            <NavLink key={r.path} to={r.path} current={r.path === path}>
               <span className="num">{i + 1}</span>
               {r.label}
-            </a>
+            </NavLink>
           ))}
         </nav>
         <main className="main" id="main">

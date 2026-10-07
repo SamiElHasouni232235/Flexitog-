@@ -7,6 +7,7 @@ import { DataFlag, DummyBadge } from '../ui/DataFlag';
 import { fmtNum, fmtPct } from '../ui/format';
 import { DC_COLOUR, hubColour } from '../ui/hubColours';
 import { NetworkMap } from '../ui/NetworkMap';
+import { NavLink } from '../ui/nav';
 import { NumberInput } from '../ui/NumberInput';
 import { ConfirmButton } from '../ui/ConfirmButton';
 
@@ -234,7 +235,7 @@ export function NetworkPage() {
             <button onClick={() => updateStoreSet({ mode: 'generated' })}>Use simulated stores</button>
           )}
           <DataFlag isDummy={storeSet.isDummy} onChange={(isDummy) => updateStoreSet({ isDummy })} label="store set" />
-          <a href="#/data">Import real stores from CSV</a>
+          <NavLink to="data">Import real stores from CSV</NavLink>
         </div>
       </div>
     </>
