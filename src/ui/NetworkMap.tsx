@@ -126,7 +126,7 @@ export function NetworkMap({
           );
         })}
         <CircleMarker center={[dc.lat, dc.lon]} radius={10} pathOptions={{ color: '#ffffff', weight: 2, fillColor: DC_COLOUR, fillOpacity: 1 }}>
-          <Tooltip permanent direction="right">
+          <Tooltip permanent={size !== 'small'} direction="right">
             {dc.name}
             {dc.locationToConfirm ? ' (location to confirm)' : ''}
           </Tooltip>
