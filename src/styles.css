@@ -452,6 +452,47 @@ table input[type='checkbox'] {
 .map.small {
   height: 260px;
 }
+.map-wrap {
+  position: relative;
+}
+.map-toolbar {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1001;
+  display: flex;
+  gap: 6px;
+}
+.map-toolbar button {
+  padding: 3px 8px;
+  font-size: 12px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+.map-hint {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.map-wrap.css-full,
+.map-wrap:fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  background: var(--bg);
+}
+.map-wrap.css-full .map,
+.map-wrap:fullscreen .map {
+  flex: 1;
+  height: auto;
+}
+.map-wrap.css-full .map-toolbar,
+.map-wrap:fullscreen .map-toolbar {
+  top: 18px;
+  right: 18px;
+}
 .leaflet-container {
   font: inherit;
   background: var(--surface-2);

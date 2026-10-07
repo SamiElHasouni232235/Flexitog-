@@ -1,7 +1,7 @@
 import 'leaflet/dist/leaflet.css';
-import { useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Circle, CircleMarker, MapContainer, Polyline, TileLayer, Tooltip } from 'react-leaflet';
-import type { LatLngBoundsExpression } from 'leaflet';
+import type { LatLngBoundsExpression, Map as LeafletMap } from 'leaflet';
 import { assignStores, DC_NODE_ID, servingNodes } from '../engine/stores';
 import type { DistributionCentre, Hub, HubRole, Store } from '../engine/types';
 import { CLOSED_COLOUR, DC_COLOUR, hubColour } from './hubColours';
@@ -60,9 +60,21 @@ export function NetworkMap({
 
   const usesHubs = hubRole !== 'none' && hubs.some((h) => open.includes(h.id));
 
+  const { wrapRef, mapRef, full, toggleFull, resetView } = useMapView(bounds);
+  const isFull = full !== 'off';
+
   return (
-    <div className={`map ${size === 'small' ? 'small' : ''}`} role="region" aria-label={label ?? 'Network map'}>
-      <MapContainer bounds={bounds} preferCanvas scrollWheelZoom={false} style={{ height: '100%', width: '100%' }}>
+    <div ref={wrapRef} className={`map-wrap ${full === 'css' ? 'css-full' : ''}`}>
+      <div className="map-toolbar">
+        <button onClick={resetView} title="Fit the whole network in view">
+          Reset view
+        </button>
+        <button onClick={toggleFull} aria-pressed={isFull}>
+          {isFull ? 'Exit full screen' : 'Full screen'}
+        </button>
+      </div>
+      <div className={`map ${size === 'small' && !isFull ? 'small' : ''}`} role="region" aria-label={label ?? 'Network map'}>
+      <MapContainer ref={mapRef} bounds={bounds} preferCanvas scrollWheelZoom style={{ height: '100%', width: '100%' }}>
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -132,6 +144,72 @@ export function NetworkMap({
           </Tooltip>
         </CircleMarker>
       </MapContainer>
+      </div>
+      <p className="map-hint">Drag to move. Scroll or use + and − to zoom. Double-click to zoom in.{isFull ? ' Press Esc to leave full screen.' : ''}</p>
     </div>
   );
+}
+
+type FullMode = 'off' | 'native' | 'css';
+
+/**
+ * Full screen and reset view for a map. Uses the browser Fullscreen API and falls back to
+ * a page-filling overlay where the browser or an embedding frame blocks it.
+ */
+function useMapView(bounds: LatLngBoundsExpression) {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<LeafletMap | null>(null);
+  const [full, setFull] = useState<FullMode>('off');
+
+  useEffect(() => {
+    const onChange = () => {
+      if (document.fullscreenElement !== wrapRef.current) setFull((f) => (f === 'native' ? 'off' : f));
+    };
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+
+  useEffect(() => {
+    if (full !== 'css') return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setFull('off');
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [full]);
+
+  // Leaflet needs a size recalculation after its container changes size.
+  useEffect(() => {
+    const t = window.setTimeout(() => mapRef.current?.invalidateSize(), 60);
+    return () => window.clearTimeout(t);
+  }, [full]);
+
+  const toggleFull = useCallback(async () => {
+    if (full === 'native') {
+      await document.exitFullscreen().catch(() => undefined);
+      setFull('off');
+      return;
+    }
+    if (full === 'css') {
+      setFull('off');
+      return;
+    }
+    const el = wrapRef.current;
+    try {
+      if (el && typeof el.requestFullscreen === 'function' && document.fullscreenEnabled) {
+        await el.requestFullscreen();
+        setFull('native');
+        return;
+      }
+    } catch {
+      // blocked by the browser or an embedding frame: use the overlay instead
+    }
+    setFull('css');
+  }, [full]);
+
+  const resetView = useCallback(() => {
+    mapRef.current?.fitBounds(bounds as Parameters<LeafletMap['fitBounds']>[0]);
+  }, [bounds]);
+
+  return { wrapRef, mapRef, full, toggleFull, resetView };
 }
