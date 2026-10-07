@@ -3,8 +3,10 @@
 The page embeds the current workspace (master data, parameters, batch orders), the JavaScript
 port of the engine (assets/engine.js), a projected basemap and the regional issues. Every
 parameter change in the page reruns the batch in the browser. The menu (top left) opens the
-master data editor and upload (assets/workspace.js) and the report extract. SheetJS is inlined for
-Excel read and write. No server, no external requests except Google Fonts.
+master data editor and upload (assets/workspace.js), the report extract and the Benchmarking view
+(assets/bench_core.js for the logic, assets/benchmark.js and benchmark.css for the screens). SheetJS
+is inlined for Excel read and write, jsPDF with AutoTable and docx for the benchmarking report.
+No server, no external requests except Google Fonts.
 """
 from __future__ import annotations
 
@@ -123,10 +125,29 @@ def build_html(ws) -> str:
     engine = (ASSETS / "engine.js").read_text(encoding="utf-8")
     # SheetJS keeps U+FFFD inside its codepage string tables. Escape it so the page has no raw
     # replacement characters (the artifact publisher rejects them); the strings stay identical.
-    xlsx = (ASSETS / "vendor" / "xlsx.full.min.js").read_text(encoding="utf-8").replace("\ufffd", "\\ufffd")
-    workspace = (ASSETS / "workspace.js").read_text(encoding="utf-8")
-    for name, js in (("engine.js", engine), ("xlsx.full.min.js", xlsx), ("workspace.js", workspace)):
+    def vendor(name: str) -> str:
+        return (ASSETS / "vendor" / name).read_text(encoding="utf-8").replace("\ufffd", "\\ufffd")
+
+    parts = {
+        "/*XLSX*/": vendor("xlsx.full.min.js"),
+        # Benchmarking report export: jsPDF + AutoTable for PDF, docx for Word (all MIT, see vendor/).
+        # jsPDF names a CDN copy of PDFObject for output("pdfobjectnewwindow"), which the page never
+        # calls. Blank it so the page holds no external script address.
+        "/*JSPDF*/": vendor("jspdf.umd.min.js").replace("https://cdnjs.cloudflare.com/ajax/libs/pdfobject/2.1.1/pdfobject.min.js", ""),
+        "/*AUTOTABLE*/": vendor("jspdf.plugin.autotable.min.js"),
+        "/*DOCX*/": vendor("docx.min.js"),
+        "/*ENGINE*/": engine,
+        "/*WORKSPACE*/": (ASSETS / "workspace.js").read_text(encoding="utf-8"),
+        "/*BENCHCORE*/": (ASSETS / "bench_core.js").read_text(encoding="utf-8"),
+        "/*BENCHMARK*/": (ASSETS / "benchmark.js").read_text(encoding="utf-8"),
+    }
+    for key, js in parts.items():
         if "</script" in js.lower():
-            raise ValueError(f"{name} contains a closing script tag")
-    return (template.replace("/*XLSX*/", xlsx, 1).replace("/*ENGINE*/", engine, 1)
-            .replace("/*WORKSPACE*/", workspace, 1).replace("/*PAYLOAD*/null", payload, 1))
+            raise ValueError(f"{key} contains a closing script tag")
+    parts["/*BENCHCSS*/"] = (ASSETS / "benchmark.css").read_text(encoding="utf-8")
+    html = template
+    for key, text in parts.items():
+        if key not in html:
+            raise ValueError(f"template has no {key} placeholder")
+        html = html.replace(key, text, 1)
+    return html.replace("/*PAYLOAD*/null", payload, 1)

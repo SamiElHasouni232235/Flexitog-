@@ -279,20 +279,26 @@ function masterDataChanged(keys){
 }
 
 // ============================================================ views and menu
-const VIEW = {current: "dash"};
+// Each view keeps its DOM and state while hidden; switching back restores its scroll position.
+const VIEW = {current: "dash", scroll: {}};
+const VIEWS = {dash: ["viewDash", "FlexiTog Route Dashboard"], md: ["viewMD", "Master data"], report: ["viewReport", "Report extract"], bench: ["viewBench", "Benchmarking"]};
 function showView(v){
+  if (!VIEWS[v]) v = "dash";
+  const prev = VIEW.current;
+  if (prev !== v) VIEW.scroll[prev] = window.scrollY;
   VIEW.current = v;
-  $("viewDash").hidden = v !== "dash"; $("viewMD").hidden = v !== "md"; $("viewReport").hidden = v !== "report";
+  Object.entries(VIEWS).forEach(([k, [id]]) => { const el = $(id); if (el) el.hidden = k !== v; });
   document.body.dataset.view = v;
-  $("viewTitle").textContent = {dash: "FlexiTog Route Dashboard", md: "Master data", report: "Report extract"}[v];
+  $("viewTitle").textContent = VIEWS[v][1];
   document.querySelectorAll("#menu [data-go]").forEach(b => b.setAttribute("aria-current", String(b.dataset.go === v)));
   if (v === "md") renderMD();
   if (v === "report") renderReport();
-  window.scrollTo({top: 0});
+  if (v === "bench" && window.BenchUI) window.BenchUI.show();
+  if (prev !== v) window.scrollTo({top: VIEW.scroll[v] || 0});
 }
 function openMenu(open){
   $("menu").hidden = !open; $("menuBtn").setAttribute("aria-expanded", String(open));
-  if (open) $("menu").querySelector("button").focus();
+  if (open) $("menu").querySelector("button").focus({preventScroll: true});
 }
 $("menuBtn").addEventListener("click", e => { e.stopPropagation(); openMenu($("menu").hidden); });
 document.addEventListener("click", e => { if (!$("menu").hidden && !e.target.closest("#menu")) openMenu(false); });
@@ -302,7 +308,7 @@ $("menu").addEventListener("click", e => {
   openMenu(false);
   if (b.dataset.go) showView(b.dataset.go);
   if (b.dataset.act === "params") openDrawer();
-  if (b.dataset.act === "md-tab") { MDUI.tab = b.dataset.tab; showView("md"); }
+  if (b.dataset.act === "md-tab") { MDUI.tab = b.dataset.tab; VIEW.scroll.md = 0; showView("md"); }
 });
 
 // ============================================================ master data view

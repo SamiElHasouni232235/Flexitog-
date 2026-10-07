@@ -173,8 +173,8 @@ HTML file that runs the whole simulator in the browser, with no Python and no se
 
 ### Menu, master data and report extract
 
-The menu button (three lines, top left) opens Dashboard, Master data upload, Report extract and
-Parameters, plus shortcuts to the main master data tabs.
+The menu button (three lines, top left) opens Route Dashboard, Benchmarking, Master data upload, Report
+extract and Parameters, plus shortcuts to the main master data tabs.
 
 - Master data upload: one tab per table. Products, Customers, Suppliers, Logistics providers
   (distributors, 3PLs, owned warehouses and the Helmond hub, filterable by type), Lanes, Sales history,
@@ -200,6 +200,56 @@ Parameters, plus shortcuts to the main master data tabs.
 
 Excel read and write uses SheetJS Community Edition 0.18.5 (Apache-2.0), inlined from
 `flexitog/assets/vendor/`. The menu and master data code is `flexitog/assets/workspace.js`.
+
+### Benchmarking
+
+Menu > Benchmarking builds one standard test order package from the sales history and sends it to
+logistics providers, so every freight forwarder, 3PL, carrier or distributor quotes on the same basis.
+Four sub-tabs; each view keeps its state when you switch back to the Route Dashboard.
+
+- Logistics Providers: add, edit and delete (with a confirm click) in a form, table with search and
+  filters by status, type and region. Duplicates (same name and email) are blocked. Every field is defined
+  once in `PROVIDER_FIELDS` in `benchmark.js`: the form, table, search, filters, import and storage read
+  it, so a new field is one line. Export providers and Import providers move the list as JSON. Three
+  dummy providers (example.com addresses) are seeded on first use.
+- Sales Data and Analysis: the default source is Master data > Sales history (192 demo orders). Add
+  CSV or Excel exports from each merged entity; a mapping step matches columns (English and Dutch
+  headers) to order date, order number, customer, destination country, SKU, description, garment
+  category, brand, quantity, value, currency and optional weight, cartons, pallets and incoterm. Data
+  quality shows rows loaded and dropped with reasons, missing values per column, duplicates and the
+  date range. Exchange rates (EUR per unit, placeholders) convert values. Analyses with chart and table:
+  orders, units and value per month and year, seasonality index per month (overall and per region),
+  volume per region, country, customer and garment category, order profile, top customers per region
+  with peak months, peak and low months. A findings list is written from the numbers.
+- Service Goals: editable goals with name, description, target, unit, mandatory or preferred and the
+  regions they apply to. Seven defaults (next-day TR/NAF, 48 hours GCC, customs paperwork, no hassle,
+  damage rate, returns, tracking and POD).
+- Test Order and Report: a 12-month test set drawn month by month from the history with a fixed seed
+  (same options, same set). Options: base years, scale factor or yearly revenue target in USD, seed,
+  order values on or off, lines as SKU or garment category. Customers become codes per region (Customer
+  GCC-01). Cartons, pallets, weight and volume come from the product master or packing defaults per
+  category. A check compares totals, monthly shape, region and category mix with the history. Generate
+  report files writes, per ticked provider or as a generic version, a PDF report, a Word report and an
+  Excel response template. Generating for a provider sets its status to Test order sent with today's date.
+
+Seasonality index: units per calendar month averaged over the years that cover that month, divided by
+the mean of those averages (average month = 100). Part years do not skew the shape.
+
+Response template (version 1) sheets: Instructions, Provider, Rates per order (one row per test order
+ID), Rates per lane (one row per destination country from Helmond), Service goals (meets goal yes, no,
+partly, comment), Test order lines (reference) and a hidden `_meta` sheet with the package and provider
+IDs. Cost columns per row: transport mode, transit days, total lead time days, freight rate, fuel
+surcharge, customs clearance fee, warehousing cost, other surcharges, incoterm offered, currency,
+comment. `BenchCore.parseResponse` reads a completed file into a ProviderResponse
+`{package_id, provider_id, provider_name, currency, valid_until, lines: [{kind: order|lane, ref, cost fields}],
+goals: [{goal_id, meets, comment}]}`: the input for the side-by-side comparison (not built yet).
+Exports never hold real customer names, source order numbers, margins, purchase prices or supplier costs.
+
+Storage follows the master data: saved with the dashboard when published, in this browser (localStorage,
+prefix `flexitog-bench-v1:`) when opened as a file. The logic without DOM is
+`flexitog/assets/bench_core.js` (tested in `tests/test_benchmark.py`), the screens are
+`benchmark.js` and `benchmark.css`. PDF uses jsPDF 4.2.1 with AutoTable 5.0.8, Word uses docx 9.9.0
+(all MIT), inlined from `flexitog/assets/vendor/` like SheetJS.
 
 The browser engine (`flexitog/assets/engine.js`) is a port of `engine.py`/`batch.py`.
 `tests/test_dashboard_engine.py` runs both on the same batch and requires identical results, so change

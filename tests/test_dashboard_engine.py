@@ -118,7 +118,11 @@ def test_dashboard_html_is_self_contained(ws):
     assert "\ufffd" not in page
     assert 'id="menuBtn"' in page and 'id="viewMD"' in page and 'id="viewReport"' in page
     assert "SheetJS" in page and "function renderMD" in page
-    assert len(page.encode()) < 3_000_000
+    for key in ("/*JSPDF*/", "/*AUTOTABLE*/", "/*DOCX*/", "/*BENCHCORE*/", "/*BENCHMARK*/", "/*BENCHCSS*/"):
+        assert key not in page
+    assert 'id="viewBench"' in page and 'data-go="bench"' in page and "window.BenchUI" in page and "BenchCore" in page
+    # SheetJS 0.9 MB, jsPDF + AutoTable 0.45 MB, docx 0.48 MB, basemap 1.1 MB
+    assert len(page.encode()) < 4_500_000
 
 
 def test_apply_dashboard_changes(ws):

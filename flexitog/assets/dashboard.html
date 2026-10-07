@@ -364,6 +364,7 @@ details.custom .iact{display:flex;gap:6px;margin-top:8px}
 @media (max-width:760px){.report{padding:14px}}
 @media (prefers-reduced-motion:no-preference){.drawer{animation:slide .18s ease-out}@keyframes slide{from{transform:translateX(24px);opacity:.6}}}
 </style>
+<style>/*BENCHCSS*/</style>
 
 <div class="app">
   <header class="top">
@@ -371,7 +372,8 @@ details.custom .iact{display:flex;gap:6px;margin-top:8px}
       <button type="button" class="menubtn" id="menuBtn" aria-label="Menu" aria-expanded="false" aria-controls="menu" title="Menu"><span></span><span></span><span></span></button>
       <nav class="menu" id="menu" hidden aria-label="Main menu">
         <p class="eyebrow">Views</p>
-        <button type="button" data-go="dash" aria-current="true"><b>Dashboard</b><small>Map, scorecard and order explorer</small></button>
+        <button type="button" data-go="dash" aria-current="true"><b>Route Dashboard</b><small>Map, scorecard and order explorer</small></button>
+        <button type="button" data-go="bench"><b>Benchmarking</b><small>Logistics providers, sales analysis, service goals and the test order package</small></button>
         <button type="button" data-go="md"><b>Master data upload</b><small>Products, customers, suppliers, logistics providers, sales history and other data</small></button>
         <button type="button" data-go="report"><b>Report extract</b><small>Standard cross-border supply chain report as Excel, HTML or CSV</small></button>
         <p class="eyebrow">Settings</p>
@@ -482,7 +484,19 @@ details.custom .iact{display:flex;gap:6px;margin-top:8px}
     <p class="faint repnote">The report follows the current parameters, what-if switches and master data. Change them, then come back here.</p>
     <article class="card report" id="repBody"></article>
   </div>
+
+  <div id="viewBench" class="view" hidden>
+    <div class="bhead">
+      <div class="bsub"><div class="seg" id="benchTabs" role="group" aria-label="Benchmarking sections"></div></div>
+      <div class="bchips" id="benchChips"></div>
+    </div>
+    <div id="bp-providers" class="bpanel"></div>
+    <div id="bp-sales" class="bpanel" hidden></div>
+    <div id="bp-goals" class="bpanel" hidden></div>
+    <div id="bp-test" class="bpanel" hidden></div>
+  </div>
 </div>
+<dialog id="bxDlg" class="bform-dlg" aria-label="Logistics provider"></dialog>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <div class="scrim" id="scrim" hidden></div>
@@ -495,6 +509,9 @@ details.custom .iact{display:flex;gap:6px;margin-top:8px}
 <div id="tip" hidden></div>
 
 <script>/*XLSX*/</script>
+<script>/*JSPDF*/</script>
+<script>/*AUTOTABLE*/</script>
+<script>/*DOCX*/</script>
 <script>/*ENGINE*/</script>
 <script>
 "use strict";
@@ -1480,3 +1497,5 @@ function renderView(){
 load(); initControls(); compute(); renderView();
 </script>
 <script>/*WORKSPACE*/</script>
+<script>/*BENCHCORE*/</script>
+<script>/*BENCHMARK*/</script>
