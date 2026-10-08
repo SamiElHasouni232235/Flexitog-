@@ -1,0 +1,10 @@
+/* Forecast view (assets/forecast.js). Reuses the dashboard and Benchmarking components. */
+body[data-view="forecast"] .top>.controls,body[data-view="forecast"] #chips{display:none}
+#viewForecast input[type=range]{width:180px;accent-color:var(--accent)}
+#viewForecast .optgrid .seg button{padding:6px 10px}
+#viewForecast .ptable select{min-width:120px}
+#viewForecast details.card>summary{cursor:pointer;display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline}
+#viewForecast .tablewrap input[type=number]{background:var(--surface);border:1px solid var(--rule);border-radius:4px;padding:3px 5px;font:12px var(--mono)}
+#viewForecast td .okb{white-space:nowrap}
+#fcChips{min-width:0;max-width:100%}
+#fcChips .chip{white-space:normal;overflow-wrap:anywhere;line-height:1.3}
