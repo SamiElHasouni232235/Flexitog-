@@ -118,9 +118,13 @@ def test_dashboard_html_is_self_contained(ws):
     assert "\ufffd" not in page
     assert 'id="menuBtn"' in page and 'id="viewMD"' in page and 'id="viewReport"' in page
     assert "SheetJS" in page and "function renderMD" in page
-    for key in ("/*JSPDF*/", "/*AUTOTABLE*/", "/*DOCX*/", "/*BENCHCORE*/", "/*BENCHMARK*/", "/*BENCHCSS*/"):
+    for key in ("/*JSPDF*/", "/*AUTOTABLE*/", "/*DOCX*/", "/*BENCHCORE*/", "/*BENCHMARK*/", "/*BENCHCSS*/", "/*CHARTS*/",
+                "/*FORECASTCORE*/", "/*FORECAST*/", "/*FORECASTCSS*/"):
         assert key not in page
     assert 'id="viewBench"' in page and 'data-go="bench"' in page and "window.BenchUI" in page and "BenchCore" in page
+    assert 'id="viewForecast"' in page and 'data-go="forecast"' in page and "window.ForecastUI" in page and "window.FlexCharts" in page
+    assert "fonts.googleapis" not in page and "fonts.gstatic" not in page     # no network calls at runtime
+    assert '"sales_orders":{"source":"Sample_Sales_Orders_MENA_Turkey_ANONYMIZED.xlsx","anonymized":true' in page
     # SheetJS 0.9 MB, jsPDF + AutoTable 0.45 MB, docx 0.48 MB, basemap 1.1 MB
     assert len(page.encode()) < 4_500_000
 
@@ -238,3 +242,55 @@ def test_parity_under_mode_policies(ws, tmp_path, group, field, value):
                 assert j[k] is None, (group, r["region"], r["scenario"], k)
             else:
                 assert j[k] == pytest.approx(r[k], rel=1e-9, abs=1e-9), (group, r["region"], r["scenario"], k)
+
+
+def test_parity_with_forecast_volumes_and_line_prices(ws, tmp_path):
+    """Demand-driven volumes (Data.volume) and per-line prices give the same result in both engines,
+    and they change cost the expected way."""
+    payload = build_payload(ws)
+    dcs = {d["dc_id"]: d for d in payload["data"]["dcs"]}
+    owned = next(d for d in dcs.values() if d["dc_type"] == "owned_warehouse")
+    volume = {"shipments_per_year": {"SA": 40, "TR": 3},
+              "node_load_pallets": {k: 2 for k, d in dcs.items() if d["dc_type"] in ("3pl", "owned_warehouse")},
+              "owned_pallets_per_year": {owned["country"]: 60}}
+    base_js = run_js(payload, tmp_path)
+    payload["data"]["volume"] = volume
+    for i, l in enumerate(payload["batch"]["lines"]):
+        if i % 3 == 0:
+            l["unit_price_eur"] = 12.5
+    js = run_js(payload, tmp_path)
+    data, _ = python_side(ws, payload)
+    data = replace(data, volume=volume)
+    sc = B.scorecard(B.run_batch(pd.DataFrame(payload["batch"]["orders"]), pd.DataFrame(payload["batch"]["lines"]), data),
+                     "customer_first")
+    jsc = {(r["group"], r["scenario"]): r for r in js["sc"]}
+    for r in sc.to_dict("records"):
+        j = jsc[(r["region"], r["scenario"])]
+        for k in ("coverage", "cost_per_unit_eur", "customer_cost_per_unit_eur", "lead_time_days", "hassle"):
+            if pd.isna(r[k]):
+                assert j[k] is None
+            else:
+                assert j[k] == pytest.approx(r[k], rel=1e-9, abs=1e-9), (r["region"], r["scenario"], k)
+    # Volume alone: small refill loads and a small owned warehouse make stocked routes dearer per unit.
+    for l in payload["batch"]["lines"]:
+        l.pop("unit_price_eur", None)
+    payload["data"]["volume"] = {"node_load_pallets": volume["node_load_pallets"],
+                                 "owned_pallets_per_year": {d["country"]: 60 for d in dcs.values() if d["dc_type"] == "owned_warehouse"}}
+    small = {(r["group"], r["scenario"]): r["cost_per_unit_eur"] for r in run_js(payload, tmp_path)["sc"]}
+    before = {(r["group"], r["scenario"]): r["cost_per_unit_eur"] for r in base_js["sc"]}
+    checked = 0
+    for key, v in small.items():
+        if key[1] in ("3pl", "owned_warehouse") and v is not None and before[key] is not None:
+            assert v > before[key], key
+            checked += 1
+    assert checked >= 2
+
+
+def test_dap_baseline_puts_door_delivery_on_flexitog(ws):
+    data = Data.from_workspace(ws)
+    orders, lines = ws.load("orders"), ws.load("order_lines")
+    o = orders.iloc[0].to_dict()
+    ev = evaluate(o, lines[lines["order_id"] == o["order_id"]], data)
+    dom = [s for s in ev.baseline.steps if s.leg == "domestic"]
+    assert dom and all(s.paid_by == "FlexiTog" for s in dom)
+    assert any(s.paid_by == "customer" and s.category in ("clearance", "duty") for s in ev.baseline.steps)

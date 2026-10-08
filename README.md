@@ -5,7 +5,7 @@ under four scenarios, and compares them on cost, lead time and hassle.
 
 | Scenario | What it models |
 |---|---|
-| Baseline: CIF to port | FlexiTog pays freight + insurance to destination port. Customer clears, pays duty, moves goods inland. |
+| Baseline: DAP from Helmond | FlexiTog pays freight, insurance and delivery to the customer's door. Customer clears import, pays duty and VAT. |
 | Distributor-held stock | Distributor imports and holds stock in-country. |
 | 3PL presence | FlexiTog stock at a regional 3PL. |
 | Owned non-EU warehouse | FlexiTog-run warehouse in the region. |
@@ -31,7 +31,7 @@ On first run the tool fills every table with generic placeholder rows.
 1. **Data model + import** (done): entity schemas, CSV/Excel import with column mapping, editable
    master data and parameters, test order builder.
 2. **Single-order engine** (done): route per scenario and node, cost breakdown by category and payer,
-   lead time, lane-aware recommendation, forced override, delta versus the CIF baseline.
+   lead time, lane-aware recommendation, forced override, delta versus the DAP baseline.
 3. **Batch mode and scorecard** (done): synthetic, saved or sales-history batches per region, all
    scenarios per order, scorecard with winners per dimension, hassle method check.
 
@@ -80,9 +80,15 @@ margin, minimum order value, handoffs) and owned warehouse fixed cost. All ship 
   pallet (default), 2 direct whenever a rate exists. A supplier with `direct_to_partners` = no always
   goes via Helmond. `risk_premium_direct_sourcing_pct` adds a routing penalty scaled by the share
   sourced direct. Scorecards show the direct share per region and model.
-- Baseline: one shipment per order, so minimum charges and per-shipment fees apply in full.
-  FlexiTog pays handling, export docs, freight and insurance to port. Customer pays clearance,
-  duty, compliance and inland delivery.
+- Baseline (DAP from Helmond, key `cif_baseline` kept for saved workspaces): one shipment per order,
+  so minimum charges and per-shipment fees apply in full. FlexiTog pays handling, export docs, freight,
+  insurance and delivery to the door. Customer pays clearance, duty, VAT and compliance.
+- Demand-driven volumes (`Data.volume`, set by the Forecast view): shipments per year per country
+  replace `shipments_per_year_per_country`, the refill load per node (forecast pallets per year of the
+  countries it serves / refills per year) caps `replenishment_pallets_per_shipment` and
+  `direct_replenishment_pallets_per_shipment`, and owned warehouse pallets per year replace
+  `expected_pallets_per_year`. An order line may carry `unit_price_eur` (forecast lines priced from
+  sales history); the SKU still sets origin, supplier, duty and compliance.
 - Stocked scenarios assume stock on hand in the region. Order lead time = local pick + delivery.
   Replenishment freight is consolidated (`replenishment_freight_factor`) and per-shipment fees
   are spread over `replenishment_pallets_per_shipment`.
@@ -97,7 +103,7 @@ margin, minimum order value, handoffs) and owned warehouse fixed cost. All ship 
 - Lane status comes from the lanes table and from sales history (`shipped_via` order count, 12 months).
 - Transport modes (Parameters > Transport modes per leg): each kind of leg has allowed modes and a
   pick rule. Defaults: supply (supplier to Helmond or to a partner) by sea, preferring sea and
-  using a supplier's own mode first; refill (Helmond to a partner) preferring sea; export (CIF
+  using a supplier's own mode first; refill (Helmond to a partner) preferring sea; export (DAP
   baseline) the cheapest of sea and road; delivery to customers (regional and in-country) by road
   or air, cheapest first. Pick `fastest` on delivery to use air. Air is used only where a group
   allows it. A leg with no rate in its allowed modes makes the route infeasible. Inbound and direct
@@ -200,6 +206,56 @@ extract and Parameters, plus shortcuts to the main master data tabs.
 
 Excel read and write uses SheetJS Community Edition 0.18.5 (Apache-2.0), inlined from
 `flexitog/assets/vendor/`. The menu and master data code is `flexitog/assets/workspace.js`.
+
+### Sales Forecast
+
+Menu > Forecast builds the 2027 demand every route scenario prices. Source: the Odoo sales order line
+export (sheet `Sheet1`, headers `Order Lines/...`). The page embeds the anonymized sample
+(`flexitog/assets/data/`, Dummy data badge on). Upload the real export on the Forecast view (SheetJS, in
+the browser, kept in that tab only), or build a local copy with
+`python tools/build_dashboard.py out.html --sales workspace/Official_Sales_Orders_MENA_Turkey.xlsx`.
+Keep the real file in `workspace/`: git ignores it and it holds real customer names.
+
+Data rules (`forecast_core.js` `clean`, the one implementation for the embedded and uploaded file):
+1. Skip rows with an empty Order Reference.
+2. Net revenue = Total − Total Tax (UK lines include 20% VAT).
+3. FX table in EUR per unit, default 1 GBP = 1.1555 EUR and 1 USD = 0.8607 EUR. Reporting currency USD.
+4. Order date = the earliest Created on of all lines in the order.
+5. Customer = Customer/Company Name Entity, else Customer; " (EU)" stripped; "Turk Hava Yollan Teknik AS"
+   maps to "Turkish Airlines Technic" (the sample's "Anatolia Aero Teknik AS" to "Anatolia Aero Technic").
+6. Freight: category Service, or a product name with Delivery, Freight, Fedex, UPS SAVER or Collection UK.
+   Lines without a product name are blank and ignored. Everything else is goods.
+7. Product class from the name: Coveralls, Baselayers, Trousers, Jackets (in that order), else the
+   template category (Gloves, Footwear, Headwear, Accessories, Drying cabinets, Other clothing).
+8. Goods revenue, units (quantity x pack size) and orders by month, country and class; freight apart.
+
+Validation (`tests/test_forecast.py`): with the real file in `workspace/` the totals must match the
+Excel analytics: net revenue USD 529,622 (goods + freight billed), 79 orders, 464 order lines, 32
+customers, 9 countries, Saudi Arabia USD 315,959, last 12 months to 2 October 2026 USD 513,857. The
+sample matches the counts; its revenue is perturbed (USD 521,301).
+
+Methods (pick one; all four show side by side with their back-test):
+- Run rate: trailing 12 full months per country. Orders above the 95th percentile of order value are
+  capped; the excess is reported as project orders (toggle to include them in every method).
+- Holt linear exponential smoothing per country, no seasonality, alpha and beta sliders (0.3 / 0.1).
+- Customer-driven: per customer the average days between orders and the average order value, plus new
+  customers per quarter per country at the median first-order value.
+- Target allocation: the 2027 target (USD 2.3M to 2.5M) split by historical share or your weights.
+
+Scenarios: Base = the method x (1 + growth uplift); Low / High = Base x (1 -/+ the method's back-test
+WAPE, clipped to 10-50%); Target = the Base mix scaled to the target midpoint. Revenue converts to units
+with the net unit price per class and country, to orders with the average order value and to lines with
+lines per order. Back-test: hold out the last 3 full months, fit on the rest; WAPE above 40% labels the
+forecast indicative.
+
+Integration: the demand object `window.DEMAND.rows` = {month, country, product_class, units, orders,
+revenue, revenue_eur, lines, shipments}. With Use as demand on (default), the Route Dashboard, the
+scorecard and the report extract price `FC.forecastBatch` (forecast orders per country and month, one
+line per class at the representative SKU of the product class profile) and the engine reads
+`FC.volumes`. The Forecast view shows cost to serve, landed cost, margin (gross margin % per class is a
+placeholder), next-day / 48-hour feasibility, lead time and hassle per scenario, and freight per unit
+by product class. Benchmarking > Test Order and Report can build the test set from one average month
+of the forecast. The page makes no network calls: Google Fonts is gone, system fonts take over.
 
 ### Benchmarking
 

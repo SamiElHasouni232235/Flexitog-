@@ -281,7 +281,8 @@ function masterDataChanged(keys){
 // ============================================================ views and menu
 // Each view keeps its DOM and state while hidden; switching back restores its scroll position.
 const VIEW = {current: "dash", scroll: {}};
-const VIEWS = {dash: ["viewDash", "FlexiTog Route Dashboard"], md: ["viewMD", "Master data"], report: ["viewReport", "Report extract"], bench: ["viewBench", "Benchmarking"]};
+const VIEWS = {dash: ["viewDash", "FlexiTog Route Dashboard"], md: ["viewMD", "Master data"], report: ["viewReport", "Report extract"], bench: ["viewBench", "Benchmarking"],
+  forecast: ["viewForecast", "Sales Forecast"]};
 function showView(v){
   if (!VIEWS[v]) v = "dash";
   const prev = VIEW.current;
@@ -294,6 +295,7 @@ function showView(v){
   if (v === "md") renderMD();
   if (v === "report") renderReport();
   if (v === "bench" && window.BenchUI) window.BenchUI.show();
+  if (v === "forecast" && window.ForecastUI) window.ForecastUI.show();
   if (prev !== v) window.scrollTo({top: VIEW.scroll[v] || 0});
 }
 function openMenu(open){
@@ -641,7 +643,7 @@ function reportData(){
     const best = ins.reduce((a, x) => x.cost_per_unit_eur < a.cost_per_unit_eur ? x : a);
     const fast = ins.reduce((a, x) => x.lead_time_days < a.lead_time_days ? x : a);
     const d = b.cost_per_unit_eur ? 100 * (best.cost_per_unit_eur / b.cost_per_unit_eur - 1) : 0;
-    findings.push(`${rg}: ${E.LABELS[best.scenario]} has the lowest cost to serve among the in-scope models at €${fmt(best.cost_per_unit_eur, 2)} per unit (${d >= 0 ? "+" : ""}${fmt(d, 0)}% against the CIF baseline of €${fmt(b.cost_per_unit_eur, 2)}). The customer pays €${fmt(best.customer_cost_per_unit_eur, 2)} per unit on top of the goods instead of €${fmt(b.customer_cost_per_unit_eur, 2)}, and lead time moves from ${fmt(b.lead_time_days, 0)} to ${fmt(best.lead_time_days, 0)} days. Fastest: ${E.LABELS[fast.scenario]} at ${fmt(fast.lead_time_days, 0)} days.`);
+    findings.push(`${rg}: ${E.LABELS[best.scenario]} has the lowest cost to serve among the in-scope models at €${fmt(best.cost_per_unit_eur, 2)} per unit (${d >= 0 ? "+" : ""}${fmt(d, 0)}% against the DAP baseline of €${fmt(b.cost_per_unit_eur, 2)}). The customer pays €${fmt(best.customer_cost_per_unit_eur, 2)} per unit on top of the goods instead of €${fmt(b.customer_cost_per_unit_eur, 2)}, and lead time moves from ${fmt(b.lead_time_days, 0)} to ${fmt(best.lead_time_days, 0)} days. Fastest: ${E.LABELS[fast.scenario]} at ${fmt(fast.lead_time_days, 0)} days.`);
     recs.push(`${rg}: shortlist ${E.LABELS[best.scenario]}${fast.scenario !== best.scenario ? ` and compare it with ${E.LABELS[fast.scenario]} on service level` : ""}.`);
     ins.filter(x => x.coverage < 1).forEach(x => recs.push(`${rg}: ${E.LABELS[x.scenario]} serves ${pct(x.coverage)} of orders. Add a partner or extend served countries before deciding on it.`));
   });
@@ -718,7 +720,7 @@ function reportHtml(D){
     <div><dt>What-if changes</dt><dd>${D.changes}</dd></div></dl>
     ${D.placeholderShare > 0.5 ? `<p class="warnbox">Most values in this report are placeholders. Read it as a demonstration of the method, not as a decision basis.</p>` : ""}</header>`;
   h += sec(1, "Executive summary", `<ul>${D.findings.map(f => `<li>${esc(f)}</li>`).join("")}</ul>`);
-  h += sec(2, "Scope and method", `<p>Origin: Helmond EU hub. Destinations: ${esc(D.regs.join(", "))}. Four models compared: CIF to port (today's baseline: FlexiTog pays freight and insurance to the destination port, the customer clears and moves goods inland), distributor-held stock, 3PL presence and an owned non-EU warehouse. DAP direct and the US and UK operations are out of scope.</p>
+  h += sec(2, "Scope and method", `<p>Origin: Helmond EU hub. Destinations: ${esc(D.regs.join(", "))}. Four models compared: DAP from Helmond (the baseline: FlexiTog pays freight, insurance and delivery to the customer's door, the customer clears import and pays duty), distributor-held stock, 3PL presence and an owned non-EU warehouse. The US and UK operations are out of scope.</p>
     <p>Cost to serve covers every cost between the supplier and goods at the customer, excluding the goods themselves and recoverable import VAT. Stocked models assume stock is on hand in the region; refill freight is consolidated and per-shipment fees are spread over the refill. Partner stock is refilled through Helmond or straight from the supplier, per supplier (section 9). Each order uses the best node per model, chosen on cost with a risk premium for unproven lanes and unsigned partners.</p>`);
   h += sec(3, "Scenario scorecard", t(["Region", "Scenario", "Coverage", "Cost / unit €", "Cost % value", "Customer / unit €", "FlexiTog / unit €", "Lead days", "Customer paperwork", "FlexiTog paperwork"],
     D.sc.sort((a, b) => D.regs.indexOf(a.group) - D.regs.indexOf(b.group) || SC.indexOf(a.scenario) - SC.indexOf(b.scenario)).map(x => `<tr><td>${esc(x.group)}</td><td>${esc(E.LABELS[x.scenario])}</td><td class="n">${pct(x.coverage)}</td>${n(x.cost_per_unit_eur)}${n(x.cost_pct_of_value, 1)}${n(x.customer_cost_per_unit_eur)}${n(x.flexitog_cost_per_unit_eur)}${n(x.lead_time_days, 1)}${n(x.hassle, 1)}${n(x.flexitog_paperwork, 1)}</tr>`)),
@@ -743,7 +745,7 @@ function reportHtml(D){
     D.sourcing.map(x => `<tr><td>${esc(x.region)}</td><td>${esc(E.LABELS[x.scenario])}</td><td class="n">${pct(x.share)}</td>${n(x.direct_pp, 0)}${n(x.via_pp, 0)}${n(x.via_pp != null && x.direct_pp != null ? x.via_pp - x.direct_pp : null, 0)}</tr>`))
     + (D.directLanes.length ? t(["Direct lane (best model per order)", "Mode", "Pallets", "Orders", "Direct €/pallet", "Via Helmond €/pallet"],
       D.directLanes.map(l => `<tr><td>${esc(l.supplier)} → ${esc(l.node)}${l.port ? ` <span class="faint">${esc(l.port)}</span>` : ""}</td><td>${esc(l.mode)}</td>${n(l.pallets, 1)}${n(l.orders, 0)}${n(l.pallets ? l.cost / l.pallets : null, 0)}${n(l.vpal ? l.via / l.vpal : null, 0)}</tr>`)) : "<p class=\"faint\">No direct lanes in use.</p>"),
-    `Setting: ${esc(modeText)}. Per supplier, a distributor, 3PL or owned warehouse is refilled either through Helmond (supplier to Helmond, Helmond handling, EU export, main leg) or straight from the supplier (direct freight plus origin export documents). The CIF baseline always ships from Helmond stock.`);
+    `Setting: ${esc(modeText)}. Per supplier, a distributor, 3PL or owned warehouse is refilled either through Helmond (supplier to Helmond, Helmond handling, EU export, main leg) or straight from the supplier (direct freight plus origin export documents). The DAP baseline always ships from Helmond stock.`);
   h += sec(10, "Transport modes", t(["Leg", "Allowed modes", "Pick", "Preferred"], D.modePolicy.map(m => `<tr><td>${esc(m.group)}</td><td>${esc(String(m.allowed || "").split(";").join(", "))}</td><td>${esc(m.pick)}</td><td>${esc(m.preferred || "–")}</td></tr>`))
     + t(["Region", "Scenario", "Supply legs", "Helmond leg", "Leg to customer", "Lead days"], D.modeMix.map(x => `<tr><td>${esc(x.region)}</td><td>${esc(E.LABELS[x.scenario])}</td><td>${esc(x.supply)}</td><td>${esc(x.main)}</td><td>${esc(x.customer)}</td>${n(x.lead, 1)}</tr>`)),
     "Share of pallets per mode. Supply legs = supplier to Helmond or to the partner. Leg to customer = the cross-border regional leg where there is one, otherwise in-country delivery.");

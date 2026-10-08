@@ -177,7 +177,48 @@ function recompute(){
   B.stale = {providers: true, sales: true, goals: true, test: true};
 }
 function years(){ return B.clean ? [...new Set(B.clean.lines.map(l => l.year))].sort() : []; }
+// Test set from the 2027 forecast (Forecast view): one average month, per country the forecast orders / 12,
+// each order carrying the country's product class mix at the forecast units and value.
+const FC_CAT = {Jackets: "jackets", Trousers: "trousers", Coveralls: "coveralls"};
+function forecastTest(){
+  const FU = window.ForecastUI;
+  if (!FU || !FU.ready()) return null;
+  const rows = FU.demandRows(), prof = FU.classProfile(), set = FU.settings(), info = skuInfo();
+  const key = "fc|" + JSON.stringify([set.method, set.scenario, rows.length, Math.round(rows.reduce((a, r) => a + r.units + r.revenue, 0)), prof]);
+  if (B.test && B.testKey === key) return B.test;
+  const by = {};
+  rows.forEach(r => { const c = by[r.country] || (by[r.country] = {orders: 0, cls: {}}); c.orders += r.orders;
+    const k = c.cls[r.product_class] || (c.cls[r.product_class] = {units: 0, eur: 0}); k.units += r.units; k.eur += r.revenue_eur; });
+  const profile = (FU.state.F && FU.state.F.H.profile) || {}, orders = [], seq = {};
+  Object.keys(by).sort().forEach(c => {
+    const region = regionOf(c); if (!REGIONS.includes(region)) return;
+    const n = Math.max(1, Math.round(by[c].orders / 12)), code = C.regionCode(region);
+    for (let i = 0; i < n; i++) {
+      seq[code] = (seq[code] || 0) + 1;
+      const lines = Object.entries(by[c].cls).filter(([, v]) => v.units / 12 / n >= 0.5).map(([k, v]) => {
+        const q = Math.max(1, Math.round(v.units / 12 / n)), sku = (prof[k] || {}).sku || "", cat = FC_CAT[k] || "other";
+        const pk = C.packLine({sku, category: cat, quantity: q}, info);
+        return {sku, description: k, category: cat, brand: "", quantity: q, cartons: pk.cartons, weight_kg: Math.round(pk.weight_kg * 10) / 10,
+                volume_m3: Math.round(pk.volume_m3 * 1000) / 1000, pallet_float: pk.pallet_float, value_eur: Math.round(v.eur / 12 / n * 100) / 100};
+      });
+      if (!lines.length) continue;
+      const sumf = f => lines.reduce((a, l) => a + l[f], 0);
+      orders.push({month: 1, month_name: "Average month", country: c, region, city: (profile[c] || {}).city || "", port: C.DEFAULT_PORTS[c] || "",
+        customer: `Customer ${code}-F${String(seq[code]).padStart(2, "0")}`, customer_real: "forecast", source_order: "average month",
+        lines, units: sumf("quantity"), cartons: sumf("cartons"), pallets: Math.max(1, Math.ceil(sumf("pallet_float") - 1e-9)),
+        weight_kg: Math.round(sumf("weight_kg") * 10) / 10, volume_m3: Math.round(sumf("volume_m3") * 100) / 100, value_eur: Math.round(sumf("value_eur") * 100) / 100});
+    }
+  });
+  orders.sort((a, b) => REGIONS.indexOf(a.region) - REGIONS.indexOf(b.region) || (a.country < b.country ? -1 : a.country > b.country ? 1 : 0) || b.units - a.units);
+  orders.forEach((o, i) => { o.id = `TO-${String(i + 1).padStart(3, "0")}`; });
+  const mname = (C.MONTHS && FU.state.F) ? (window.ForecastCore.METHODS.find(m => m[0] === set.method) || [, set.method])[1] : set.method;
+  B.test = {orders, lanes: C.lanes(orders), check: null, hist: {value: 0}, scale: 1, base_years: [], seed: 0, kind: "forecast",
+    label: `${set.scenario} scenario, ${mname}`, yearly: {orders: rows.reduce((a, r) => a + r.orders, 0), units: rows.reduce((a, r) => a + r.units, 0)}};
+  B.testKey = key;
+  return B.test;
+}
 function currentTest(){
+  if (B.settings.gen.source === "forecast") return forecastTest();
   if (!B.clean || !B.clean.lines.length) return null;
   const g = B.settings.gen, ys = years();
   const base = (g.baseYears || []).filter(y => ys.includes(y));
@@ -190,111 +231,9 @@ function currentTest(){
 }
 const isDummy = () => (B.settings.builtin && builtinDummy()) || B.providers.some(p => p.dummy);
 
-// ============================================================ charts (SVG, screen and print palettes)
-const PAL = {
-  screen: {ink: "var(--ink)", muted: "var(--muted)", rule: "var(--rule)", TR: "var(--r-TR)", NAF: "var(--r-NAF)", GCC: "var(--r-GCC)", OTH: "var(--r-OTH)",
-           q: ["var(--q1)", "var(--q2)", "var(--q3)", "var(--q4)", "var(--q5)"], accent: "var(--accent)", font: "var(--mono)", bg: null},
-  print: {ink: "#14212c", muted: "#56636f", rule: "#d9dfe4", TR: "#2a78d6", NAF: "#eb6834", GCC: "#1baf7a", OTH: "#8a8984",
-          q: ["#b9b0ea", "#8070d6", "#6553c7", "#4f3db0", "#281d66"], accent: "#1f3a55", font: "Arial, Helvetica, sans-serif", bg: "#ffffff"},
-};
-function sfmt(v){ const a = Math.abs(v); return a >= 1e6 ? (v / 1e6).toFixed(a >= 1e7 ? 0 : 1) + "M" : a >= 1e4 ? Math.round(v / 1e3) + "k" : a >= 1e3 ? (v / 1e3).toFixed(1) + "k" : String(Math.round(v * 10) / 10); }
-function axis(max, n){
-  if (!(max > 0)) max = 1;
-  const raw = max / (n || 4), mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
-  const step = (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * mag, top = Math.ceil(max / step - 1e-9) * step, list = [];
-  for (let v = 0; v <= top + step * 1e-6; v += step) list.push(v);
-  return {max: top, list};
-}
-const svgOpen = (w, h, pal, label) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img" aria-label="${esc(label || "chart")}">` + (pal.bg ? `<rect width="${w}" height="${h}" fill="${pal.bg}"/>` : "");
-const tx = (pal, x, y, s, o = {}) => `<text x="${(+x).toFixed(1)}" y="${(+y).toFixed(1)}" text-anchor="${o.a || "start"}" style="fill:${o.fill || pal.muted};font-family:${pal.font};font-size:${o.size || 10.5}px${o.w ? ";font-weight:" + o.w : ""}">${esc(s)}</text>`;
-function legendSvg(pal, items, x, y, w){
-  let s = "", cx = x, cy = y;
-  items.forEach(it => {
-    const tw = 22 + String(it.name).length * 6.2;
-    if (cx + tw > x + w) { cx = x; cy += 16; }
-    s += it.line ? `<line x1="${cx}" x2="${cx + 14}" y1="${cy - 3.5}" y2="${cy - 3.5}" style="stroke:${it.color};stroke-width:3"${it.dash ? ` stroke-dasharray="${it.dash}"` : ""}/>` : `<rect x="${cx}" y="${cy - 9}" width="11" height="11" rx="2" style="fill:${it.color}"/>`;
-    s += tx(pal, cx + 18, cy, it.name, {fill: pal.ink, size: 11}); cx += tw + 10;
-  });
-  return {svg: s, height: cy - y + 16};
-}
-function frame(pal, o, max, m, w, h){
-  const t = axis(max, 4), ih = h - m.t - m.b, y = v => m.t + ih - ih * v / t.max;
-  let s = "";
-  t.list.forEach(v => { s += `<line x1="${m.l}" x2="${w - m.r}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" style="stroke:${pal.rule};stroke-width:1"/>` + tx(pal, m.l - 6, y(v) + 3.5, o.fmt ? o.fmt(v) : sfmt(v), {a: "end"}); });
-  if (o.yLabel) s += tx(pal, 4, m.t - 12, o.yLabel, {size: 10});
-  return {s, y, t};
-}
-function lineChart(o){
-  const pal = o.pal || PAL.screen, w = o.w || 980;
-  const leg = o.legend ? legendSvg(pal, o.series.map(se => ({name: se.name, color: se.color, line: true, dash: se.dash})), 54, 14, w - 70) : {svg: "", height: 0};
-  const m = {l: 54, r: 14, t: 14 + leg.height + (o.yLabel ? 16 : 0), b: 26}, h = (o.h || 250) + leg.height;
-  const vals = o.series.flatMap(se => se.values.filter(v => v != null));
-  const F = frame(pal, o, Math.max(o.ref || 0, ...vals, 0) * 1.06, m, w, h), n = o.labels.length, iw = w - m.l - m.r;
-  const x = i => m.l + iw * (i + 0.5) / n;
-  let s = svgOpen(w, h, pal, o.label) + leg.svg + F.s;
-  o.labels.forEach((l, i) => { s += tx(pal, x(i), h - 9, l, {a: "middle"}); });
-  if (o.ref != null) s += `<line x1="${m.l}" x2="${w - m.r}" y1="${F.y(o.ref).toFixed(1)}" y2="${F.y(o.ref).toFixed(1)}" stroke-dasharray="5 4" style="stroke:${pal.muted};stroke-width:1.2"/>`;
-  o.series.forEach(se => {
-    let d = "", pen = false;
-    se.values.forEach((v, i) => { if (v == null) { pen = false; return; } d += (pen ? "L" : "M") + x(i).toFixed(1) + "," + F.y(v).toFixed(1); pen = true; });
-    s += `<path d="${d}" fill="none" stroke-linejoin="round" stroke-linecap="round"${se.dash ? ` stroke-dasharray="${se.dash}"` : ""} style="stroke:${se.color};stroke-width:${se.width || 2}"/>`;
-    se.values.forEach((v, i) => { if (v != null) s += `<circle cx="${x(i).toFixed(1)}" cy="${F.y(v).toFixed(1)}" r="${se.width > 2 ? 3.2 : 2.6}" style="fill:${se.color}"><title>${esc(se.name)} · ${esc(o.labels[i])}: ${esc(o.tip ? o.tip(v) : fmt(v))}</title></circle>`; });
-  });
-  return s + "</svg>";
-}
-function barsV(o){
-  const pal = o.pal || PAL.screen, w = o.w || 980;
-  const leg = o.legend ? legendSvg(pal, o.series.map(se => ({name: se.name, color: se.color})), 54, 14, w - 70) : {svg: "", height: 0};
-  const m = {l: 54, r: 14, t: 14 + leg.height + (o.yLabel ? 16 : 0), b: 26}, h = (o.h || 250) + leg.height, n = o.labels.length, iw = w - m.l - m.r;
-  const max = o.stacked ? Math.max(0, ...o.labels.map((_, i) => o.series.reduce((a, se) => a + (se.values[i] || 0), 0))) : Math.max(0, ...o.series.flatMap(se => se.values.map(v => v || 0)));
-  const F = frame(pal, o, max * 1.06, m, w, h), band = iw / n, pad = band * 0.16, inner = band - 2 * pad;
-  let s = svgOpen(w, h, pal, o.label) + leg.svg + F.s;
-  o.labels.forEach((l, i) => {
-    const x0 = m.l + band * i + pad;
-    s += tx(pal, m.l + band * (i + 0.5), h - 9, l, {a: "middle"});
-    let acc = 0;
-    o.series.forEach((se, k) => {
-      const v = se.values[i] || 0; if (!v) return;
-      const bw = o.stacked ? inner : inner / o.series.length, bx = o.stacked ? x0 : x0 + bw * k;
-      const y1 = F.y(acc + v), y0 = F.y(o.stacked ? acc : 0);
-      s += `<rect x="${bx.toFixed(1)}" y="${y1.toFixed(1)}" width="${Math.max(1, bw - (o.stacked ? 0 : 1.5)).toFixed(1)}" height="${Math.max(0.5, y0 - y1).toFixed(1)}" style="fill:${se.color}"><title>${esc(se.name)} · ${esc(l)}: ${esc(o.tip ? o.tip(v) : fmt(v))}</title></rect>`;
-      if (o.stacked) acc += v;
-    });
-  });
-  return s + "</svg>";
-}
-function barsH(o){
-  const pal = o.pal || PAL.screen, w = o.w || 980, lw = o.labelW || 190, row = 22, m = {l: lw, r: 16 + 6.6 * Math.max(6, ...o.items.map(i => String(i.text || "").length)), t: 8, b: 8};
-  const h = m.t + m.b + o.items.length * row, max = Math.max(0, ...o.items.map(i => i.value)) || 1, iw = w - m.l - m.r;
-  let s = svgOpen(w, h, pal, o.label);
-  o.items.forEach((it, i) => {
-    const y = m.t + i * row, bw = iw * it.value / max, lab = String(it.label);
-    s += tx(pal, m.l - 8, y + 15, lab.length > 30 ? lab.slice(0, 29) + "…" : lab, {a: "end", fill: pal.ink});
-    s += `<rect x="${m.l}" y="${y + 4}" width="${Math.max(1, bw).toFixed(1)}" height="${row - 8}" rx="2" style="fill:${it.color}"><title>${esc(lab)}: ${esc(it.tip || fmt(it.value))}</title></rect>`;
-    s += tx(pal, m.l + bw + 6, y + 15, it.text || sfmt(it.value));
-  });
-  return s + "</svg>";
-}
+// ============================================================ charts (shared helpers in charts.js)
+const {PAL, sfmt, lineChart, barsV, barsH, legendHtml, svgToPng, svgSize} = window.FlexCharts;
 const regionColor = (pal, r) => pal[rc(r)] || pal.OTH;
-const legendHtml = items => `<div class="blegend">${items.map(i => `<span><i class="${i.sq ? "sq" : ""}" style="background:${i.color}"></i>${esc(i.name)}</span>`).join("")}</div>`;
-function svgToPng(svg, w, h, scale){
-  scale = scale || 2;
-  return new Promise((res, rej) => {
-    const img = new Image();
-    img.onload = () => {
-      try {
-        const c = document.createElement("canvas"); c.width = w * scale; c.height = h * scale;
-        const g = c.getContext("2d"); g.fillStyle = "#ffffff"; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
-        const url = c.toDataURL("image/png"), bin = atob(url.split(",")[1]), bytes = new Uint8Array(bin.length);
-        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-        res({url, bytes, w, h});
-      } catch (e) { rej(e); }
-    };
-    img.onerror = () => rej(new Error("chart image failed"));
-    img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
-  });
-}
-const svgSize = svg => { const m = svg.match(/viewBox="0 0 ([\d.]+) ([\d.]+)"/); return m ? [+m[1], +m[2]] : [760, 260]; };
 
 // ============================================================ shell, tabs, chips
 const TABS = [["providers", "Logistics Providers"], ["sales", "Sales Data and Analysis"], ["goals", "Service Goals"], ["test", "Test Order and Report"]];
@@ -777,6 +716,7 @@ function packageOf(t){
   const g = B.settings.gen;
   const id = "FTB-" + today().replace(/-/g, "") + "-" + hashStr(JSON.stringify([t.seed, t.base_years, t.scale.toFixed(4), t.orders.map(o => [o.id, o.country, o.units])]));
   return {id, created: today(), seed: t.seed, base_years: t.base_years, scale: t.scale, mode: g.mode, show_values: g.showValues, line_detail: g.lineDetail,
+    kind: t.kind || "history", label: t.label || "",
     orders: t.orders, lanes: t.lanes, goals: B.goals.map(x => x.id)};
 }
 // Stored snapshot: never real customer names or source order numbers.
@@ -784,6 +724,8 @@ const packageSnapshot = pkg => ({id: pkg.id, created: pkg.created, seed: pkg.see
   orders: pkg.orders.map(o => ({id: o.id, month: o.month, country: o.country, region: o.region, port: place(o), customer: o.customer, lines: o.lines.length, units: o.units, cartons: o.cartons, pallets: o.pallets, weight_kg: o.weight_kg, volume_m3: o.volume_m3, value_eur: o.value_eur})),
   lanes: pkg.lanes.map(l => ({lane_id: l.lane_id, country: l.country, region: l.region, orders: l.orders, pallets: l.pallets, weight_kg: l.weight_kg})), sent: []});
 function checkHtml(t){
+  if (t.kind === "forecast") return `<div class="card"><div class="cardhead"><h2>From the forecast</h2><span class="okb yes">Average month</span></div>
+    <p class="muted bcard-lead">${fmt(t.orders.length)} test orders = one average month of the 2027 forecast (${esc(t.label)}): ${fmt(t.yearly.orders, 0)} orders and ${fmt(t.yearly.units)} units a year, divided by 12, with each country's product class mix. Change the method or scenario on the Forecast view.</p></div>`;
   const c = t.check, pal = PAL.screen;
   const tr = (n, k, f) => `<tr><td>${n}</td><td class="n">${f(c.totals[k].history)}</td><td class="n">${f(c.totals[k].test)}</td><td class="n">${c.totals[k].diff >= 0 ? "+" : ""}${(c.totals[k].diff * 100).toFixed(1)}%</td></tr>`;
   const share = (h, s, lab) => `<table><thead><tr><th></th><th>History</th><th>Test set</th><th>Difference</th></tr></thead><tbody>${[...new Set(Object.keys(h).concat(Object.keys(s)))].sort((a, b) => (h[b] || 0) - (h[a] || 0)).map(k => `<tr><td>${esc(lab(k))}</td><td class="n">${pct(h[k] || 0)}</td><td class="n">${pct(s[k] || 0)}</td><td class="n">${(((s[k] || 0) - (h[k] || 0)) * 100).toFixed(1)} pp</td></tr>`).join("")}</tbody></table>`;
@@ -798,7 +740,8 @@ function checkHtml(t){
 }
 function renderTest(){
   const P = $("bp-test");
-  if (!B.clean || !B.clean.lines.length) { P.innerHTML = `<div class="empty-state">No sales lines to build test orders from. Add or tick a source on Sales Data and Analysis.</div>`; return; }
+  if (B.settings.gen.source === "forecast" && !currentTest()) { B.settings.gen.source = "history"; toast("The forecast is not ready. Using the sales history"); }
+  if (B.settings.gen.source !== "forecast" && (!B.clean || !B.clean.lines.length)) { P.innerHTML = `<div class="empty-state">No sales lines to build test orders from. Add or tick a source on Sales Data and Analysis.</div>`; return; }
   const t = currentTest(), g = B.settings.gen, ys = years(), rep = B.settings.report, pal = PAL.screen;
   const baseSel = (g.baseYears || []).filter(y => ys.includes(y));
   const usdEur = Number(g.targetUsd) * (Number(B.settings.fx.USD) || 1);
@@ -806,9 +749,10 @@ function renderTest(){
   const monthly = C.MONTHS.map((_, i) => REGIONS.map(r => t.orders.filter(o => o.month === i + 1 && o.region === r).length));
   const chart = barsV({label: "Test orders per month by region", labels: C.MONTHS, stacked: true, series: REGIONS.map((r, k) => ({name: r, color: regionColor(pal, r), values: monthly.map(m => m[k])})), yLabel: "Test orders", h: 220});
   P.innerHTML = `<div class="card">
-    <div class="cardhead"><h2>Test order set</h2><span class="faint" style="font-size:12px">12 months · ${fmt(t.orders.length)} orders · seed ${esc(t.seed)}</span></div>
-    <p class="muted bcard-lead">Orders drawn from the sales history month by month with a fixed random seed. Each test order copies a real order's country, garment and size mix. Customers become codes per region, largest first. The same options and seed always give the same set.</p>
-    <div class="optgrid">
+    <div class="cardhead"><h2>Test order set</h2><span class="faint" style="font-size:12px">${t.kind === "forecast" ? "one average month of the 2027 forecast" : "12 months"} · ${fmt(t.orders.length)} orders${t.kind === "forecast" ? "" : " · seed " + esc(t.seed)}</span></div>
+    <div class="ctl" style="margin-bottom:8px"><label>Build the test set from</label>${segHtml("bxSource", [["history", "Sales history (12 months)"], ["forecast", "Forecast: average month"]], g.source === "forecast" ? "forecast" : "history")}</div>
+    ${t.kind === "forecast" ? "" : `<p class="muted bcard-lead">Orders drawn from the sales history month by month with a fixed random seed. Each test order copies a real order's country, garment and size mix. Customers become codes per region, largest first. The same options and seed always give the same set.</p>`}
+    <div class="optgrid"${t.kind === "forecast" ? " hidden" : ""}>
       <div class="ctl"><label>Base years</label><div class="checks" style="flex-direction:row;flex-wrap:wrap;gap:4px 12px;margin:0">${ys.map(y => `<label class="toggle" style="align-items:center"><input type="checkbox" data-year="${y}"${!baseSel.length || baseSel.includes(y) ? " checked" : ""}>${y}</label>`).join("")}</div></div>
       <div class="ctl"><label>Volume</label>${segHtml("bxMode", [["factor", "Scale factor"], ["target", "Yearly revenue target"]], g.mode)}</div>
       ${g.mode === "factor" ? `<div class="ctl"><label for="bxScale">Scale factor</label><input type="number" id="bxScale" min="0.05" max="20" step="0.05" value="${esc(g.scale)}"></div>`
@@ -860,6 +804,7 @@ function bindTest(P){
     if (!sel.length) { toast("Pick at least one base year. All years are used now."); g.baseYears = []; }
     re();
   }));
+  $("bxSource").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; g.source = b.dataset.v; B.test = null; B.testKey = ""; re(); });
   $("bxMode").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; g.mode = b.dataset.v; re(); });
   const num = (id, k, min) => { const el = $(id); if (el) el.addEventListener("change", () => { const v = Number(el.value); if (v >= min) { g[k] = v; re(); } else toast("Enter a number above " + min, "bad"); }); };
   num("bxScale", "scale", 0.05); num("bxTarget", "targetUsd", 1000); num("bxSeed", "seed", 1);
@@ -892,13 +837,14 @@ function reportModel(prov, pkg, charts){
   const R = (h, ...cols) => ({head: h, align: cols});
   return {
     title: "Logistics benchmark: standard test order package", provider: provName, pkg: pkg.id,
-    cover: [["Prepared for", provName], ["Date", longDate(today())], ["Package", pkg.id], ["Test orders", `${fmt(n)} orders over 12 months`], ["Response deadline", rep.deadline ? longDate(rep.deadline) : "[deadline]"], ["Contact", contact]],
+    cover: [["Prepared for", provName], ["Date", longDate(today())], ["Package", pkg.id], ["Test orders", pkg.kind === "forecast" ? `${fmt(n)} orders, one average month of the 2027 forecast` : `${fmt(n)} orders over 12 months`], ["Response deadline", rep.deadline ? longDate(rep.deadline) : "[deadline]"], ["Contact", contact]],
     confidential: "Confidential. This package is shared for quotation purposes only. Customer names are replaced by codes. Please do not pass it on.",
     footer: `FlexiTog EU · Logistics benchmark · ${pkg.id}${prov ? " · " + provName : ""}`,
     sections: [
       {h: "1. Introduction", blocks: [
         {p: "FlexiTog EU, based in Helmond, the Netherlands, supplies cold-store and freezer workwear to customers in Türkiye, North Africa and the Gulf/GCC. We are reviewing how we deliver to these markets. We invite a small number of logistics providers to quote on one standard test order package."},
-        {p: `The package holds ${fmt(n)} test orders spread over 12 months. It follows the seasonality, country mix, garment mix, order sizes and order frequency of our sales history. Every provider receives the same package, so we compare the offers like for like.`},
+        {p: pkg.kind === "forecast" ? `The package holds ${fmt(n)} test orders: one average month of our 2027 sales forecast, with its country mix, product mix and order sizes. Twelve such months make a year. Every provider receives the same package, so we compare the offers like for like.`
+          : `The package holds ${fmt(n)} test orders spread over 12 months. It follows the seasonality, country mix, garment mix, order sizes and order frequency of our sales history. Every provider receives the same package, so we compare the offers like for like.`},
         {p: "Customers are replaced by codes such as Customer GCC-01. One code is one consignee, so repeat deliveries to the same customer stay visible."},
         {h3: "How to respond"},
         {list: [
@@ -916,9 +862,10 @@ function reportModel(prov, pkg, charts){
       ]},
       {h: "3. Yearly volume profile and seasonality", blocks: [
         {table: Object.assign(R(["Region", "Orders", "Lines", "Units", "Cartons", "Pallets", "Weight kg", "Volume m3"].concat(vals ? ["Value EUR"] : []).concat(["Peak month"]), "l", "r", "r", "r", "r", "r", "r", "r", ...(vals ? ["r"] : []), "l"), {body: regionRows.concat([total]), bold_last: true})},
-        charts.orders ? {img: charts.orders, caption: "Test orders per month by region"} : {p: "Chart not available in this copy."},
+        pkg.kind === "forecast" ? {p: "The orders below are one average month. Multiply by 12 for the yearly volume per lane."} :
+          charts.orders ? {img: charts.orders, caption: "Test orders per month by region"} : {p: "Chart not available in this copy."},
         charts.season ? {img: charts.season, caption: "Seasonality index from the sales history (average month = 100)"} : null,
-        {table: Object.assign(R(["Month"].concat(REGIONS).concat(["All orders", "Units", "Pallets", "Weight kg"]), "l", "r", "r", "r", "r", "r", "r", "r"), {body: monthRows})},
+        pkg.kind === "forecast" ? null : {table: Object.assign(R(["Month"].concat(REGIONS).concat(["All orders", "Units", "Pallets", "Weight kg"]), "l", "r", "r", "r", "r", "r", "r", "r"), {body: monthRows})},
         {h3: "Lanes from Helmond"},
         {table: Object.assign(R(["Lane", "Destination", "Ports / cities", "Orders", "Pallets", "Weight kg", "Volume m3", "Peak month"], "l", "l", "l", "r", "r", "r", "r", "l"), {body: pkg.lanes.map(l => [l.lane_id, CNAME(l.country), l.ports, fmt(l.orders), fmt(l.pallets), fmt(l.weight_kg), fmt(l.volume_m3, 1), l.peak_month])})},
       ].filter(Boolean)},

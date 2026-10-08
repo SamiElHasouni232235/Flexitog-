@@ -113,8 +113,8 @@ def page_overview():
 
     st.subheader("Scenarios the engine will compare")
     st.markdown(
-        "- **Baseline: CIF to port.** FlexiTog pays freight and insurance Helmond to destination port. "
-        "Customer clears customs, pays duty, moves goods inland.\n"
+        "- **Baseline: DAP from Helmond.** FlexiTog pays freight, insurance and delivery to the customer's door. "
+        "Customer clears customs and pays duty and VAT.\n"
         "- **Distributor-held stock.** Distributor imports and holds stock, sells on locally.\n"
         "- **3PL presence.** FlexiTog-owned stock at a regional 3PL.\n"
         "- **Owned non-EU warehouse.** FlexiTog-run warehouse in the region."
@@ -457,7 +457,7 @@ def category_chart(route) -> alt.Chart:
 
 def page_engine():
     st.title("Route engine")
-    st.caption("Runs one test order through the CIF baseline and every distributor, 3PL and owned-warehouse "
+    st.caption("Runs one test order through the DAP baseline and every distributor, 3PL and owned-warehouse "
                "node that serves the customer's country. Recommends the lowest risk-adjusted cost among the "
                "three in-scope scenarios. Risk premiums favour proven lanes and signed partners.")
     data = Data.from_workspace(ws)
@@ -524,7 +524,7 @@ def page_engine():
 
     if ev.baseline and r is not ev.baseline:
         d = compare_to_baseline(r, ev.baseline)
-        st.markdown("**Versus the CIF baseline**")
+        st.markdown("**Versus the DAP baseline**")
         b = st.columns(4)
         b[0].metric("Cost to serve", f"€ {r.cost_to_serve:,.0f}", f"{d['cost_to_serve_delta_eur']:+,.0f} €",
                     delta_color="inverse")
@@ -549,7 +549,7 @@ def page_engine():
 
 
 # Baseline is the reference, so it takes a neutral grey. In-scope scenarios take categorical slots 1-3.
-SCENARIO_COLORS = {"Baseline: CIF to port": "#8a8984", "Distributor-held stock": "#b8329b",
+SCENARIO_COLORS = {"Baseline: DAP from Helmond": "#8a8984", "Distributor-held stock": "#b8329b",
                    "3PL presence": "#eb6834", "Owned non-EU warehouse": "#1baf7a"}
 SCORE_METRICS = {**B.METRICS, "cost_pct_of_value": ("Cost to serve, % of order value", True),
                  "coverage": ("Coverage (share of orders servable)", False)}
@@ -576,7 +576,7 @@ def scorecard_chart(sc: pd.DataFrame, metric: str) -> alt.Chart:
 
 def page_batch():
     st.title("Batch simulation and scorecard")
-    st.caption("Builds a representative batch of orders per region, runs every order through the CIF baseline "
+    st.caption("Builds a representative batch of orders per region, runs every order through the DAP baseline "
                "and the three in-scope scenarios (best node per scenario), and scores each region.")
     data = Data.from_workspace(ws)
     ss = st.session_state
@@ -696,7 +696,7 @@ def page_batch():
             st.warning(f"{ph:.0%} of simulated cost rests on placeholder parameters. Treat winners as indicative.")
 
         st.subheader("Winners per region")
-        st.caption("Best in-scope scenario per dimension, with the CIF baseline for reference. Lower is better. "
+        st.caption("Best in-scope scenario per dimension, with the DAP baseline for reference. Lower is better. "
                    "'=' marks a tie.")
         st.dataframe(B.winners(sc), hide_index=True, width="stretch")
 

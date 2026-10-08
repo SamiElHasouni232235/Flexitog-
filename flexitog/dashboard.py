@@ -6,7 +6,8 @@ parameter change in the page reruns the batch in the browser. The menu (top left
 master data editor and upload (assets/workspace.js), the report extract and the Benchmarking view
 (assets/bench_core.js for the logic, assets/benchmark.js and benchmark.css for the screens). SheetJS
 is inlined for Excel read and write, jsPDF with AutoTable and docx for the benchmarking report.
-No server, no external requests except Google Fonts.
+No server and no external requests: fonts fall back to the system fonts.
+The Forecast view (assets/forecast_core.js, forecast.js) reads the Odoo sales order lines from the payload.
 """
 from __future__ import annotations
 
@@ -23,6 +24,7 @@ from .datarequest import DATASETS
 from .engine import Data
 from .geo import CITIES, COUNTRY_CENTROIDS, PORT_ROUTES, lane_path, locate, route_graph
 from .issues import ISSUES
+from .sales_orders import sales_orders_table
 from .schema import COUNTRY_ALIASES, COUNTRY_NAMES, COUNTRY_REGION, DC_TYPE_LABELS, ENTITIES, EU27, PLACEHOLDER, SOURCE_COL
 
 ASSETS = Path(__file__).parent / "assets"
@@ -32,7 +34,7 @@ def _records(df: pd.DataFrame) -> list[dict]:
     return json.loads(df.to_json(orient="records", date_format="iso")) if len(df) else []
 
 
-def build_payload(ws, per_region_synthetic: int = 15) -> dict:
+def build_payload(ws, per_region_synthetic: int = 15, sales_orders: str | Path | None = None) -> dict:
     data = Data.from_workspace(ws)
     orders, lines, extra, notes = B.history_batch(data)
     source = "sales history"
@@ -81,6 +83,8 @@ def build_payload(ws, per_region_synthetic: int = 15) -> dict:
         "country_aliases": COUNTRY_ALIASES, "centroids": COUNTRY_CENTROIDS,
         "names": {"countries": COUNTRY_NAMES, "dc_types": DC_TYPE_LABELS},
         "datasets": [{"sheet": d[0], "priority": d[3], "why": d[4], "where": d[5], "target": d[6]} for d in DATASETS],
+        # Odoo sales order lines for the Forecast view (the anonymized sample unless a path is given).
+        "sales_orders": sales_orders_table(sales_orders),
     }
 
 
@@ -119,8 +123,8 @@ def apply_changes(ws, text: str) -> list[str]:
     return log
 
 
-def build_html(ws) -> str:
-    payload = json.dumps(build_payload(ws), ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
+def build_html(ws, sales_orders: str | Path | None = None) -> str:
+    payload = json.dumps(build_payload(ws, sales_orders=sales_orders), ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
     template = (ASSETS / "dashboard.html").read_text(encoding="utf-8")
     engine = (ASSETS / "engine.js").read_text(encoding="utf-8")
     # SheetJS keeps U+FFFD inside its codepage string tables. Escape it so the page has no raw
@@ -140,11 +144,15 @@ def build_html(ws) -> str:
         "/*WORKSPACE*/": (ASSETS / "workspace.js").read_text(encoding="utf-8"),
         "/*BENCHCORE*/": (ASSETS / "bench_core.js").read_text(encoding="utf-8"),
         "/*BENCHMARK*/": (ASSETS / "benchmark.js").read_text(encoding="utf-8"),
+        "/*CHARTS*/": (ASSETS / "charts.js").read_text(encoding="utf-8"),
+        "/*FORECASTCORE*/": (ASSETS / "forecast_core.js").read_text(encoding="utf-8"),
+        "/*FORECAST*/": (ASSETS / "forecast.js").read_text(encoding="utf-8"),
     }
     for key, js in parts.items():
         if "</script" in js.lower():
             raise ValueError(f"{key} contains a closing script tag")
     parts["/*BENCHCSS*/"] = (ASSETS / "benchmark.css").read_text(encoding="utf-8")
+    parts["/*FORECASTCSS*/"] = (ASSETS / "forecast.css").read_text(encoding="utf-8")
     html = template
     for key, text in parts.items():
         if key not in html:

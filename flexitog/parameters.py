@@ -363,12 +363,13 @@ LEAD_TIMES = _rows([
 # handoffs = parties that take custody between Helmond and the customer.
 
 SCENARIOS = _rows([
-    {"scenario": "cif_baseline", "label": "Baseline: CIF to port",
+    {"scenario": "cif_baseline", "label": "Baseline: DAP from Helmond",
      "inbound_eur_per_pallet": 0, "storage_eur_per_pallet_month": 0, "avg_storage_months": 0,
      "outbound_eur_per_order": 0, "margin_pct": 0, "min_order_value_eur": 1500,
      "replenishment_freight_factor": 1.0, "replenishment_pallets_per_shipment": 0,
-     "source_note": ("FlexiTog pays freight + insurance to port. Customer clears, pays duty and moves "
-                     "goods inland. Each order ships on its own, so min charges and per-shipment fees apply")},
+     "source_note": ("DAP from Helmond: FlexiTog pays freight, insurance and delivery to the customer's door. "
+                     "The customer clears import and pays duty and VAT. Each order ships on its own, so min "
+                     "charges and per-shipment fees apply")},
     {"scenario": "distributor", "label": "Distributor-held stock",
      "inbound_eur_per_pallet": 0, "storage_eur_per_pallet_month": 0, "avg_storage_months": 0,
      "outbound_eur_per_order": 0, "margin_pct": 25, "min_order_value_eur": 250,
@@ -398,7 +399,7 @@ MODES = _rows([
      "preferred_mode": "sea", "source_note": "Supplier to Helmond, and supplier straight to a partner node"},
     {"leg_group": "refill", "legs": "main (stocked scenarios)", "allowed_modes": "sea;road", "pick": "preferred",
      "preferred_mode": "sea", "source_note": "Helmond to a distributor, 3PL or owned warehouse"},
-    {"leg_group": "export", "legs": "main (CIF baseline)", "allowed_modes": "sea;road", "pick": "cheapest",
+    {"leg_group": "export", "legs": "main (DAP baseline)", "allowed_modes": "sea;road", "pick": "cheapest",
      "preferred_mode": "", "source_note": "Helmond to the customer's port or border, one shipment per order"},
     {"leg_group": "delivery", "legs": "regional; domestic", "allowed_modes": "road;air", "pick": "cheapest",
      "preferred_mode": "road", "source_note": ("Partner node or port to the customer: cross-border regional leg and "

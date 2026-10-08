@@ -1,9 +1,6 @@
 <meta charset="utf-8">
 <title>FlexiTog Route Dashboard</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <style>
 :root{
   --ground:#f2f4f6; --surface:#ffffff; --surface-2:#f7f9fa; --ink:#14212c; --muted:#56636f; --faint:#8a95a0; --rule:#d9dfe4;
@@ -365,6 +362,7 @@ details.custom .iact{display:flex;gap:6px;margin-top:8px}
 @media (prefers-reduced-motion:no-preference){.drawer{animation:slide .18s ease-out}@keyframes slide{from{transform:translateX(24px);opacity:.6}}}
 </style>
 <style>/*BENCHCSS*/</style>
+<style>/*FORECASTCSS*/</style>
 
 <div class="app">
   <header class="top">
@@ -373,6 +371,7 @@ details.custom .iact{display:flex;gap:6px;margin-top:8px}
       <nav class="menu" id="menu" hidden aria-label="Main menu">
         <p class="eyebrow">Views</p>
         <button type="button" data-go="dash" aria-current="true"><b>Route Dashboard</b><small>Map, scorecard and order explorer</small></button>
+        <button type="button" data-go="forecast"><b>Forecast</b><small>2027 sales forecast from the Odoo orders, the demand every route scenario prices</small></button>
         <button type="button" data-go="bench"><b>Benchmarking</b><small>Logistics providers, sales analysis, service goals and the test order package</small></button>
         <button type="button" data-go="md"><b>Master data upload</b><small>Products, customers, suppliers, logistics providers, sales history and other data</small></button>
         <button type="button" data-go="report"><b>Report extract</b><small>Standard cross-border supply chain report as Excel, HTML or CSV</small></button>
@@ -485,6 +484,8 @@ details.custom .iact{display:flex;gap:6px;margin-top:8px}
     <article class="card report" id="repBody"></article>
   </div>
 
+  <div id="viewForecast" class="view" hidden></div>
+
   <div id="viewBench" class="view" hidden>
     <div class="bhead">
       <div class="bsub"><div class="seg" id="benchTabs" role="group" aria-label="Benchmarking sections"></div></div>
@@ -523,7 +524,7 @@ const fmt = (v, dp = 0) => v == null || Number.isNaN(v) ? "n/a" : Number(v).toLo
 const pct = v => v == null ? "n/a" : Math.round(v * 100) + "%";
 const clone = o => JSON.parse(JSON.stringify(o));
 const SC = E.SCENARIOS, INS = E.IN_SCOPE;
-const SHORT = {cif_baseline: "Baseline CIF", distributor: "Distributor", "3pl": "3PL", owned_warehouse: "Owned WH"};
+const SHORT = {cif_baseline: "Baseline DAP", distributor: "Distributor", "3pl": "3PL", owned_warehouse: "Owned WH"};
 const REGIONS = E.STUDY_REGIONS;
 const CNAME = c => PAYLOAD.names.countries[c] || c;
 const GCC = ["SA", "AE", "QA", "KW", "BH", "OM"];
@@ -578,7 +579,12 @@ function load(){
 // ============================================================ compute
 let BATCH = {orders: PAYLOAD.batch.orders, lines: PAYLOAD.batch.lines, extra: [], notes: [], source: PAYLOAD.meta.source};
 const regionOf = c => PAYLOAD.data.country_region[c] || "Other";
+// Demand source. The Forecast view sets window.DEMAND = {active, batch: {orders, lines, customers}, volume, label};
+// when active, every scenario prices the forecast orders and the engine reads its yearly volumes.
 function buildBatch(products){
+  const D = window.DEMAND;
+  if (D && D.active && D.batch && D.batch.orders.length)
+    return {orders: D.batch.orders, lines: D.batch.lines, extra: D.batch.customers, notes: D.notes || [], source: D.label};
   if (MD.t.sales_history.length) {
     const hb = E.historyBatch(MD.t.sales_history, MD.t.customers, products, regionOf);
     if (hb.orders.length) return {orders: hb.orders, lines: hb.lines, extra: hb.customers, notes: hb.notes, source: "sales history"};
@@ -591,6 +597,7 @@ function effectiveRaw(){
   raw.customers = MD.t.customers.concat(BATCH.extra.filter(x => !MD.t.customers.some(c => c.customer_id === x.customer_id)));
   raw.suppliers = MD.t.suppliers; raw.lanes = MD.t.lanes; raw.sales_history = MD.t.sales_history;
   raw.history = E.historyCounts(MD.t.sales_history);
+  raw.volume = window.DEMAND && window.DEMAND.active ? window.DEMAND.volume : null;
   raw.params = clone(W.params);
   raw.dcs = W.dcs.filter(d => !excluded.has(d.dc_id));
   raw.products = W.products.map(p => whatIf.euAll ? Object.assign({}, p, {country_of_origin: "NL"}) : p);
@@ -651,7 +658,7 @@ function issuesAll(){
         detail: "Most SKUs are of non-EU origin. EU-made goods would enter at the preferential rate.", lever: "What-if: all SKUs EU-made"});
       const lead = base.reduce((a, r) => a + r.lead_time_days, 0) / base.length;
       if (lead > 30) list.push({kind: "computed", severity: "warning", countries: [c], title: `Baseline lead time ${fmt(lead, 0)} days to ${CNAME(c)}`,
-        detail: "Sea transit plus clearance on the CIF baseline. Regional stock cuts this to days.", lever: "What-if: Red Sea reopens"});
+        detail: "Sea transit plus clearance on the DAP baseline. Regional stock cuts this to days.", lever: "What-if: Red Sea reopens"});
     }
   });
   return list;
@@ -1240,7 +1247,7 @@ function renderCountry(){
       rows.map(({s, a}) => a ? `<tr><td><i class="sw" style="background:var(--s-${s})"></i> ${esc(SHORT[s])}</td><td class="n">${fmt(a.cost_per_unit_eur, 2)}</td><td class="n">${fmt(a.customer_cost_per_unit_eur, 2)}</td><td class="n">${fmt(a.lead_time_days, 1)}</td><td class="n">${pct(a.coverage)}</td></tr>` : "").join("") +
       `</tbody></table></div><p class="faint" style="font-size:12px">${rows[0].a.orders} batch order(s), ${fmt(rows[0].a.pallets)} pallets.</p>` : `<p class="empty">No batch orders to ${esc(CNAME(c))}.</p>`) +
     `<h3>Nodes serving ${esc(CNAME(c))}</h3>` +
-    (nodes.length ? `<ul class="issues">${nodes.map(d => `<li><i class="sw" style="background:var(--s-${d.dc_type});margin-top:4px"></i><span><b>${esc(d.name)}</b> <span class="faint">${esc(d.status)}${d.country !== c ? ", cross-border from " + esc(d.country) : ""}</span></span></li>`).join("")}</ul>` : `<p class="empty">None. Only the CIF baseline serves this country.</p>`) +
+    (nodes.length ? `<ul class="issues">${nodes.map(d => `<li><i class="sw" style="background:var(--s-${d.dc_type});margin-top:4px"></i><span><b>${esc(d.name)}</b> <span class="faint">${esc(d.status)}${d.country !== c ? ", cross-border from " + esc(d.country) : ""}</span></span></li>`).join("")}</ul>` : `<p class="empty">None. Only the DAP baseline serves this country.</p>`) +
     `<h3>Issues</h3>` + (iss.length ? `<ul class="issues">${iss.map(issueLi).join("")}</ul>` : `<p class="empty">No issues recorded.</p>`);
 }
 const issueLi = i => `<li><span class="sev ${i.severity}">${i.severity === "info" ? "i" : "▲"} ${esc(i.severity)}</span><span><b>${esc(i.title)}</b><br><span class="muted">${esc(i.detail)}</span>${i.lever ? `<br><span class="faint">Lever: ${esc(i.lever)}</span>` : ""}${i.kind === "briefing" ? ` <span class="faint">· briefing note, verify</span>` : ""}</span></li>`;
@@ -1497,5 +1504,8 @@ function renderView(){
 load(); initControls(); compute(); renderView();
 </script>
 <script>/*WORKSPACE*/</script>
+<script>/*CHARTS*/</script>
 <script>/*BENCHCORE*/</script>
 <script>/*BENCHMARK*/</script>
+<script>/*FORECASTCORE*/</script>
+<script>/*FORECAST*/</script>

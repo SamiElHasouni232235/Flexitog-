@@ -2,7 +2,8 @@
 
 For one test order the engine builds a route per scenario and candidate node:
 
-    cif_baseline     Helmond -> destination port. Customer clears and moves goods inland.
+    cif_baseline     DAP from Helmond: FlexiTog ships to the customer's door, the customer clears import.
+                     (Key kept as cif_baseline so saved workspaces and reports stay compatible.)
     distributor      Helmond -> distributor stock in the region -> customer.
     3pl              Helmond -> FlexiTog stock at a 3PL -> customer.
     owned_warehouse  Helmond -> FlexiTog-run warehouse -> customer.
@@ -26,7 +27,7 @@ from . import parameters as P
 from .schema import DC_TYPE_LABELS, EU27, region_for
 
 SCENARIOS = ["cif_baseline", "distributor", "3pl", "owned_warehouse"]
-SCENARIO_LABELS = {"cif_baseline": "Baseline: CIF to port", **{k: v for k, v in DC_TYPE_LABELS.items()
+SCENARIO_LABELS = {"cif_baseline": "Baseline: DAP from Helmond", **{k: v for k, v in DC_TYPE_LABELS.items()
                                                                   if k != "helmond_hub"}}
 STOCKED = {"distributor", "3pl", "owned_warehouse"}
 REGIONAL_GROUP = {"Gulf/GCC": "GCC", "North Africa": "NAF"}
@@ -69,6 +70,11 @@ class Data:
     scenarios: pd.DataFrame
     owned_fixed: pd.DataFrame
     modes: pd.DataFrame
+    # Demand-driven volumes (from the sales forecast). Empty = use the fixed parameters.
+    #   shipments_per_year: {country: shipments}      spreads per-SKU-year and one-off compliance cost
+    #   node_load_pallets: {dc_id: pallets per refill} caps the refill load size of a stocked node
+    #   owned_pallets_per_year: {country: pallets}    spreads owned warehouse fixed cost
+    volume: dict = field(default_factory=dict)
 
     @classmethod
     def from_workspace(cls, ws) -> "Data":
@@ -200,6 +206,11 @@ class Data:
 
     def compliance_rows(self, country: str) -> pd.DataFrame:
         return self.compliance[self.compliance["country"] == country]
+
+    def vol(self, kind: str, key: str) -> float | None:
+        """A forecast-driven volume, or None when the forecast gives none for this key."""
+        v = (self.volume or {}).get(kind, {}).get(str(key))
+        return None if v is None or num(v) <= 0 else num(v)
 
     def owned_fixed_row(self, country: str) -> dict | None:
         rows = self.owned_fixed[self.owned_fixed["location"] == country]
@@ -427,13 +438,20 @@ def order_context(order: dict, lines: pd.DataFrame, data: Data) -> OrderContext:
     country = str(customer.get("country") or "")
 
     prod = data.products.set_index("sku")
-    ol = lines[["sku", "quantity"]].copy()
+    # A line may carry its own unit_price_eur (forecast lines priced from sales history).
+    has_price = "unit_price_eur" in lines.columns
+    ol = lines[["sku", "quantity"] + (["unit_price_eur"] if has_price else [])].copy()
+    ol = ol.rename(columns={"unit_price_eur": "line_price"})
     ol["quantity"] = pd.to_numeric(ol["quantity"], errors="coerce").fillna(0)
     ol = ol.join(prod[["unit_price_eur", "country_of_origin", "requires_conformity_cert"]], on="sku")
     unknown = ol.loc[ol["unit_price_eur"].isna(), "sku"].tolist()
     if unknown:
         issues.append(f"Unknown SKU or missing price: {', '.join(map(str, unknown))}")
-    ol["value"] = ol["quantity"] * ol["unit_price_eur"].astype(float).fillna(0)
+    price = ol["unit_price_eur"].astype(float)
+    if has_price:
+        lp = pd.to_numeric(ol["line_price"], errors="coerce")
+        price = lp.where(lp.notna() & ol["unit_price_eur"].notna(), price)
+    ol["value"] = ol["quantity"] * price.fillna(0)
     ol["eu_origin"] = ol["country_of_origin"].astype(str).str.upper().isin(EU27)
     cert = ol.loc[ol["requires_conformity_cert"].fillna(False).astype(bool), "sku"].astype(str).tolist()
 
@@ -523,6 +541,7 @@ def _compliance(data: Data, ctx: OrderContext, country: str, alloc: float, paid_
     steps: list[Step] = []
     lead = 0.0
     spy, _ = data.g("shipments_per_year_per_country")
+    spy = data.vol("shipments_per_year", country) or spy
     years, _ = data.g("one_off_amortisation_years")
     spy = spy or 1
     for r in data.compliance_rows(country).to_dict("records"):
@@ -599,6 +618,10 @@ def build_route(ctx: OrderContext, data: Data, scenario: str, dc: dict | None = 
     Pal = ctx.pallets
     V = ctx.value
     replen = num(sc.get("replenishment_pallets_per_shipment"))
+    # A small forecast volume at the node means smaller refill loads than the scenario default.
+    load = data.vol("node_load_pallets", dc["dc_id"]) if dc else None
+    if stocked and load is not None and replen > 0:
+        replen = min(replen, max(1.0, load))
     alloc = min(1.0, Pal / replen) if stocked and replen > 0 else 1.0
     factor = num(sc.get("replenishment_freight_factor"), 1.0) if stocked else 1.0
     node_party = str(dc["name"]) if dc else ""
@@ -636,6 +659,8 @@ def build_route(ctx: OrderContext, data: Data, scenario: str, dc: dict | None = 
     via_fixed_pp = h + ((exp + coo) * alloc / Pal if Pal > 0 else 0.0)
     dmode, _ = data.g("direct_sourcing_mode")
     d_replen, _ = data.g("direct_replenishment_pallets_per_shipment")
+    if load is not None and d_replen > 0:
+        d_replen = min(d_replen, max(1.0, load))
     o_docs, osrc = data.g("origin_export_docs_eur_per_shipment")
     make_to_order = ctx.supplier is not None and not stocked
     for grp in ctx.supply:
@@ -770,7 +795,8 @@ def build_route(ctx: OrderContext, data: Data, scenario: str, dc: dict | None = 
             if fx is None:
                 route.warnings.append(f"No fixed cost row for an owned warehouse in {node_country}")
             else:
-                per_pal = num(fx["fixed_cost_eur_per_year"]) / max(num(fx["expected_pallets_per_year"]), 1)
+                planned = data.vol("owned_pallets_per_year", node_country) or num(fx["expected_pallets_per_year"])
+                per_pal = num(fx["fixed_cost_eur_per_year"]) / max(planned, 1)
                 route.steps.append(Step(step="Owned warehouse fixed cost share", category="fixed_cost",
                                         cost_eur=per_pal * Pal, party=node_party, source=str(fx["source"]),
                                         note=f"EUR {per_pal:,.0f}/pallet at planned volume"))
@@ -813,12 +839,13 @@ def build_route(ctx: OrderContext, data: Data, scenario: str, dc: dict | None = 
     if d is None:
         route.warnings.append(f"No domestic delivery rate for {country}")
     else:
-        dom_payer = CUSTOMER if scenario == "cif_baseline" else import_payer
+        # DAP: FlexiTog pays the carrier to the customer's door; the customer only clears import.
+        dom_payer = FLEXITOG if scenario == "cif_baseline" else import_payer
         route.steps.append(Step(step=f"Delivery to {ctx.customer.get('city') or 'customer'} ({d['mode']})", category="freight",
                                 leg="domestic", mode=str(d["mode"]), pallets=Pal,
                                 cost_eur=max(num(d["min_charge_eur"]), num(d["eur_per_pallet"]) * Pal),
                                 days=num(d["transit_days"]), paid_by=dom_payer,
-                                party="Customer's local carrier" if scenario == "cif_baseline" else "Local carrier",
+                                party="Local carrier",
                                 source=str(d["source"])))
 
     # ---- distributor margin

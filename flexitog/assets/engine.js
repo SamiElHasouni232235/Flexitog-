@@ -20,7 +20,7 @@
     { leg_group: "export", allowed_modes: "sea;road", pick: "cheapest", preferred_mode: "" },
     { leg_group: "delivery", allowed_modes: "road;air", pick: "cheapest", preferred_mode: "road" },
   ];
-  const LABELS = { cif_baseline: "Baseline: CIF to port", distributor: "Distributor-held stock",
+  const LABELS = { cif_baseline: "Baseline: DAP from Helmond", distributor: "Distributor-held stock",
                    "3pl": "3PL presence", owned_warehouse: "Owned non-EU warehouse" };
 
   const num = (v, d = 0) => { if (v === null || v === undefined || v === "") return d; const f = Number(v); return Number.isFinite(f) ? f : d; };
@@ -37,6 +37,8 @@
       const r = P.general.find(x => x.parameter === name);
       return r ? [num(r.value), str(r.source || PLACEHOLDER)] : [0, PLACEHOLDER];
     };
+    // Demand-driven volumes from the sales forecast (mirrors Data.vol). Missing or 0 = fixed parameters.
+    d.vol = (kind, key) => { const v = ((raw.volume || {})[kind] || {})[str(key)]; return v === undefined || v === null || num(v) <= 0 ? null : num(v); };
     d.scenario = key => Object.assign({}, P.scenarios.find(x => x.scenario === key) || {});
     d.duty = c => P.duties.find(x => x.country === c) || null;
     d.lead = (step, country) => {
@@ -130,7 +132,8 @@
     const ol = lines.map(l => {
       const p = prod[l.sku] || {};
       const qty = num(l.quantity);
-      const price = p.unit_price_eur;
+      // A line may carry its own unit_price_eur (forecast lines); the SKU must still exist.
+      const price = blank(p.unit_price_eur) ? null : !blank(l.unit_price_eur) ? l.unit_price_eur : p.unit_price_eur;
       return { sku: str(l.sku), quantity: qty, price: blank(price) ? null : num(price),
                eu: data.eu27.includes(str(p.country_of_origin).toUpperCase()),
                cert: !!p.requires_conformity_cert };
@@ -193,6 +196,7 @@
   function compliance(data, ctx, country, alloc, paidBy, party) {
     const steps = []; let lead = 0;
     let [spy] = data.g("shipments_per_year_per_country"); const [years] = data.g("one_off_amortisation_years");
+    spy = data.vol("shipments_per_year", country) || spy;
     spy = spy || 1;
     data.complianceRows(country).forEach(r => {
       const certs = str(r.applies_to) === "cert_skus";
@@ -251,7 +255,9 @@
       order_value_eur: ctx.value, units: ctx.units, pallets: ctx.pallets });
     route.issues.push(...ctx.issues);
     const Pal = ctx.pallets, V = ctx.value;
-    const replen = num(sc.replenishment_pallets_per_shipment);
+    let replen = num(sc.replenishment_pallets_per_shipment);
+    const load = dc ? data.vol("node_load_pallets", dc.dc_id) : null;
+    if (stocked && load !== null && replen > 0) replen = Math.min(replen, Math.max(1, load));
     const alloc = stocked && replen > 0 ? Math.min(1, Pal / replen) : 1;
     const factor = stocked ? num(sc.replenishment_freight_factor, 1) : 1;
     const nodeParty = dc ? str(dc.name) : "";
@@ -279,7 +285,8 @@
     const mainPp = f ? num(f.eur_per_pallet) * factor : null;
     const viaFixedPp = h + (Pal > 0 ? (exp + coo) * alloc / Pal : 0);
     const [dmode] = data.g("direct_sourcing_mode");
-    const [dReplen] = data.g("direct_replenishment_pallets_per_shipment");
+    let [dReplen] = data.g("direct_replenishment_pallets_per_shipment");
+    if (load !== null && dReplen > 0) dReplen = Math.min(dReplen, Math.max(1, load));
     const [oDocs, osrc] = data.g("origin_export_docs_eur_per_shipment");
     const makeToOrder = !!ctx.supplier && !stocked;
     route.sourcing = [];
@@ -380,7 +387,8 @@
         const fx = data.ownedFixed(nodeCountry);
         if (!fx) route.warnings.push(`No fixed cost row for an owned warehouse in ${nodeCountry}`);
         else {
-          const perPal = num(fx.fixed_cost_eur_per_year) / Math.max(num(fx.expected_pallets_per_year), 1);
+          const planned = data.vol("owned_pallets_per_year", nodeCountry) || num(fx.expected_pallets_per_year);
+          const perPal = num(fx.fixed_cost_eur_per_year) / Math.max(planned, 1);
           route.steps.push(step({ step: "Owned warehouse fixed cost share", category: "fixed_cost", cost_eur: perPal * Pal,
             party: nodeParty, source: str(fx.source) }));
         }
@@ -418,8 +426,8 @@
     else {
       route.steps.push(step({ step: `Delivery to ${ctx.customer.city || "customer"} (${dm.mode})`, category: "freight", mode: str(dm.mode), pallets: Pal,
         cost_eur: Math.max(num(dm.min_charge_eur), num(dm.eur_per_pallet) * Pal), days: num(dm.transit_days),
-        paid_by: scenario === "cif_baseline" ? CUSTOMER : importPayer,
-        party: scenario === "cif_baseline" ? "Customer's local carrier" : "Local carrier", source: str(dm.source), leg: "domestic" }));
+        paid_by: scenario === "cif_baseline" ? FLEXITOG : importPayer,
+        party: "Local carrier", source: str(dm.source), leg: "domestic" }));
     }
     if (scenario === "distributor") {
       const m = num(sc.margin_pct);

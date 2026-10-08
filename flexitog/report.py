@@ -14,7 +14,7 @@ from . import batch as B
 from .datarequest import DATASETS
 from .engine import CUSTOMER, FLEXITOG, PARTNER, SCENARIO_LABELS, Evaluation
 
-SHORT = {"cif_baseline": "Baseline CIF", "distributor": "Distributor", "3pl": "3PL", "owned_warehouse": "Owned WH"}
+SHORT = {"cif_baseline": "Baseline DAP", "distributor": "Distributor", "3pl": "3PL", "owned_warehouse": "Owned WH"}
 
 METRIC_ROWS = [
     ("cost_per_unit_eur", "Cost to serve per unit", "€", 2),
@@ -189,7 +189,7 @@ footer{color:var(--faint);font-size:13px;border-top:1px solid var(--rule);paddin
   <header>
     <span class="eyebrow">FlexiTog EU · Helmond hub · Route simulator</span>
     <h1>FlexiTog Route Simulator</h1>
-    <p class="lede">How a customer order from Helmond performs under three distribution models against today's CIF-to-port baseline, per region, on cost, lead time and paperwork.</p>
+    <p class="lede">How a customer order from Helmond performs under three distribution models against a DAP-from-Helmond baseline, per region, on cost, lead time and paperwork.</p>
     <div class="meta" id="meta"></div>
     <div class="demo" id="demo" hidden><div><b>Dummy data.</b> Every customer, SKU, rate and order on this page is a placeholder. Use it to read the tool, not to decide. Section 5 lists the company data that replaces it.</div></div>
   </header>
