@@ -266,8 +266,9 @@ Four sub-tabs; each view keeps its state when you switch back to the Route Dashb
 - Logistics Providers: add, edit and delete (with a confirm click) in a form, table with search and
   filters by status, type and region. Duplicates (same name and email) are blocked. Every field is defined
   once in `PROVIDER_FIELDS` in `benchmark.js`: the form, table, search, filters, import and storage read
-  it, so a new field is one line. Export providers and Import providers move the list as JSON. Three
-  dummy providers (example.com addresses) are seeded on first use.
+  it, so a new field is one line. Export providers and Import providers move the list as JSON, RFQ
+  responses included. Three dummy providers (example.com addresses) are seeded on first use. The RFQ
+  workflow below runs on this tab.
 - Sales Data and Analysis: the default source is Master data > Sales history (192 demo orders). Add
   CSV or Excel exports from each merged entity; a mapping step matches columns (English and Dutch
   headers) to order date, order number, customer, destination country, SKU, description, garment
@@ -300,6 +301,52 @@ comment. `BenchCore.parseResponse` reads a completed file into a ProviderRespons
 `{package_id, provider_id, provider_name, currency, valid_until, lines: [{kind: order|lane, ref, cost fields}],
 goals: [{goal_id, meets, comment}]}`: the input for the side-by-side comparison (not built yet).
 Exports never hold real customer names, source order numbers, margins, purchase prices or supplier costs.
+
+#### RFQ workflow (Logistics Providers)
+
+1. Download latest RFQ gets the bundled template `flexitog/assets/rfq/Transport_Volume_Scenario_RFQ_FlexiTog.xlsx`
+   (version and date shown next to the button). Replace RFQ template stores a newer file in IndexedDB after
+   a check for the Export sheet and `meta.rfq_version`. Reset to bundled drops it.
+2. Download prefilled RFQ (in the provider form) writes the provider ID, name, website, contact name,
+   phone and email into the `PP_*` cells (Provider Profile B6 to B11). Only that sheet XML changes, through
+   JSZip, as inline strings. Charts, images, protection, validations and `fullCalcOnLoad` stay. File name
+   `FlexiTog_RFQ_<ProviderName>_<YYYY-MM-DD>.xlsx`. Status becomes RFQ sent (from Prospect, Contacted or
+   Test order sent) and Date RFQ sent is set to today.
+3. Upload RFQ (per row, between Edit and Delete) reads the returned file with SheetJS. Checks: supported
+   `meta.rfq_version` (`RFQ-MENA-TR v1.0`), `meta.export_rows` equals the key rows, and a confirm when the
+   file names a different provider ID or name. A file never opened and saved in Excel has no cached
+   formula values: the tool warns and falls back to the `PP_*` cells for identity.
+4. Mapping: every Export row is stored as `{key: value}` with its type converted (text, number, percent as
+   a fraction, date as ISO, yesno, ypn). Empty identity fields are filled. A field that differs opens a
+   review dialog (keep mine is the default). Provider types, services, regions and countries (lanes not
+   marked Not served) merge as a union and never remove a value. Status becomes Response received, the
+   date comes from `provider.response_date` or today. Each upload adds an entry to `rfqResponses`, so
+   history stays. A toast lists the changes.
+
+Provider record (schema 2): `id` (PRV-0001, stable), `name` (the only required field), website, contact
+name, phone and email (validated when filled), HQ country, `providerTypes` (Freight forwarder, 3PL /
+contract logistics, Carrier (own fleet), Courier / express, Customs broker, Distributor, 4PL / lead
+logistics provider, Other), regions, countries, services (the 19 RFQ services plus any older values),
+status (Prospect, Contacted, RFQ sent, Test order sent, Response received, Shortlisted, Rejected),
+`dateRfqSent`, `dateResponseReceived`, `dateTestOrderSent`, notes, `rfqResponses[]` and
+`latestResponseIndex`. Stored version 1 lists migrate on load: old IDs move to `legacyIds`, test order
+packages follow the new IDs, `last_mile` becomes Last-mile delivery and so on.
+
+Export key groups and where they land: `provider.*` identity and quote facts, `type.*` and `service.*`
+the lists above, `region.*` and `coverage.*` regions, countries and the coverage table, `rate.*` the
+45 rate rows (9 lanes L01 to L09 by 5 weight bands), `cost.*` scenario A and B totals and lane costs,
+`transit.*` and `timeline.*` the lead time steps, `kpi.*` reliability and quality answers with evidence,
+`cert.*` certificates, `stock.*` the stock holding option. A key under a new prefix is still stored with the
+response, and `FlexiRFQ.unmappedKeys(values)` lists it. Click a provider name for the detail panel (tabs Profile and coverage,
+Rates, Costs, Timeline, Reliability and quality, a selector for older responses and a download of the
+original file). Compare responses ranks the latest responses by scenario B cost with no weights.
+`BenchUI.getComparableMetrics(providerOrId)` returns the numbers for a later scoring step.
+
+Storage: provider records under `providers`, response values under `rfqresponses` (same store as the
+rest of Benchmarking), original files and the replaced template in IndexedDB `flexitog-bench` (this
+browser only). Logic without DOM is `flexitog/assets/rfq_core.js` (`window.FlexiRFQ`), tested in
+`tests/test_rfq.py` against `tests/fixtures/Sample_RFQ_Response_DUMMY.xlsx`. JSZip 3.10.1 (MIT) is
+inlined from `flexitog/assets/vendor/`.
 
 Storage follows the master data: saved with the dashboard when published, in this browser (localStorage,
 prefix `flexitog-bench-v1:`) when opened as a file. The logic without DOM is

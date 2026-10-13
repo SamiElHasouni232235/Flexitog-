@@ -27,24 +27,42 @@ const WORLD = (() => {
 // ============================================================ schemas
 // One object per record type drives the form, the table, search, filters, import and storage.
 // Add a field here and it appears everywhere.
-const PROVIDER_TYPES = [["freight_forwarder", "Freight forwarder"], ["3pl", "3PL"], ["carrier", "Carrier"], ["distributor", "Distributor"], ["other", "Other"]];
-const SERVICES = [["road", "Road"], ["sea", "Sea"], ["air", "Air"], ["warehousing", "Warehousing"], ["customs", "Customs clearance"], ["last_mile", "Last-mile"], ["returns", "Returns handling"]];
-const STATUSES = [["prospect", "Prospect"], ["contacted", "Contacted"], ["test_order_sent", "Test order sent"], ["response_received", "Response received"], ["shortlisted", "Shortlisted"], ["rejected", "Rejected"]];
+// Provider model version 2. Values of providerTypes and servicesOffered are the display labels the RFQ
+// uses, so an RFQ answer and a manual tick land on the same value. "Other", "Road" and "Sea" stay
+// for records from version 1.
+const PROVIDER_TYPES = ["Freight forwarder", "3PL / contract logistics", "Carrier (own fleet)", "Courier / express", "Customs broker", "Distributor",
+  "4PL / lead logistics provider", "Other"].map(x => [x, x]);
+const RFQ_SERVICES = ["Road FTL", "Road groupage (LTL)", "Sea FCL", "Sea LCL", "Air freight", "Express / courier", "Export customs clearance (NL)",
+  "Import customs brokerage", "DDP service", "Warehousing", "Cross-docking", "Last-mile delivery", "Returns handling",
+  "Value-added services (labelling, kitting)", "Track and trace portal", "API / EDI integration", "e-POD", "Cargo insurance", "CO2e reporting"];
+// Options = the RFQ labels, then any other value already on a record (version 1 "Road", "Sea", or a new
+// RFQ label from a later template), so nothing on a record ever falls out of the form.
+const SERVICES = () => RFQ_SERVICES.concat([...new Set(B.providers.flatMap(p => p.servicesOffered || []))].filter(x => !RFQ_SERVICES.includes(x))).map(x => [x, x]);
+const TYPES = () => PROVIDER_TYPES.concat([...new Set(B.providers.flatMap(p => p.providerTypes || []))].filter(x => !PROVIDER_TYPES.some(t => t[0] === x)).map(x => [x, x]));
+const STATUSES = [["prospect", "Prospect"], ["contacted", "Contacted"], ["rfq_sent", "RFQ sent"], ["test_order_sent", "Test order sent"], ["response_received", "Response received"],
+  ["shortlisted", "Shortlisted"], ["rejected", "Rejected"]];
 const PROVIDER_FIELDS = [
   {key: "name", label: "Provider name", type: "text", required: true, table: true, search: true},
-  {key: "contact_person", label: "Contact person", type: "text", required: true, table: true, search: true},
-  {key: "email", label: "Contact email", type: "email", required: true, table: true, search: true},
-  {key: "phone", label: "Phone", type: "tel"},
   {key: "website", label: "Website", type: "url", search: true},
-  {key: "hq_country", label: "Headquarters country", type: "select", options: () => WORLD},
-  {key: "type", label: "Provider type", type: "select", options: PROVIDER_TYPES, table: true, filter: true, default: "freight_forwarder"},
-  {key: "regions", label: "Regions covered", type: "multi", options: () => REGIONS.map(r => [r, r]), table: true, filter: true, full: true},
-  {key: "countries", label: "Countries covered", type: "multi", options: () => TARGETS.map(c => [c, CNAME(c)]), groupBy: c => regionOf(c), full: true},
-  {key: "services", label: "Services offered", type: "multi", options: SERVICES, table: true, full: true},
+  {key: "contactName", label: "Contact person", type: "text", table: true, search: true},
+  {key: "contactPhone", label: "Phone", type: "tel"},
+  {key: "contactEmail", label: "Contact email", type: "email", table: true, search: true},
+  {key: "hqCountry", label: "Headquarters country", type: "select", options: () => WORLD},
+  {key: "providerTypes", label: "Provider types", type: "multi", options: TYPES, table: true, filter: true, full: true},
+  {key: "regionsCovered", label: "Regions covered", type: "multi", options: () => REGIONS.map(r => [r, r]), table: true, filter: true, full: true},
+  {key: "countriesCovered", label: "Countries covered", type: "multi", options: () => TARGETS.map(c => [c, CNAME(c)]), groupBy: c => regionOf(c), full: true},
+  {key: "servicesOffered", label: "Services offered", type: "multi", options: SERVICES, table: true, full: true},
   {key: "status", label: "Status", type: "select", options: STATUSES, table: true, filter: true, default: "prospect"},
-  {key: "test_sent", label: "Date test order sent", type: "date", table: true},
+  {key: "dateRfqSent", label: "Date RFQ sent", type: "date"},
+  {key: "dateResponseReceived", label: "Date response received", type: "date"},
+  {key: "dateTestOrderSent", label: "Date test order sent", type: "date", table: true},
   {key: "notes", label: "Notes", type: "textarea", search: true, full: true},
 ];
+// Version 1 -> 2: field names, single type -> list, service keys -> labels.
+const V1_FIELDS = {contact_person: "contactName", phone: "contactPhone", email: "contactEmail", hq_country: "hqCountry", regions: "regionsCovered",
+  countries: "countriesCovered", services: "servicesOffered", test_sent: "dateTestOrderSent"};
+const V1_TYPES = {freight_forwarder: "Freight forwarder", "3pl": "3PL / contract logistics", carrier: "Carrier (own fleet)", distributor: "Distributor", other: "Other"};
+const V1_SERVICES = {road: "Road", sea: "Sea", air: "Air freight", warehousing: "Warehousing", customs: "Import customs brokerage", last_mile: "Last-mile delivery", returns: "Returns handling"};
 const GOAL_FIELDS = [
   {key: "name", label: "Goal", type: "text", required: true},
   {key: "description", label: "Description", type: "textarea"},
@@ -63,12 +81,12 @@ const DEFAULT_GOALS = [
   {id: "G07", name: "Tracking and proof of delivery", description: "Track and trace for every shipment and an electronic proof of delivery with name, date and time.", target: "100", unit: "% of shipments", priority: "mandatory", regions: []},
 ];
 const SEED_PROVIDERS = [
-  {name: "Example Forwarding Co. (dummy)", contact_person: "Alex Example", email: "alex@forwarder.example.com", phone: "+31 40 000 0001", website: "https://forwarder.example.com", hq_country: "NL",
-   type: "freight_forwarder", regions: ["Türkiye", "North Africa"], countries: ["TR", "MA", "TN", "EG"], services: ["road", "sea", "customs"], status: "prospect", test_sent: "", notes: "Dummy record to try the tool. Replace or delete it."},
-  {name: "Sample Gulf 3PL (dummy)", contact_person: "Sam Sample", email: "sam@gulf3pl.example.com", phone: "+971 4 000 0002", website: "https://gulf3pl.example.com", hq_country: "AE",
-   type: "3pl", regions: ["Gulf/GCC"], countries: ["AE", "SA", "QA", "KW", "BH", "OM"], services: ["warehousing", "customs", "last_mile", "returns"], status: "contacted", test_sent: "", notes: "Dummy record to try the tool. Replace or delete it."},
-  {name: "Demo Road Carrier (dummy)", contact_person: "Dana Demo", email: "dana@roadcarrier.example.com", phone: "+90 212 000 0003", website: "", hq_country: "TR",
-   type: "carrier", regions: ["Türkiye"], countries: ["TR"], services: ["road", "customs", "last_mile"], status: "prospect", test_sent: "", notes: "Dummy record to try the tool. Replace or delete it."},
+  {name: "Example Forwarding Co. (dummy)", contactName: "Alex Example", contactEmail: "alex@forwarder.example.com", contactPhone: "+31 40 000 0001", website: "https://forwarder.example.com", hqCountry: "NL",
+   providerTypes: ["Freight forwarder"], regionsCovered: ["Türkiye", "North Africa"], countriesCovered: ["TR", "MA", "TN", "EG"], servicesOffered: ["Road", "Sea", "Import customs brokerage"], status: "prospect", notes: "Dummy record to try the tool. Replace or delete it."},
+  {name: "Sample Gulf 3PL (dummy)", contactName: "Sam Sample", contactEmail: "sam@gulf3pl.example.com", contactPhone: "+971 4 000 0002", website: "https://gulf3pl.example.com", hqCountry: "AE",
+   providerTypes: ["3PL / contract logistics"], regionsCovered: ["Gulf/GCC"], countriesCovered: ["AE", "SA", "QA", "KW", "BH", "OM"], servicesOffered: ["Warehousing", "Import customs brokerage", "Last-mile delivery", "Returns handling"], status: "contacted", notes: "Dummy record to try the tool. Replace or delete it."},
+  {name: "Demo Road Carrier (dummy)", contactName: "Dana Demo", contactEmail: "dana@roadcarrier.example.com", contactPhone: "+90 212 000 0003", website: "", hqCountry: "TR",
+   providerTypes: ["Carrier (own fleet)"], regionsCovered: ["Türkiye"], countriesCovered: ["TR"], servicesOffered: ["Road", "Import customs brokerage", "Last-mile delivery"], status: "prospect", notes: "Dummy record to try the tool. Replace or delete it."},
 ];
 // EUR per unit of each currency. Placeholder rates: replace with the rates finance uses.
 const DEFAULT_FX = {EUR: 1, USD: 0.86, GBP: 1.15, CHF: 1.07, TRY: 0.021, AED: 0.234, SAR: 0.229, QAR: 0.236, KWD: 2.8, BHD: 2.28, OMR: 2.23, MAD: 0.093, DZD: 0.0066, TND: 0.29, EGP: 0.0177, LYD: 0.16};
@@ -133,7 +151,7 @@ const B = {
   ready: false, tab: "providers", ver: 0,
   providers: [], goals: [], settings: DEFAULT_SETTINGS(), packages: [], sources: [],
   ui: {q: "", status: "all", type: "all", region: "all", metric: "units", dim: "region", showReal: false, sel: new Set(["generic"]), formats: {pdf: true, docx: true, xlsx: true}, busy: false},
-  upload: null, clean: null, analysis: null, test: null, testKey: "", stale: {}, mdRef: null,
+  upload: null, clean: null, analysis: null, test: null, testKey: "", stale: {}, mdRef: null, respDirty: false,
 };
 try { const u = JSON.parse(localStorage.getItem(UIKEY) || "{}"); if (u.tab) B.tab = u.tab; } catch (e) {}
 const rememberTab = () => { try { localStorage.setItem(UIKEY, JSON.stringify({tab: B.tab})); } catch (e) {} };
@@ -266,20 +284,128 @@ $("benchTabs").addEventListener("click", e => {
 });
 
 // ============================================================ 1. logistics providers
+// ---- provider model version 2: normalise, migrate, ids
+const R = window.FlexiRFQ;
+const idNum = id => { const m = String(id || "").match(/^PRV-(\d+)$/); return m ? Number(m[1]) : 0; };
+const toList = v => (Array.isArray(v) ? v.map(x => String(x).trim()).filter(Boolean) : isBlank(v) ? [] : String(v).split(/[;,|]/).map(x => x.trim()).filter(Boolean));
+const TEXT_FIELDS = ["name", "website", "contactName", "contactPhone", "contactEmail", "hqCountry", "notes", "dateRfqSent", "dateResponseReceived", "dateTestOrderSent"];
+// One stored or imported record in, one version 2 record out. Version 1 names are renamed, a single
+// type becomes a list, version 1 service keys become RFQ labels. Unknown fields are kept.
+function normProvider(r){
+  const o = Object.assign({}, r);
+  Object.entries(V1_FIELDS).forEach(([a, b]) => { if (a in o) { if (isBlank(o[b]) || (Array.isArray(o[b]) && !o[b].length)) o[b] = o[a]; delete o[a]; } });
+  if ("type" in o) { o.providerTypes = toList(o.providerTypes).concat(isBlank(o.type) ? [] : [o.type]); delete o.type; }
+  o.providerTypes = [...new Set(toList(o.providerTypes).map(x => V1_TYPES[x] || x))];
+  o.servicesOffered = [...new Set(toList(o.servicesOffered).map(x => V1_SERVICES[x] || x))];
+  o.regionsCovered = toList(o.regionsCovered); o.countriesCovered = toList(o.countriesCovered);
+  TEXT_FIELDS.forEach(k => { o[k] = isBlank(o[k]) ? "" : String(o[k]).trim(); });
+  o.status = isBlank(o.status) ? "prospect" : String(o.status);
+  o.rfqResponses = (Array.isArray(o.rfqResponses) ? o.rfqResponses : []).map(x => Object.assign({ref: uid("RSP")}, x));
+  const n = o.rfqResponses.length, li = Number(o.latestResponseIndex);
+  o.latestResponseIndex = n ? (Number.isInteger(li) && li >= 0 && li < n ? li : n - 1) : -1;
+  o.legacyIds = toList(o.legacyIds);
+  o.dummy = !!o.dummy; o.created = o.created || nowIso(); o.updated = o.updated || o.created; o.schema = 2;
+  return o;
+}
+// Ids: PRV-0001 upward, stable once given. A record without a PRV id gets the next free number in list
+// order and keeps its old id in legacyIds (so re-importing an old export updates it). Returns old -> new.
+function assignIds(list, taken){
+  const map = {};
+  let n = Math.max(0, ...list.map(p => idNum(p.id)), ...(taken || []).map(p => idNum(p.id)));
+  list.forEach(p => {
+    if (idNum(p.id)) return;
+    const old = p.id; p.id = "PRV-" + String(++n).padStart(4, "0");
+    if (old) { p.legacyIds = [...new Set(p.legacyIds.concat([old]))]; map[old] = p.id; }
+  });
+  return map;
+}
+// Saved and selected references to providers follow an id change.
+function remapIds(map){
+  if (!Object.keys(map).length) return false;
+  let changed = false;
+  B.packages.forEach(k => (k.sent || []).forEach(s => { if (map[s.provider_id]) { s.provider_id = map[s.provider_id]; changed = true; } }));
+  [...B.ui.sel].forEach(x => { if (map[x]) { B.ui.sel.delete(x); B.ui.sel.add(map[x]); } });
+  return changed;
+}
+// Responses are stored apart from the provider list (one row per response in "rfqresponses"), so a
+// provider with many responses never outgrows one storage document. Export carries both together.
+async function saveProviders(msg){
+  const slim = B.providers.map(p => Object.assign({}, p, {rfqResponses: p.rfqResponses.map(r => Object.assign({}, r, {values: undefined}))}));
+  if (!(await save("providers", slim, msg))) return false;
+  if (B.respDirty) {
+    if (!(await save("rfqresponses", B.providers.flatMap(p => p.rfqResponses.map(r => ({ref: r.ref, providerId: p.id, values: r.values})))))) return false;
+    B.respDirty = false;
+  }
+  return true;
+}
+const latestOf = p => R.latest(p);
+
+// ---- files in this browser (IndexedDB): the replaced RFQ template and every uploaded response file.
+// Falls back to memory for this tab when IndexedDB is blocked (private window, preview).
+const IDB = (() => {
+  let dbp = null; const mem = new Map();
+  const open = () => dbp || (dbp = new Promise(res => {
+    try { const rq = indexedDB.open("flexitog-bench", 1); rq.onupgradeneeded = () => rq.result.createObjectStore("files"); rq.onsuccess = () => res(rq.result); rq.onerror = () => res(null); rq.onblocked = () => res(null); }
+    catch (e) { res(null); }
+  }));
+  const run = async (mode, fn) => {
+    const db = await open(); if (!db) throw new Error("no IndexedDB");
+    return new Promise((res, rej) => { const t = db.transaction("files", mode), rq = fn(t.objectStore("files")); t.oncomplete = () => res(rq.result); t.onerror = () => rej(t.error); t.onabort = () => rej(t.error); });
+  };
+  return {
+    async get(k){ try { const v = await run("readonly", s => s.get(k)); return v === undefined ? mem.get(k) : v; } catch (e) { return mem.get(k); } },
+    async put(k, v){ mem.set(k, v); try { await run("readwrite", s => s.put(v, k)); return true; } catch (e) { return false; } },
+    async del(k){ mem.delete(k); try { await run("readwrite", s => s.delete(k)); } catch (e) {} },
+  };
+})();
+
+// ---- RFQ template: the bundled file, or the one you replaced it with (kept in this browser)
+const RFQT = {bundled: null, current: null};
+function b64Bytes(b64){ const bin = atob(b64), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; }
+const templateInfo = bytes => R.templateInfo(XLSX.read(bytes, {type: "array", cellDates: true}), XLSX);
+async function loadTemplates(){
+  const t = PAYLOAD.rfq_template;
+  if (t && t.base64) { const bytes = b64Bytes(t.base64); try { RFQT.bundled = Object.assign({bytes, name: t.name, source: "bundled"}, templateInfo(bytes)); } catch (e) {} }
+  const saved = await IDB.get("rfq-template");
+  if (saved && saved.bytes) RFQT.current = Object.assign({}, saved, {bytes: new Uint8Array(saved.bytes), source: "replaced"});
+}
+const tmpl = () => RFQT.current || RFQT.bundled;
+function templateText(){
+  const t = tmpl();
+  return t ? `${t.version} · template of ${t.date ? longDate(t.date) : "unknown date"} · ${t.source === "replaced" ? "replaced in this browser" : "bundled"}` : "No RFQ template in this copy";
+}
+async function replaceTemplate(file){
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let info;
+  try { info = templateInfo(bytes); } catch (e) { toast(e.message || "This file is not an RFQ template", "bad"); return; }
+  if (!info.version) { toast("The Export sheet has no meta.rfq_version. Template not replaced.", "bad"); return; }
+  if (!R.SUPPORTED_VERSIONS.includes(info.version)) toast(`Template ${info.version} is not in the supported list, so uploads of its responses will be refused until the tool supports it.`, "bad");
+  const rec = {bytes: bytes.buffer.slice(0), name: file.name, version: info.version, date: info.date, replacedAt: nowIso()};
+  await IDB.put("rfq-template", rec);
+  RFQT.current = Object.assign({}, rec, {bytes, source: "replaced"});
+  toast(`RFQ template replaced: ${info.version}`); renderProviders();
+}
+const xlsxBlob = bytes => new Blob([bytes], {type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+
+// ---- table
 function provFiltered(){
   const q = norm(B.ui.q);
-  return B.providers.filter(p => (B.ui.status === "all" || p.status === B.ui.status) && (B.ui.type === "all" || p.type === B.ui.type) &&
-    (B.ui.region === "all" || (p.regions || []).includes(B.ui.region)) &&
+  return B.providers.filter(p => (B.ui.status === "all" || p.status === B.ui.status) && (B.ui.type === "all" || (p.providerTypes || []).includes(B.ui.type)) &&
+    (B.ui.region === "all" || (p.regionsCovered || []).includes(B.ui.region)) &&
     (!q || PROVIDER_FIELDS.some(f => f.search && norm(p[f.key]).includes(q))));
 }
 const safeUrl = u => { const s = String(u || "").trim(); return /^https?:\/\//i.test(s) ? s : "https://" + s; };
+const statusLabel = v => optLabel(PROVIDER_FIELDS.find(f => f.key === "status"), v);
 function provCell(f, p){
   const v = p[f.key];
-  if (f.key === "name") return `<b>${esc(v)}</b>${p.dummy ? ' <span class="srcb ph" title="Dummy record for trying the tool">dummy</span>' : ""}${p.website ? `<br><a class="faint" href="${esc(safeUrl(p.website))}" target="_blank" rel="noopener noreferrer">${esc(String(p.website).replace(/^https?:\/\//i, "").replace(/\/$/, ""))}</a>` : ""}`;
-  if (f.key === "contact_person") return `${esc(v)}${p.phone ? `<br><span class="faint num">${esc(p.phone)}</span>` : ""}`;
+  if (f.key === "name") return `<button type="button" class="lnk" data-a="detail" title="Open the provider detail">${esc(v)}</button>${p.dummy ? ' <span class="srcb ph" title="Dummy record for trying the tool">dummy</span>' : ""}${p.website ? `<br><a class="faint" href="${esc(safeUrl(p.website))}" target="_blank" rel="noopener noreferrer">${esc(String(p.website).replace(/^https?:\/\//i, "").replace(/\/$/, ""))}</a>` : ""}`;
+  if (f.key === "contactName") return `${esc(v)}${p.contactPhone ? `<br><span class="faint num">${esc(p.contactPhone)}</span>` : ""}`;
   if (f.type === "email") return v ? `<a href="mailto:${esc(v)}">${esc(v)}</a>` : "";
-  if (f.key === "status") return `<span class="st ${esc(v)}">${esc(optLabel(f, v))}</span>`;
-  if (f.type === "multi") return `<div class="tags">${(v || []).map(x => `<span class="tag${f.key === "regions" ? " r-" + rc(x) : ""}">${esc(f.key === "regions" ? x : optLabel(f, x))}</span>`).join("")}</div>`;
+  if (f.key === "status") {
+    const n = (p.rfqResponses || []).length;
+    return `<span class="st ${esc(v)}">${esc(statusLabel(v))}</span>${p.dateRfqSent ? `<br><span class="faint num">RFQ sent ${esc(p.dateRfqSent)}</span>` : ""}${p.dateResponseReceived ? `<br><span class="faint num">response ${esc(p.dateResponseReceived)}</span>` : ""}${n ? `<br><span class="tag">${n} RFQ response${n > 1 ? "s" : ""}</span>` : ""}`;
+  }
+  if (f.type === "multi") return `<div class="tags">${(v || []).map(x => `<span class="tag${f.key === "regionsCovered" ? " r-" + rc(x) : ""}">${esc(x)}</span>`).join("")}</div>`;
   if (f.type === "select") return esc(optLabel(f, v));
   if (f.type === "date") return `<span class="num">${esc(v || "")}</span>`;
   return esc(v ?? "");
@@ -288,20 +414,26 @@ function renderProvTable(){
   const cols = PROVIDER_FIELDS.filter(f => f.table), rows = provFiltered();
   const el = $("bxProvBody"); if (!el) return;
   el.innerHTML = rows.map(p => `<tr data-id="${esc(p.id)}">${cols.map(f => `<td class="${f.type === "multi" ? "wrap" : ""}">${provCell(f, p)}</td>`).join("")}
-    <td><div class="bacts"><button type="button" class="btn ghost sm" data-a="edit">Edit</button><button type="button" class="btn ghost sm" data-a="del">Delete</button></div></td></tr>`).join("") ||
+    <td><div class="bacts"><button type="button" class="btn ghost sm" data-a="edit">Edit</button><label class="btn ghost sm filebtn" title="Upload the RFQ this provider returned">Upload RFQ<input type="file" data-up="${esc(p.id)}" accept=".xlsx,.xlsm" aria-label="Upload RFQ response for ${esc(p.name)}"></label><button type="button" class="btn ghost sm" data-a="del">Delete</button></div></td></tr>`).join("") ||
     `<tr><td colspan="${cols.length + 1}" class="empty">${B.providers.length ? "No provider matches the search or filters." : "No providers yet. Add one or import a JSON file."}</td></tr>`;
   $("bxProvCount").textContent = `${rows.length} of ${B.providers.length} shown`;
+  renderCompare();
 }
 function renderProviders(){
   const P = $("bp-providers"), cols = PROVIDER_FIELDS.filter(f => f.table);
   const sel = (id, label, all, opts, v) => `<select id="${id}" aria-label="${esc(label)}"><option value="all">${esc(all)}</option>${opts.map(([k, l]) => `<option value="${esc(k)}"${v === k ? " selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
+  const t = tmpl();
   P.innerHTML = `<div class="card">
-    <div class="cardhead"><h2>Logistics providers</h2><span class="faint" style="font-size:12px" id="bxProvCount"></span></div>
-    <p class="muted bcard-lead">Freight forwarders, 3PLs, carriers and distributors who get the standard test order package. Generating a report for a provider on Test Order and Report sets its status to Test order sent and fills the date.</p>
+    <div class="cardhead"><h2>Logistics providers</h2>
+      <div class="rfqbar"><button type="button" class="btn" data-a="rfq-dl"${t ? "" : " disabled"}>Download latest RFQ</button>
+        <span class="faint num" id="bxRfqVer">${esc(templateText())}</span>
+        <label class="btn ghost sm filebtn">Replace RFQ template<input type="file" id="bxRfqTpl" accept=".xlsx,.xlsm" aria-label="Replace the RFQ template"></label>
+        ${RFQT.current ? `<button type="button" class="btn ghost sm" data-a="rfq-reset">Reset to bundled</button>` : ""}</div></div>
+    <p class="muted bcard-lead">RFQ workflow: download the RFQ (or a prefilled copy from Edit), send it, then use Upload RFQ on the provider's row when it comes back. The tool fills in the record and keeps every response for comparison. <span class="faint" id="bxProvCount"></span></p>
     <div class="mdbar">
       <input type="search" id="bxQ" placeholder="Search name, contact, email, notes" value="${esc(B.ui.q)}" aria-label="Search providers">
       ${sel("bxFStatus", "Filter by status", "All statuses", STATUSES, B.ui.status)}
-      ${sel("bxFType", "Filter by type", "All types", PROVIDER_TYPES, B.ui.type)}
+      ${sel("bxFType", "Filter by type", "All types", TYPES(), B.ui.type)}
       ${sel("bxFRegion", "Filter by region", "All regions", REGIONS.map(r => [r, r]), B.ui.region)}
       <span class="sp"></span>
       <button type="button" class="btn" data-a="add">Add logistics provider</button>
@@ -309,17 +441,27 @@ function renderProviders(){
       <label class="btn ghost filebtn">Import providers<input type="file" id="bxImport" accept=".json,application/json" aria-label="Import providers from JSON"></label>
     </div>
     <div class="tablewrap mdgrid"><table><thead><tr>${cols.map(f => `<th>${esc(f.label)}</th>`).join("")}<th><span class="faint">Actions</span></th></tr></thead><tbody id="bxProvBody"></tbody></table></div>
-    <p class="faint bnote">Export providers writes a JSON file with every field. Import it on another machine or after clearing the browser. Import adds new providers, updates providers with the same ID and skips duplicates (same name and email).</p>
-  </div>`;
+    <p class="faint bnote">Export providers writes a JSON file with every field and every RFQ response. Import adds new providers, updates providers with the same ID and skips duplicates (same name and email). Uploaded RFQ files stay in this browser.</p>
+  </div>
+  <div id="bxCompare"></div>`;
   renderProvTable();
   $("bxQ").addEventListener("input", e => { B.ui.q = e.target.value; renderProvTable(); });
   [["bxFStatus", "status"], ["bxFType", "type"], ["bxFRegion", "region"]].forEach(([id, k]) => $(id).addEventListener("change", e => { B.ui[k] = e.target.value; renderProvTable(); }));
   P.querySelector('[data-a="add"]').addEventListener("click", () => openProviderForm(null));
   P.querySelector('[data-a="export"]').addEventListener("click", exportProviders);
+  P.querySelector('[data-a="rfq-dl"]').addEventListener("click", () => { const t = tmpl(); if (t) saveFile(t.name || "Transport_Volume_Scenario_RFQ_FlexiTog.xlsx", xlsxBlob(t.bytes)); });
+  $("bxRfqTpl").addEventListener("change", e => { const f = e.target.files[0]; e.target.value = ""; if (f) replaceTemplate(f); });
+  const rs = P.querySelector('[data-a="rfq-reset"]');
+  if (rs) rs.addEventListener("click", async () => { await IDB.del("rfq-template"); RFQT.current = null; toast("Back to the bundled RFQ template"); renderProviders(); });
   $("bxImport").addEventListener("change", e => { const f = e.target.files[0]; e.target.value = ""; if (f) importProviders(f); });
+  $("bxProvBody").addEventListener("change", e => {
+    const inp = e.target.closest("input[data-up]"); if (!inp) return;
+    const f = inp.files[0]; inp.value = ""; if (f) uploadRfq(inp.dataset.up, f);
+  });
   $("bxProvBody").addEventListener("click", e => {
     const b = e.target.closest("button[data-a]"); if (!b) return;
     const id = b.closest("tr").dataset.id;
+    if (b.dataset.a === "detail") openDetail(id);
     if (b.dataset.a === "edit") openProviderForm(id);
     if (b.dataset.a === "del") {
       const p = B.providers.find(x => x.id === id); if (!p) return;
@@ -328,11 +470,13 @@ function renderProviders(){
         setTimeout(() => { if (b.isConnected) { b.dataset.armed = ""; b.textContent = "Delete"; b.classList.add("ghost"); } }, 4000);
         return;
       }
-      B.providers = B.providers.filter(x => x.id !== id); B.ui.sel.delete(id);
-      save("providers", B.providers, `${p.name} deleted`); renderTabs(); renderChips(); renderProvTable();
+      B.providers = B.providers.filter(x => x.id !== id); B.ui.sel.delete(id); B.respDirty = true;
+      saveProviders(`${p.name} deleted`); renderTabs(); renderChips(); renderProvTable();
     }
   });
 }
+
+// ---- add and edit form
 function fieldHtml(f, v, pre){
   const id = pre + f.key, req = f.required ? ' <span class="req" aria-hidden="true">*</span>' : "", cls = `fld${f.full ? " full" : ""}`;
   if (f.type === "multi") {
@@ -359,62 +503,207 @@ function readForm(form, fields){
   return o;
 }
 const EMAIL_RE = /^[^\s@<>()[\]\\,;:"]+@[^\s@<>()[\]\\,;:"]+\.[a-z]{2,}$/i;
+// Duplicate = same name and same email; two empty emails count as the same.
+const isDup = (a, b) => norm(a.name) === norm(b.name) && String(a.contactEmail || "").trim().toLowerCase() === String(b.contactEmail || "").trim().toLowerCase();
 function validateProvider(o, selfId){
   const err = {};
   PROVIDER_FIELDS.forEach(f => { if (f.required && (f.type === "multi" ? !o[f.key].length : !o[f.key])) err[f.key] = `${f.label} is required.`; });
-  if (o.email && !EMAIL_RE.test(o.email)) err.email = "Enter a valid email address, for example name@company.com.";
+  if (o.contactEmail && !EMAIL_RE.test(o.contactEmail)) err.contactEmail = "Enter a valid email address, for example name@company.com.";
   if (o.website && !/^(https?:\/\/)?[\w-]+(\.[\w-]+)+([/?#].*)?$/i.test(o.website)) err.website = "Enter a web address such as www.company.com.";
-  if (o.test_sent && !C.parseDate(o.test_sent)) err.test_sent = "Enter a valid date.";
-  const dup = B.providers.find(p => p.id !== selfId && norm(p.name) === norm(o.name) && String(p.email || "").toLowerCase() === String(o.email || "").toLowerCase());
-  if (dup && o.name && o.email) err._dup = `A provider with this name and email already exists: ${dup.name}.`;
+  ["dateRfqSent", "dateResponseReceived", "dateTestOrderSent"].forEach(k => { if (o[k] && !C.parseDate(o[k])) err[k] = "Enter a valid date."; });
+  const dup = B.providers.find(p => p.id !== selfId && isDup(p, o));
+  if (dup && o.name) err._dup = `A provider with this name and email already exists: ${dup.name} (${dup.id}).`;
   return err;
 }
 function openProviderForm(id){
   const dlg = $("bxDlg"), p = id ? B.providers.find(x => x.id === id) : null;
   const vals = p ? clone(p) : Object.fromEntries(PROVIDER_FIELDS.map(f => [f.key, f.type === "multi" ? [] : (f.default || "")]));
   dlg.innerHTML = `<form class="bform" novalidate>
-    <div class="dhead"><div><span class="eyebrow">Logistics provider</span><h2>${p ? "Edit " + esc(p.name) : "Add logistics provider"}</h2></div><button type="button" class="btn ghost" data-a="cancel">Close</button></div>
+    <div class="dhead"><div><span class="eyebrow">Logistics provider${p ? " · " + esc(p.id) : ""}</span><h2>${p ? "Edit " + esc(p.name) : "Add logistics provider"}</h2></div><button type="button" class="btn ghost" data-a="cancel">Close</button></div>
     <div class="fbody">${PROVIDER_FIELDS.map(f => fieldHtml(f, vals[f.key], "bxf_")).join("")}</div>
-    <div class="dfoot"><span class="ferr" id="bxFormErr" role="alert"></span><button type="button" class="btn ghost" data-a="cancel">Cancel</button><button type="submit" class="btn">${p ? "Save changes" : "Add provider"}</button></div>
+    <div class="dfoot"><span class="ferr" id="bxFormErr" role="alert"></span>
+      ${p ? `<button type="button" class="btn ghost" data-a="prefill"${tmpl() ? "" : " disabled"} title="Writes ID, name, website and contact into the RFQ, sets status RFQ sent">Download prefilled RFQ for this provider</button>` : ""}
+      <button type="button" class="btn ghost" data-a="cancel">Cancel</button><button type="submit" class="btn">${p ? "Save changes" : "Add provider"}</button></div>
   </form>`;
   const form = dlg.querySelector("form");
   dlg.querySelectorAll('[data-a="cancel"]').forEach(b => b.addEventListener("click", () => dlg.close()));
   // Ticking a region ticks its countries when none of them is ticked yet.
-  form.querySelectorAll('input[name="regions"]').forEach(cb => cb.addEventListener("change", () => {
+  form.querySelectorAll('input[name="regionsCovered"]').forEach(cb => cb.addEventListener("change", () => {
     if (!cb.checked) return;
-    const boxes = [...form.querySelectorAll('input[name="countries"]')].filter(i => regionOf(i.value) === cb.value);
+    const boxes = [...form.querySelectorAll('input[name="countriesCovered"]')].filter(i => regionOf(i.value) === cb.value);
     if (!boxes.some(i => i.checked)) boxes.forEach(i => { i.checked = true; });
   }));
   form.addEventListener("input", e => { const f = e.target.closest(".fld.bad"); if (f) { f.classList.remove("bad"); f.querySelector(".err").textContent = ""; } });
-  form.addEventListener("submit", async e => {
-    e.preventDefault();
+  // Validate the form; returns the values or null (errors shown).
+  const collect = () => {
     const o = readForm(form, PROVIDER_FIELDS), err = validateProvider(o, p ? p.id : null);
     form.querySelectorAll(".fld").forEach(el => { const m = err[el.dataset.k]; el.classList.toggle("bad", !!m); el.querySelector(".err").textContent = m || ""; });
     $("bxFormErr").textContent = err._dup || (Object.keys(err).length ? "Check the marked fields." : "");
-    if (Object.keys(err).length) { const first = form.querySelector(".fld.bad input, .fld.bad select, .fld.bad textarea"); if (first) first.focus(); return; }
-    const now = new Date().toISOString();
-    if (p) Object.assign(p, o, {updated: now, dummy: p.dummy && norm(p.name) === norm(o.name) && p.email === o.email});
-    else B.providers.unshift(Object.assign({id: uid("LP")}, o, {created: now, updated: now, dummy: false}));
+    if (Object.keys(err).length) { const first = form.querySelector(".fld.bad input, .fld.bad select, .fld.bad textarea"); if (first) first.focus(); return null; }
+    return o;
+  };
+  const apply = o => { const now = nowIso(); Object.assign(p, o, {updated: now, dummy: p.dummy && isDup(p, o)}); };
+  form.addEventListener("submit", async e => {
+    e.preventDefault();
+    const o = collect(); if (!o) return;
+    const now = nowIso();
+    if (p) apply(o);
+    else B.providers.unshift(normProvider(Object.assign({id: "PRV-" + String(Math.max(0, ...B.providers.map(x => idNum(x.id))) + 1).padStart(4, "0")}, o, {created: now, updated: now, dummy: false})));
     dlg.close();
-    await save("providers", B.providers, p ? "Provider updated" : "Provider added");
+    await saveProviders(p ? "Provider updated" : "Provider added");
     renderTabs(); renderChips(); renderProvTable();
+  });
+  const pre = form.querySelector('[data-a="prefill"]');
+  if (pre) pre.addEventListener("click", async () => {
+    const o = collect(); if (!o) return;
+    pre.disabled = true; pre.textContent = "Preparing…";
+    try {
+      const prov = Object.assign({}, p, o), bytes = await R.prefill(tmpl().bytes, prov, JSZip);
+      await saveFile(R.fileName(prov, today()), xlsxBlob(bytes));
+      apply(o);
+      // A provider already further along keeps its status; the RFQ date is always set.
+      if (["prospect", "contacted", "rfq_sent", "test_order_sent", ""].includes(p.status || "")) p.status = "rfq_sent";
+      p.dateRfqSent = today();
+      dlg.close();
+      await saveProviders(`Prefilled RFQ for ${p.name}. Status ${statusLabel(p.status)}`);
+      renderTabs(); renderChips(); renderProvTable();
+    } catch (err) { toast("Could not prefill the RFQ: " + (err.message || err), "bad"); pre.disabled = false; pre.textContent = "Download prefilled RFQ for this provider"; }
   });
   dlg.showModal();
   const first = form.querySelector("input,select"); if (first) first.focus();
 }
-function exportProviders(){
-  const out = {format: "flexitog-benchmark-providers", version: 1, exported: new Date().toISOString(), fields: PROVIDER_FIELDS.map(f => f.key), providers: B.providers};
-  saveFile(`FlexiTog_logistics_providers_${today()}.json`, JSON.stringify(out, null, 2));
-}
-function normProvider(r){
-  const o = {id: r.id ? String(r.id) : uid("LP"), created: r.created || new Date().toISOString(), updated: r.updated || new Date().toISOString(), dummy: !!r.dummy};
-  PROVIDER_FIELDS.forEach(f => {
-    const v = r[f.key];
-    if (f.type === "multi") o[f.key] = Array.isArray(v) ? v.map(String) : isBlank(v) ? [] : String(v).split(/[;,|]/).map(s => s.trim()).filter(Boolean);
-    else o[f.key] = isBlank(v) ? (f.default || "") : String(v).trim();
+
+// ---- small dialogs: ask (buttons) and review (keep mine / use file per field)
+function ask(title, html, buttons){
+  return new Promise(res => {
+    const dlg = $("bxDlg");
+    dlg.innerHTML = `<form class="bform" method="dialog"><div class="dhead"><div><span class="eyebrow">RFQ upload</span><h2>${esc(title)}</h2></div></div>
+      <div class="fbody" style="display:block">${html}</div>
+      <div class="dfoot">${buttons.map((b, i) => `<button type="button" class="btn${b.primary ? "" : " ghost"}" data-i="${i}">${esc(b.label)}</button>`).join("")}</div></form>`;
+    let done = false;
+    const finish = v => { if (done) return; done = true; dlg.close(); res(v); };
+    dlg.querySelectorAll("button[data-i]").forEach(b => b.addEventListener("click", () => finish(buttons[+b.dataset.i].value)));
+    dlg.addEventListener("cancel", () => finish(null), {once: true});
+    dlg.showModal();
   });
-  Object.keys(r).forEach(k => { if (!(k in o) && !k.startsWith("_")) o[k] = r[k]; });   // keep fields added later
-  return o;
+}
+const FIELD_LABEL = Object.fromEntries(PROVIDER_FIELDS.map(f => [f.key, f.label]));
+async function review(p, conflicts){
+  const rows = conflicts.map((c, i) => `<tr><td><b>${esc(FIELD_LABEL[c.field] || c.field)}</b></td><td>${esc(c.field === "hqCountry" ? CNAME(c.mine) : c.mine)}</td><td>${esc(c.field === "hqCountry" ? CNAME(c.file) : c.file)}</td>
+    <td><label class="toggle" style="align-items:center"><input type="radio" name="rv${i}" value="mine" checked>Keep mine</label> <label class="toggle" style="align-items:center"><input type="radio" name="rv${i}" value="file">Use file</label></td></tr>`).join("");
+  const dlg = $("bxDlg");
+  // Read the radios when Apply is pressed; the dialog's DOM is still there right after it closes.
+  const choices = () => Object.fromEntries(conflicts.map((c, i) => [c.field, (dlg.querySelector(`input[name="rv${i}"]:checked`) || {}).value || "mine"]));
+  return ask(`Review ${p.name}`, `<p class="muted" style="margin-bottom:8px">The file holds other values for these fields. Pick per field; keep mine is the default.</p>
+    <div class="tablewrap"><table><thead><tr><th>Field</th><th>On record</th><th>In the file</th><th>Use</th></tr></thead><tbody>${rows}</tbody></table></div>`,
+    [{label: "Cancel upload", value: null}, {label: "Apply", value: choices, primary: true}]);
+}
+
+// ---- upload a returned RFQ on a provider's row
+async function uploadRfq(id, file){
+  const p = B.providers.find(x => x.id === id); if (!p) return;
+  let P, buf;
+  try {
+    buf = await file.arrayBuffer();
+    P = R.parseWorkbook(XLSX.read(buf, {type: "array", cellDates: true}), XLSX);   // step 1-2: read and parse the Export sheet
+  } catch (e) { toast(e.message || "Could not read this file", "bad"); return; }
+  const V = R.validate(P, p);                                                       // step 3: version, row count, identity
+  if (!V.ok) { await ask("RFQ not accepted", `<ul class="bfind">${V.errors.map(x => `<li>${esc(x)}</li>`).join("")}</ul>`, [{label: "Close", value: null, primary: true}]); return; }
+  if (V.confirm.length || V.warnings.length) {                                      // step 3-4: mismatch or file not saved in Excel
+    const go = await ask(V.confirm.length ? "Check the provider" : "Totals unavailable",
+      `<ul class="bfind">${V.confirm.concat(V.warnings).map(x => `<li>${esc(x)}</li>`).join("")}</ul>`,
+      [{label: "Cancel", value: null}, {label: "Continue", value: true, primary: true}]);
+    if (!go) return;
+  }
+  const M = R.mapResponse(p, P, {fileName: file.name, today: today(), uploadedAt: nowIso(), countryOf: v => toIso2(v)});   // step 5
+  let choices = {};
+  if (M.conflicts.length) { const f = await review(p, M.conflicts); if (!f) return; choices = f(); }
+  M.entry.ref = uid("RSP"); M.entry.fileId = uid("RFQF");
+  await IDB.put("rfq-file:" + M.entry.fileId, {bytes: buf, name: file.name, uploadedAt: M.entry.uploadedAt, providerId: p.id});   // step 7: the original file
+  const res = R.applyResponse(p, M, choices);
+  Object.assign(p, res.provider, {updated: nowIso(), dummy: p.dummy});
+  B.respDirty = true;
+  if (!(await saveProviders())) return;
+  toast(`${p.name}: ${res.changes.join(", ")}`);                                    // step 6
+  renderTabs(); renderChips(); renderProvTable();
+}
+
+// ---- provider detail panel
+const pctTxt = v => (typeof v === "number" ? (v * 100).toFixed(1) + "%" : esc(v ?? ""));
+const numTxt = (v, dp) => (typeof v === "number" ? fmt(v, dp == null ? 0 : dp) : esc(v ?? ""));
+const ansTxt = (v, type) => (type === "percent" ? pctTxt(v) : type === "number" ? numTxt(v, typeof v === "number" && Number.isInteger(v) ? 0 : 2) : esc(v ?? ""));
+function openDetail(id, tab, idx){
+  const p = B.providers.find(x => x.id === id); if (!p) return;
+  const dlg = $("bxDetail");
+  const n = p.rfqResponses.length, ri = idx == null ? p.latestResponseIndex : idx, r = n ? p.rfqResponses[ri] : null;
+  const v = r ? r.values || {} : {}, D = r ? R.detail(v, r.labels || {}) : null, s = r ? r.summary || R.summarize(v) : null;
+  const cur = (s && s.currency) || "EUR";
+  const T = tab || "profile";
+  const tabs = [["profile", "Profile and coverage"], ["rates", "Rates"], ["costs", "Costs"], ["timeline", "Timeline"], ["rq", "Reliability & Quality"]];
+  const kv = rows => `<dl class="kv">${rows.filter(x => !isBlank(x[1])).map(([k, x]) => `<dt>${esc(k)}</dt><dd>${x}</dd>`).join("")}</dl>`;
+  let body = "";
+  if (T === "profile") {
+    body = kv([["Provider ID", esc(p.id)], ["Website", p.website ? `<a href="${esc(safeUrl(p.website))}" target="_blank" rel="noopener noreferrer">${esc(p.website)}</a>` : ""], ["Contact", esc(p.contactName)],
+      ["Phone", esc(p.contactPhone)], ["Email", p.contactEmail ? `<a href="mailto:${esc(p.contactEmail)}">${esc(p.contactEmail)}</a>` : ""], ["Headquarters", esc(CNAME(p.hqCountry))],
+      ["Status", `<span class="st ${esc(p.status)}">${esc(statusLabel(p.status))}</span>`], ["RFQ sent", esc(p.dateRfqSent)], ["Response received", esc(p.dateResponseReceived)],
+      ["Types", esc(p.providerTypes.join(", "))], ["Regions", esc(p.regionsCovered.join(", "))], ["Services", esc(p.servicesOffered.join(", "))],
+      ["Quote reference", esc(s && s.quoteReference)], ["Quote valid until", esc(s && s.quoteValidUntil)], ["Currency", esc(s && s.currency)]]);
+    if (D) body += `<h3 style="margin:12px 0 6px">Coverage per country</h3><div class="tablewrap"><table><thead><tr><th>Lane</th><th>Country</th><th>Region</th><th>Presence</th><th>Partner</th><th>Import brokerage</th><th>DDP</th></tr></thead><tbody>
+        ${D.coverage.map(c => `<tr><td class="num">${c.lane}</td><td>${esc(c.country)}</td><td><span class="rdot r-${rc(c.region)}"></span>${esc(c.region)}</td><td>${esc(c.presence)}</td><td>${esc(c.partner)}</td><td>${esc(c.importBrokerage)}</td><td>${esc(c.ddp)}</td></tr>`).join("")}</tbody></table></div>
+      ${D.certs.length ? `<h3 style="margin:12px 0 6px">Certifications</h3><div class="tags">${D.certs.filter(c => !isBlank(c.value) && c.value !== "No").map(c => `<span class="tag">${esc(c.label)}${c.value !== "Yes" ? ": " + esc(c.value) : ""}</span>`).join("") || '<span class="faint">none stated</span>'}</div>` : ""}
+      <h3 style="margin:12px 0 6px">Optional regional stock</h3>${kv([["Warehouses", esc(D.stock.warehouses.join("; ") || "none")], ["Total cost A", numTxt(D.stock.A)], ["Total cost B", numTxt(D.stock.B)]])}`;
+  } else if (!D) body = `<p class="empty">No RFQ response yet. Upload the returned file on the provider's row.</p>`;
+  else if (T === "rates") {
+    body = `<div class="tablewrap btable" style="max-height:60vh"><table><thead><tr><th>Lane</th><th>Country</th><th>Band</th><th>Mode</th><th>Transit days</th><th>Worst case</th><th>Rate/kg</th><th>Min charge</th><th>Fuel</th><th>Docs fee</th><th>Other fee</th><th>Discount B</th><th>Cost per shipment</th></tr></thead><tbody>
+      ${D.rates.map(x => `<tr><td class="num">${x.lane}</td><td>${esc(x.country)}</td><td class="num">${x.band}</td><td>${esc(x.mode)}</td><td class="n">${numTxt(x.transit, 1)}</td><td class="n">${numTxt(x.worst, 1)}</td><td class="n">${numTxt(x.perKg, 2)}</td><td class="n">${numTxt(x.minCharge, 2)}</td><td class="n">${pctTxt(x.fuel)}</td><td class="n">${numTxt(x.docs, 2)}</td><td class="n">${numTxt(x.other, 2)}</td><td class="n">${pctTxt(x.discountB)}</td><td class="n">${numTxt(x.perShipment, 2)}</td></tr>`).join("")}</tbody></table></div>`;
+  } else if (T === "costs") {
+    body = `<div class="tablewrap"><table><thead><tr><th>Scenario</th><th>All from Helmond</th><th>Direct from Helmond</th><th>Other origins</th><th>Total ${esc(cur)}</th><th>Cost per kg</th></tr></thead><tbody>
+      ${D.costs.map(c => `<tr><td><b>${c.scenario}</b></td><td class="n">${numTxt(c.allFromHelmond)}</td><td class="n">${numTxt(c.directFromHelmond)}</td><td class="n">${numTxt(c.otherOrigins)}</td><td class="n"><b>${numTxt(c.total, 2)}</b></td><td class="n">${numTxt(c.perKg, 2)}</td></tr>`).join("")}</tbody></table></div>
+      <h3 style="margin:12px 0 6px">Per lane</h3><div class="tablewrap"><table><thead><tr><th>Lane</th><th>Country</th><th>Cost A</th><th>Cost B</th><th>Cost per kg B</th><th>Average transit days</th></tr></thead><tbody>
+      ${D.laneCosts.map(c => `<tr><td class="num">${c.lane}</td><td>${esc(c.country)}</td><td class="n">${numTxt(c.A)}</td><td class="n">${numTxt(c.B)}</td><td class="n">${numTxt(c.perKgB, 2)}</td><td class="n">${numTxt(c.transit, 1)}</td></tr>`).join("")}</tbody></table></div>`;
+  } else if (T === "timeline") {
+    body = `<div class="tablewrap"><table><thead><tr><th>Lane</th><th>Country</th><th>On target A</th><th>Days late A</th><th>On target B</th><th>Days late B</th></tr></thead><tbody>
+      ${D.timeline.map(t => `<tr><td class="num">${t.lane}</td><td>${esc(t.country)}</td><td class="n">${pctTxt(t.onA)}</td><td class="n">${numTxt(t.lateA, 2)}</td><td class="n">${pctTxt(t.onB)}</td><td class="n">${numTxt(t.lateB, 2)}</td></tr>`).join("")}
+      <tr class="sum"><td colspan="2">All lanes</td><td class="n">${pctTxt(D.timelineTotal.A)}</td><td></td><td class="n">${pctTxt(D.timelineTotal.B)}</td><td></td></tr></tbody></table></div>`;
+  } else {
+    body = `<div class="tablewrap btable" style="max-height:60vh"><table><thead><tr><th>ID</th><th>Question</th><th>Answer</th><th>Details</th><th>Evidence</th></tr></thead><tbody>
+      ${D.kpi.map(k => `<tr><td class="num">${k.id}</td><td class="wrap" style="min-width:260px">${esc(k.question)}</td><td class="n">${ansTxt(k.answer, (r.types || {})["kpi." + k.id])}</td><td class="wrap">${esc(k.details)}</td><td>${k.evidence === "Yes" ? '<span class="okb yes">Evidence</span>' : `<span class="faint">${esc(k.evidence || "no")}</span>`}</td></tr>`).join("")}</tbody></table></div>`;
+  }
+  dlg.innerHTML = `<div class="bform"><div class="dhead"><div><span class="eyebrow">${esc(p.id)}${p.dummy ? ' · <span class="srcb ph">dummy</span>' : ""}</span><h2>${esc(p.name)}</h2></div>
+      <div class="iact">${n > 1 ? `<select id="bxRespSel" aria-label="Response">${p.rfqResponses.map((x, i) => `<option value="${i}"${i === ri ? " selected" : ""}>Response ${i + 1} · ${esc(String(x.uploadedAt).slice(0, 10))} · ${esc(x.fileName)}${i === p.latestResponseIndex ? " (latest)" : ""}</option>`).join("")}</select>` : ""}
+        ${r && r.fileId ? `<button type="button" class="btn ghost sm" data-a="orig">Download original file</button>` : ""}<button type="button" class="btn ghost" data-a="close">Close</button></div></div>
+    <div style="padding:10px 16px 0">${seg2("bxDetTabs", tabs, T)}${r ? `<span class="faint bnote" style="margin-left:10px">${esc(r.rfqVersion)} · ${esc(r.fileName)} · uploaded ${esc(String(r.uploadedAt).slice(0, 16).replace("T", " "))}${r.uncached ? " · totals unavailable (file not saved in Excel)" : ""}</span>` : ""}</div>
+    <div class="fbody" style="display:block">${body}</div></div>`;
+  dlg.querySelector('[data-a="close"]').addEventListener("click", () => dlg.close());
+  dlg.querySelector("#bxDetTabs").addEventListener("click", e => { const b = e.target.closest("button"); if (b) openDetail(id, b.dataset.v, ri); });
+  const rsel = dlg.querySelector("#bxRespSel"); if (rsel) rsel.addEventListener("change", () => openDetail(id, T, Number(rsel.value)));
+  const ob = dlg.querySelector('[data-a="orig"]');
+  if (ob) ob.addEventListener("click", async () => { const f = await IDB.get("rfq-file:" + r.fileId); if (f && f.bytes) saveFile(f.name || r.fileName, xlsxBlob(new Uint8Array(f.bytes))); else toast("The original file is not in this browser. It stays only where it was uploaded.", "bad"); });
+  if (!dlg.open) dlg.showModal();
+}
+const seg2 = (id, list, v) => `<div class="seg" id="${id}" role="group">${list.map(([k, l]) => `<button type="button" data-v="${esc(k)}" aria-pressed="${v === k}">${esc(l)}</button>`).join("")}</div>`;
+
+// ---- compare responses (latest response per provider). No weights yet: getComparableMetrics feeds the scorecard.
+function renderCompare(){
+  const el = $("bxCompare"); if (!el) return;
+  const rows = B.providers.map(p => R.getComparableMetrics(p)).filter(Boolean).sort((a, b) => (a.costB ?? Infinity) - (b.costB ?? Infinity));
+  if (!rows.length) { el.innerHTML = `<div class="card"><div class="cardhead"><h2>Compare RFQ responses</h2></div><p class="muted">No RFQ responses yet. Upload a returned RFQ on a provider's row.</p></div>`; return; }
+  el.innerHTML = `<div class="card"><div class="cardhead"><h2>Compare RFQ responses</h2><span class="faint" style="font-size:12px">Latest response per provider · sorted by total cost B</span></div>
+    <div class="tablewrap btable"><table><thead><tr><th>Provider</th><th>Total cost A</th><th>Total cost B</th><th>Cost per kg B</th><th>On target B</th><th>Bands without rate</th><th>R1 on-time</th><th>Q1 damage</th><th>H2 parties</th><th>Regions</th><th>Types</th><th>Response</th></tr></thead><tbody>
+    ${rows.map(m => { const p = B.providers.find(x => x.id === m.providerId);
+      return `<tr data-id="${esc(m.providerId)}"><td><button type="button" class="lnk" data-a="detail">${esc(m.name)}</button>${p && p.dummy ? ' <span class="srcb ph">dummy</span>' : ""}<br><span class="faint num">${esc(m.providerId)}</span></td>
+        <td class="n">${m.costA == null ? "n/a" : esc(m.currency || "") + " " + fmt(m.costA)}</td><td class="n">${m.costB == null ? "n/a" : esc(m.currency || "") + " " + fmt(m.costB)}</td><td class="n">${m.perKgB == null ? "n/a" : fmt(m.perKgB, 2)}</td>
+        <td class="n">${m.onTargetB == null ? "n/a" : pctTxt(m.onTargetB)}</td><td class="n">${m.bandsWithoutRate ?? "n/a"}</td><td class="n">${m.r1OnTime == null ? "n/a" : pctTxt(m.r1OnTime)}</td>
+        <td class="n">${m.q1Damage == null ? "n/a" : pctTxt(m.q1Damage)}</td><td class="n">${m.h2Parties ?? "n/a"}</td>
+        <td><div class="tags">${m.regions.map(x => `<span class="tag r-${rc(x)}">${esc(x)}</span>`).join("")}</div></td><td class="wrap">${esc(m.types.join(", "))}</td>
+        <td class="num">${esc(m.responseDate)}</td></tr>`; }).join("")}</tbody></table></div></div>`;
+  el.querySelector("tbody").addEventListener("click", e => { const b = e.target.closest('[data-a="detail"]'); if (b) openDetail(b.closest("tr").dataset.id); });
+}
+
+// ---- export and import (format version 2: every field and every response)
+function exportProviders(){
+  const out = {format: "flexitog-benchmark-providers", version: 2, exported: nowIso(), fields: PROVIDER_FIELDS.map(f => f.key).concat(["id", "rfqResponses", "latestResponseIndex"]), providers: B.providers};
+  saveFile(`FlexiTog_logistics_providers_${today()}.json`, JSON.stringify(out, null, 2));
 }
 async function importProviders(file){
   let data;
@@ -422,17 +711,21 @@ async function importProviders(file){
   const list = Array.isArray(data) ? data : data && Array.isArray(data.providers) ? data.providers : null;
   if (!list) { toast("No providers found in this file", "bad"); return; }
   let added = 0, updated = 0, skipped = 0, invalid = 0;
+  const fresh = [];
   list.forEach(r => {
     if (!r || typeof r !== "object") { invalid++; return; }
     const o = normProvider(r);
-    if (!o.name || !o.email) { invalid++; return; }
-    const same = B.providers.findIndex(p => p.id === o.id);
-    if (same >= 0) { B.providers[same] = o; updated++; return; }
-    if (B.providers.some(p => norm(p.name) === norm(o.name) && String(p.email).toLowerCase() === o.email.toLowerCase())) { skipped++; return; }
-    B.providers.push(o); added++;
+    if (!o.name) { invalid++; return; }
+    // Same provider: same PRV id, or an old id this tool already renumbered.
+    const same = B.providers.findIndex(p => (idNum(o.id) && p.id === o.id) || (o.id && (p.legacyIds || []).includes(o.id)));
+    if (same >= 0) { const keep = B.providers[same]; B.providers[same] = Object.assign(o, {id: keep.id, legacyIds: [...new Set(keep.legacyIds.concat(o.legacyIds))]}); updated++; return; }
+    if (B.providers.concat(fresh).some(p => isDup(p, o))) { skipped++; return; }
+    fresh.push(o); added++;
   });
-  await save("providers", B.providers);
-  toast(`Imported ${added} new, updated ${updated}, skipped ${skipped} duplicate${skipped === 1 ? "" : "s"}${invalid ? `, ${invalid} without name or email` : ""}`);
+  remapIds(assignIds(fresh, B.providers));
+  B.providers = B.providers.concat(fresh); B.respDirty = true;
+  await saveProviders(); await save("packages", B.packages);
+  toast(`Imported ${added} new, updated ${updated}, skipped ${skipped} duplicate${skipped === 1 ? "" : "s"}${invalid ? `, ${invalid} without a name` : ""}`);
   renderTabs(); renderChips(); renderProvTable();
 }
 
@@ -776,7 +1069,7 @@ function renderTest(){
     <div class="bgrid2">
       <div class="fld"><span class="flab">Report for</span><div class="bprov" id="bxProvSel">
         <label><input type="checkbox" value="generic"${B.ui.sel.has("generic") ? " checked" : ""}><span><b>Generic version</b> <span class="faint">no provider name</span></span></label>
-        ${B.providers.map(p => `<label><input type="checkbox" value="${esc(p.id)}"${B.ui.sel.has(p.id) ? " checked" : ""}><span>${esc(p.name)} <span class="st ${esc(p.status)}">${esc(optLabel(PROVIDER_FIELDS.find(f => f.key === "status"), p.status))}</span>${p.test_sent ? ` <span class="faint num">sent ${esc(p.test_sent)}</span>` : ""}</span></label>`).join("")}
+        ${B.providers.map(p => `<label><input type="checkbox" value="${esc(p.id)}"${B.ui.sel.has(p.id) ? " checked" : ""}><span>${esc(p.name)} <span class="st ${esc(p.status)}">${esc(optLabel(PROVIDER_FIELDS.find(f => f.key === "status"), p.status))}</span>${p.dateTestOrderSent ? ` <span class="faint num">sent ${esc(p.dateTestOrderSent)}</span>` : ""}</span></label>`).join("")}
       </div></div>
       <div style="display:flex;flex-direction:column;gap:10px">
         <div class="optgrid">
@@ -1024,14 +1317,14 @@ async function generateFiles(){
       if (fm.pdf) await saveFile(base + ".pdf", await buildPdf(m));
       if (fm.docx) await saveFile(base + ".docx", await buildDocx(m));
       if (fm.xlsx) await saveFile(base + "_response_template.xlsx", wbBytes(templateBook(pkg, prov)));
-      if (prov) { if (["prospect", "contacted", ""].includes(prov.status || "")) prov.status = "test_order_sent"; prov.test_sent = date; prov.updated = new Date().toISOString(); }
+      if (prov) { if (["prospect", "contacted", ""].includes(prov.status || "")) prov.status = "test_order_sent"; prov.dateTestOrderSent = date; prov.updated = new Date().toISOString(); }
     }
     let snap = B.packages.find(k => k.id === pkg.id);
     if (!snap) { snap = packageSnapshot(pkg); B.packages.push(snap); }
     targets.forEach(p => snap.sent.push({provider_id: p ? p.id : "", provider_name: p ? p.name : "", date, formats: Object.keys(fm).filter(k => fm[k])}));
     if (B.packages.length > 30) B.packages = B.packages.slice(-30);
     await save("packages", B.packages);
-    if (targets.some(Boolean)) await save("providers", B.providers);
+    if (targets.some(Boolean)) await saveProviders();
     toast(`Report files ready for ${targets.length} recipient${targets.length > 1 ? "s" : ""}. Package ${pkg.id}`);
   } catch (e) { console.error(e); toast("Generating the report failed: " + (e && e.message ? e.message : e), "bad"); }
   finally { B.ui.busy = false; const y = window.scrollY; render(); window.scrollTo({top: y}); }
@@ -1041,19 +1334,33 @@ async function generateFiles(){
 async function init(){
   await storeReady();
   try {
-    const [prov, goals, settings, packages, meta] = await Promise.all(["providers", "goals", "settings", "packages", "salesmeta"].map(n => BS.get(n)));
-    if (prov === undefined) { const now = new Date().toISOString(); B.providers = SEED_PROVIDERS.map((p, i) => Object.assign({id: "LP-DUMMY-" + (i + 1)}, p, {created: now, updated: now, dummy: true})); await BS.set("providers", B.providers).catch(() => {}); }
-    else B.providers = prov.map(normProvider);
+    const [prov, goals, settings, packages, meta, responses] = await Promise.all(["providers", "goals", "settings", "packages", "salesmeta", "rfqresponses"].map(n => BS.get(n)));
+    B.packages = packages || [];
+    if (prov === undefined) {
+      const now = nowIso();
+      B.providers = SEED_PROVIDERS.map((p, i) => normProvider(Object.assign({id: "PRV-" + String(i + 1).padStart(4, "0")}, p, {created: now, updated: now, dummy: true})));
+      await saveProviders().catch(() => {});
+    } else {
+      // Migrate stored records to model version 2 and join the stored responses back in.
+      const byRef = {}; (responses || []).forEach(x => { byRef[x.ref] = x.values; });
+      const old = prov.some(p => p.schema !== 2 || !idNum(p.id));
+      B.providers = prov.map(normProvider);
+      B.providers.forEach(p => p.rfqResponses.forEach(r => { if (!r.values) r.values = byRef[r.ref] || {}; }));
+      const moved = remapIds(assignIds(B.providers));
+      if (old) { B.respDirty = true; await saveProviders(); if (moved) await save("packages", B.packages); }
+    }
     B.goals = goals === undefined ? clone(DEFAULT_GOALS) : goals;
     if (settings) { const d = DEFAULT_SETTINGS(); B.settings = Object.assign(d, settings, {gen: Object.assign(d.gen, settings.gen || {}), report: Object.assign(d.report, settings.report || {}), fx: Object.assign(d.fx, settings.fx || {})}); }
-    B.packages = packages || [];
     B.sources = [];
     for (const s of meta || []) { const rows = await BS.get("sales_" + s.id); if (rows) B.sources.push(Object.assign({}, s, {rows})); }
-  } catch (e) { toast("Could not load the saved benchmarking data", "bad"); }
+  } catch (e) { console.error(e); toast("Could not load the saved benchmarking data", "bad"); }
+  try { await loadTemplates(); } catch (e) {}
   B.ready = true;
   recompute();
   if (VIEW.current === "bench") render();
 }
-window.BenchUI = {show(){ render(); }, state: B, schema: {providers: PROVIDER_FIELDS, goals: GOAL_FIELDS}, reportModel, packageOf, templateBook, buildPdf, buildDocx, chartImages, currentTest};
+// getComparableMetrics(provider or id): the latest RFQ response in comparable form, for the scorecard.
+const getComparableMetrics = p => R.getComparableMetrics(typeof p === "string" ? B.providers.find(x => x.id === p) : p);
+window.BenchUI = {show(){ render(); }, state: B, getComparableMetrics, rfq: {tmpl, uploadRfq, openDetail, IDB}, schema: {providers: PROVIDER_FIELDS, goals: GOAL_FIELDS}, reportModel, packageOf, templateBook, buildPdf, buildDocx, chartImages, currentTest};
 init();
 })();

@@ -8,9 +8,11 @@ master data editor and upload (assets/workspace.js), the report extract and the 
 is inlined for Excel read and write, jsPDF with AutoTable and docx for the benchmarking report.
 No server and no external requests: fonts fall back to the system fonts.
 The Forecast view (assets/forecast_core.js, forecast.js) reads the Odoo sales order lines from the payload.
+The RFQ workflow (assets/rfq_core.js) embeds the RFQ template as base64 and patches it with JSZip.
 """
 from __future__ import annotations
 
+import base64
 import json
 from dataclasses import replace
 from datetime import date
@@ -28,6 +30,7 @@ from .sales_orders import sales_orders_table
 from .schema import COUNTRY_ALIASES, COUNTRY_NAMES, COUNTRY_REGION, DC_TYPE_LABELS, ENTITIES, EU27, PLACEHOLDER, SOURCE_COL
 
 ASSETS = Path(__file__).parent / "assets"
+RFQ_TEMPLATE = ASSETS / "rfq" / "Transport_Volume_Scenario_RFQ_FlexiTog.xlsx"
 
 
 def _records(df: pd.DataFrame) -> list[dict]:
@@ -85,6 +88,8 @@ def build_payload(ws, per_region_synthetic: int = 15, sales_orders: str | Path |
         "datasets": [{"sheet": d[0], "priority": d[3], "why": d[4], "where": d[5], "target": d[6]} for d in DATASETS],
         # Odoo sales order lines for the Forecast view (the anonymized sample unless a path is given).
         "sales_orders": sales_orders_table(sales_orders),
+        # The bundled RFQ template, served by Download latest RFQ until a newer one replaces it.
+        "rfq_template": {"name": RFQ_TEMPLATE.name, "base64": base64.b64encode(RFQ_TEMPLATE.read_bytes()).decode("ascii")},
     }
 
 
@@ -140,9 +145,12 @@ def build_html(ws, sales_orders: str | Path | None = None) -> str:
         "/*JSPDF*/": vendor("jspdf.umd.min.js").replace("https://cdnjs.cloudflare.com/ajax/libs/pdfobject/2.1.1/pdfobject.min.js", ""),
         "/*AUTOTABLE*/": vendor("jspdf.plugin.autotable.min.js"),
         "/*DOCX*/": vendor("docx.min.js"),
+        # RFQ workflow: JSZip (MIT) patches the Provider Profile cells of the template without rewriting it.
+        "/*JSZIP*/": vendor("jszip.min.js"),
         "/*ENGINE*/": engine,
         "/*WORKSPACE*/": (ASSETS / "workspace.js").read_text(encoding="utf-8"),
         "/*BENCHCORE*/": (ASSETS / "bench_core.js").read_text(encoding="utf-8"),
+        "/*RFQCORE*/": (ASSETS / "rfq_core.js").read_text(encoding="utf-8"),
         "/*BENCHMARK*/": (ASSETS / "benchmark.js").read_text(encoding="utf-8"),
         "/*CHARTS*/": (ASSETS / "charts.js").read_text(encoding="utf-8"),
         "/*FORECASTCORE*/": (ASSETS / "forecast_core.js").read_text(encoding="utf-8"),
