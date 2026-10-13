@@ -266,8 +266,11 @@ Four sub-tabs; each view keeps its state when you switch back to the Route Dashb
 - Logistics Providers: add, edit and delete (with a confirm click) in a form, table with search and
   filters by status, type and region. Duplicates (same name and email) are blocked. Every field is defined
   once in `PROVIDER_FIELDS` in `benchmark.js`: the form, table, search, filters, import and storage read
-  it, so a new field is one line. Export providers and Import providers move the list as JSON, RFQ
-  responses included. Three dummy providers (example.com addresses) are seeded on first use. The RFQ
+  it, so a new field is one line. Print report (PDF) writes a printable A4 report of the providers in the
+  current search and filters: cover, overview with status counts and the provider list, RFQ comparison
+  sorted by total cost B, then one page per provider with contact details, key figures for scenario A and
+  B, cost per lane, reliability and quality answers and certifications. Export data (JSON) and Import
+  providers move the list as JSON, RFQ responses included. Three dummy providers (example.com addresses) are seeded on first use. The RFQ
   workflow below runs on this tab.
 - Sales Data and Analysis: the default source is Master data > Sales history (192 demo orders). Add
   CSV or Excel exports from each merged entity; a mapping step matches columns (English and Dutch

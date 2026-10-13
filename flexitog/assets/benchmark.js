@@ -437,11 +437,12 @@ function renderProviders(){
       ${sel("bxFRegion", "Filter by region", "All regions", REGIONS.map(r => [r, r]), B.ui.region)}
       <span class="sp"></span>
       <button type="button" class="btn" data-a="add">Add logistics provider</button>
-      <button type="button" class="btn ghost" data-a="export">Export providers</button>
+      <button type="button" class="btn ghost" data-a="print">Print report (PDF)</button>
+      <button type="button" class="btn ghost" data-a="export">Export data (JSON)</button>
       <label class="btn ghost filebtn">Import providers<input type="file" id="bxImport" accept=".json,application/json" aria-label="Import providers from JSON"></label>
     </div>
     <div class="tablewrap mdgrid"><table><thead><tr>${cols.map(f => `<th>${esc(f.label)}</th>`).join("")}<th><span class="faint">Actions</span></th></tr></thead><tbody id="bxProvBody"></tbody></table></div>
-    <p class="faint bnote">Export providers writes a JSON file with every field and every RFQ response. Import adds new providers, updates providers with the same ID and skips duplicates (same name and email). Uploaded RFQ files stay in this browser.</p>
+    <p class="faint bnote">Print report writes a PDF of the providers in the current view: overview, RFQ comparison and one page per provider. Export data writes a JSON file with every field and every RFQ response, for Import. Import adds new providers, updates providers with the same ID and skips duplicates (same name and email). Uploaded RFQ files stay in this browser.</p>
   </div>
   <div id="bxCompare"></div>`;
   renderProvTable();
@@ -449,6 +450,7 @@ function renderProviders(){
   [["bxFStatus", "status"], ["bxFType", "type"], ["bxFRegion", "region"]].forEach(([id, k]) => $(id).addEventListener("change", e => { B.ui[k] = e.target.value; renderProvTable(); }));
   P.querySelector('[data-a="add"]').addEventListener("click", () => openProviderForm(null));
   P.querySelector('[data-a="export"]').addEventListener("click", exportProviders);
+  P.querySelector('[data-a="print"]').addEventListener("click", printProviders);
   P.querySelector('[data-a="rfq-dl"]').addEventListener("click", () => { const t = tmpl(); if (t) saveFile(t.name || "Transport_Volume_Scenario_RFQ_FlexiTog.xlsx", xlsxBlob(t.bytes)); });
   $("bxRfqTpl").addEventListener("change", e => { const f = e.target.files[0]; e.target.value = ""; if (f) replaceTemplate(f); });
   const rs = P.querySelector('[data-a="rfq-reset"]');
@@ -701,8 +703,77 @@ function renderCompare(){
 }
 
 // ---- export and import (format version 2: every field and every response)
+// Printable provider report (PDF through buildPdf): cover, overview, RFQ comparison, one page per provider.
+// It follows the current search and filters, so a filtered table prints as a shorter report.
+const money = (v, cur) => (typeof v === "number" ? `${cur || ""} ${fmt(v)}`.trim() : "n/a");
+const pctPlain = v => (typeof v === "number" ? (v * 100).toFixed(1) + "%" : "n/a");
+const dash = v => (isBlank(v) ? "-" : String(v));
+function providerReportModel(list){
+  const date = today(), dummies = list.filter(p => p.dummy).length;
+  const nameOf = p => p.name + (p.dummy && !/dummy/i.test(p.name) ? " (dummy)" : "");
+  const filters = [B.ui.q && `search "${B.ui.q}"`, B.ui.status !== "all" && `status ${statusLabel(B.ui.status)}`,
+    B.ui.type !== "all" && `type ${B.ui.type}`, B.ui.region !== "all" && `region ${B.ui.region}`].filter(Boolean);
+  const responded = list.filter(p => p.rfqResponses.length);
+  const byStatus = STATUSES.map(([k, l]) => [l, list.filter(p => p.status === k).length]).filter(x => x[1]);
+  const overview = [
+    {p: `${list.length} logistics provider${list.length === 1 ? "" : "s"}, ${responded.length} with an RFQ response.${dummies ? ` ${dummies} ${dummies === 1 ? "is" : "are"} sample data marked (dummy).` : ""}`},
+    {table: {head: ["Status", "Providers"], align: ["l", "r"], widths: [3, 1], body: byStatus}},
+    {h3: "Provider list"},
+    {table: {head: ["ID", "Provider", "Types", "Regions", "Contact", "Email", "Status", "RFQ sent", "Response"], align: ["l", "l", "l", "l", "l", "l", "l", "l", "l"],
+      widths: [1.3, 2.6, 2.2, 1.9, 1.7, 2.4, 1.6, 1.4, 1.4], small: true,
+      body: list.map(p => [p.id, nameOf(p), p.providerTypes.join(", "), p.regionsCovered.join(", "), dash(p.contactName), dash(p.contactEmail),
+        statusLabel(p.status), dash(p.dateRfqSent), dash(p.dateResponseReceived)])}}];
+  const sections = [{h: "Overview", blocks: overview}];
+  const metrics = responded.map(p => R.getComparableMetrics(p)).filter(Boolean).sort((a, b) => (a.costB ?? Infinity) - (b.costB ?? Infinity));
+  if (metrics.length) sections.push({h: "RFQ comparison", newPage: false, blocks: [
+    {p: "Latest response per provider, sorted by total cost B. Scenario A and B are the two volume scenarios in the RFQ. No weights or scores are applied."},
+    {table: {head: ["Provider", "Cost A", "Cost B", "Per kg B", "On target B", "Bands no rate", "R1 on-time", "Q1 damage/loss", "H2 parties", "Response"],
+      align: ["l", "r", "r", "r", "r", "r", "r", "r", "r", "l"], widths: [2.8, 1.6, 1.6, 1.1, 1.2, 0.9, 1.1, 1.1, 1, 1.4], small: true,
+      body: metrics.map(m => { const p = list.find(x => x.id === m.providerId);
+        return [nameOf(p), money(m.costA, m.currency), money(m.costB, m.currency), m.perKgB == null ? "n/a" : fmt(m.perKgB, 2), pctPlain(m.onTargetB),
+          m.bandsWithoutRate ?? "n/a", pctPlain(m.r1OnTime), pctPlain(m.q1Damage), m.h2Parties ?? "n/a", dash(m.responseDate)]; })}}]});
+  const profiles = [];
+  list.forEach((p, i) => {
+    if (i) profiles.push({newPage: true});
+    const r = p.rfqResponses.length ? p.rfqResponses[p.latestResponseIndex] : null;
+    profiles.push({h3: `${nameOf(p)} · ${p.id}`});
+    profiles.push({table: {head: ["Field", "Value"], align: ["l", "l"], widths: [1, 3], small: true, body: [
+      ["Status", statusLabel(p.status)], ["Website", dash(p.website)], ["Contact", dash(p.contactName)], ["Phone", dash(p.contactPhone)],
+      ["Email", dash(p.contactEmail)], ["Headquarters", dash(p.hqCountry && CNAME(p.hqCountry))], ["Types", dash(p.providerTypes.join(", "))],
+      ["Regions", dash(p.regionsCovered.join(", "))], ["Countries", dash((p.countriesCovered || []).map(c => CNAME(c)).join(", "))],
+      ["Services", dash(p.servicesOffered.join(", "))], ["RFQ sent", dash(p.dateRfqSent)], ["Response received", dash(p.dateResponseReceived)],
+      ["Test order sent", dash(p.dateTestOrderSent)], ["Notes", dash(p.notes)]].filter(x => x[1] !== "-")}});
+    if (!r) { profiles.push({p: "No RFQ response yet."}); return; }
+    const v = r.values || {}, s = r.summary || R.summarize(v), D = R.detail(v, r.labels || {}), m = R.getComparableMetrics(p) || {}, cur = s.currency || "EUR";
+    profiles.push({p: `RFQ response ${p.latestResponseIndex + 1} of ${p.rfqResponses.length}: ${r.fileName}, ${r.rfqVersion}, response date ${dash(s.responseDate || String(r.uploadedAt).slice(0, 10))}.` +
+      `${s.quoteReference ? ` Quote ${s.quoteReference}.` : ""}${s.quoteValidUntil ? ` Valid until ${s.quoteValidUntil}.` : ""}${r.uncached ? " Totals unavailable: the file was not saved in Excel." : ""}`});
+    profiles.push({table: {head: ["Key figure", "Scenario A", "Scenario B"], align: ["l", "r", "r"], widths: [2, 1, 1], small: true, body: [
+      ["Total cost", money(s.costA, cur), money(s.costB, cur)], ["Cost per kg", s.perKgA == null ? "n/a" : fmt(s.perKgA, 2), s.perKgB == null ? "n/a" : fmt(s.perKgB, 2)],
+      ["On target", pctPlain(s.onTargetA), pctPlain(s.onTargetB)]]}});
+    profiles.push({table: {head: ["Lane", "Country", `Cost A ${cur}`, `Cost B ${cur}`, "Per kg B", "Transit days"], align: ["l", "l", "r", "r", "r", "r"], widths: [0.8, 2, 1.3, 1.3, 1, 1], small: true,
+      body: D.laneCosts.map(c => [c.lane, c.country, typeof c.A === "number" ? fmt(c.A) : "n/a", typeof c.B === "number" ? fmt(c.B) : "n/a",
+        typeof c.perKgB === "number" ? fmt(c.perKgB, 2) : "n/a", typeof c.transit === "number" ? fmt(c.transit, 1) : "n/a"])}});
+    const certs = D.certs.filter(c => !isBlank(c.value) && c.value !== "No").map(c => c.label + (c.value !== "Yes" ? ": " + c.value : ""));
+    profiles.push({table: {head: ["Reliability and quality", "Answer"], align: ["l", "r"], widths: [3, 1], small: true, body: [
+      ["On-time delivery rate, last 12 months (R1)", pctPlain(m.r1OnTime)], ["Damage and loss rate, last 12 months (Q1)", pctPlain(m.q1Damage)],
+      ["Parties handling a shipment, Helmond to door (H2)", dash(m.h2Parties)], ["Questions answered", `${s.kpiAnswered} of ${s.kpiTotal}`],
+      ["Answers with evidence", dash(s.kpiWithEvidence)], ["Weight bands without a rate", dash(s.bandsWithoutRate)]]}});
+    profiles.push({p: `Certifications: ${certs.length ? certs.join(", ") : "none stated"}.`});
+  });
+  sections.push({h: "Provider profiles", newPage: true, blocks: profiles});
+  return {title: "Logistics providers report", provider: "", confidential: "Internal. Holds provider contact details and quotes. Share only with the FlexiTog team.",
+    cover: [["Date", longDate(date)], ["Providers", String(list.length)], ["RFQ responses", String(responded.length)], ["Selection", filters.length ? filters.join(", ") : "all providers"]],
+    footer: `FlexiTog EU · Logistics providers report · ${date}`, sections};
+}
+async function printProviders(){
+  const list = provFiltered();
+  if (!list.length) { toast("No providers in the current view to print", "bad"); return; }
+  if (!(window.jspdf && window.jspdf.jsPDF)) { toast("PDF export is not available in this copy", "bad"); return; }
+  try { await saveFile(`FlexiTog_logistics_providers_report_${today()}.pdf`, new Blob([await buildPdf(providerReportModel(list))], {type: "application/pdf"})); }
+  catch (e) { console.error(e); toast("Building the report failed: " + (e && e.message ? e.message : e), "bad"); }
+}
 function exportProviders(){
-  const out = {format: "flexitog-benchmark-providers", version: 2, exported: nowIso(), fields: PROVIDER_FIELDS.map(f => f.key).concat(["id", "rfqResponses", "latestResponseIndex"]), providers: B.providers};
+  const out ={format: "flexitog-benchmark-providers", version: 2, exported: nowIso(), fields: PROVIDER_FIELDS.map(f => f.key).concat(["id", "rfqResponses", "latestResponseIndex"]), providers: B.providers};
   saveFile(`FlexiTog_logistics_providers_${today()}.json`, JSON.stringify(out, null, 2));
 }
 async function importProviders(file){
@@ -1199,12 +1270,14 @@ async function buildPdf(m){
   const need = h => { if (y + h > H - 18) { doc.addPage(); y = 20; } };
   const text = (s, size, bold, color, indent) => { doc.setFont("helvetica", bold ? "bold" : "normal"); doc.setFontSize(size); doc.setTextColor(...(color || INK)); doc.splitTextToSize(T(s), Wd - (indent || 0)).forEach(l => { need(size * 0.45); doc.text(l, L + (indent || 0), y); y += size * 0.46; }); };
   m.sections.forEach((sec, si) => {
-    if (si === 3) { doc.addPage(); y = 20; }
-    need(20); y += si && si !== 3 ? 4 : 0;
+    const brk = sec.newPage ?? si === 3;
+    if (brk) { doc.addPage(); y = 20; }
+    need(20); y += si && !brk ? 4 : 0;
     doc.setFont("helvetica", "bold"); doc.setFontSize(15); doc.setTextColor(...INK); doc.text(T(sec.h), L, y);
     doc.setDrawColor(...INK); doc.setLineWidth(0.6); doc.line(L, y + 2, L + Wd, y + 2); y += 9;
     sec.blocks.forEach(b => {
-      if (b.p) { text(b.p, 10); y += 2.5; }
+      if (b.newPage) { if (y > 30) { doc.addPage(); y = 20; } }
+      else if (b.p) { text(b.p, 10); y += 2.5; }
       else if (b.h3) { y += 2; need(12); text(b.h3, 11.5, true); y += 1.5; }
       else if (b.list) { b.list.forEach((s, i) => { doc.setFont("helvetica", "normal"); doc.setFontSize(10); doc.setTextColor(...INK); const ls = doc.splitTextToSize(T(s), Wd - 8); need(5 * ls.length); doc.text(`${i + 1}.`, L + 1, y); ls.forEach(l => { doc.text(l, L + 7, y); y += 4.6; }); y += 1.2; }); y += 2; }
       else if (b.img) { const h = Wd * b.img.h / b.img.w; need(h + 8); doc.addImage(b.img.url, "PNG", L, y, Wd, h); y += h + 2; if (b.caption) { text(b.caption, 8.5, false, MUT); } y += 4; }
@@ -1248,7 +1321,7 @@ async function buildDocx(m){
     new D.Paragraph({spacing: {before: 1600}, children: [run(m.confidential, {size: 16, color: "56636F"})]})];
   const body = [];
   m.sections.forEach((sec, si) => {
-    body.push(new D.Paragraph({heading: D.HeadingLevel.HEADING_1, pageBreakBefore: si === 3, spacing: {before: si ? 320 : 0, after: 140}, keepNext: true,
+    body.push(new D.Paragraph({heading: D.HeadingLevel.HEADING_1, pageBreakBefore: sec.newPage ?? si === 3,spacing: {before: si ? 320 : 0, after: 140}, keepNext: true,
       border: {bottom: {style: D.BorderStyle.SINGLE, size: 10, color: "14212C", space: 2}}, children: [run(sec.h, {size: 30, bold: true})]}));
     sec.blocks.forEach(b => {
       if (b.p) body.push(para(b.p));
