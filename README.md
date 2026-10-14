@@ -227,6 +227,10 @@ Extract, Master Data Upload, Users (admin only) and Parameters, plus shortcuts t
   the sheet and header row, matches columns to fields (same aliases as the Python importer), converts
   countries to ISO codes, reads 1.234,50 and 13-09-2025, and shows a check and preview before rows go in.
   Modes: update matching and add new, add all, replace. Save changes reruns the map, scorecard and report.
+  Select rows with the checkbox column (Shift + click selects a range, the header box selects the page,
+  Select all takes every row that matches the search and filter). The selection bar then deletes the
+  selected rows (with a confirm click), exports only them as CSV or Excel, or sets one column to the same
+  value on all of them. Delete and Set change the draft: Save changes keeps them, Discard undoes them.
   Sales history rebuilds the batch in the browser (one order per historical order, same rules as
   `batch.history_batch`). Header buttons give the whole master data as one Excel workbook and an
   Excel workbook of upload templates.

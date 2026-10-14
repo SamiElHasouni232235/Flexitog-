@@ -334,7 +334,8 @@ const MD_HINT = {
   order_lines: "SKU lines of the test orders.",
   custom: "Any other dataset: rate cards, quotes, shipment logs. Stored with the dashboard and listed in the report.",
 };
-const MDUI = {tab: "products", draft: {}, page: 0, filter: "", typeFilter: "all", upload: null};
+const MDUI = {tab: "products", draft: {}, page: 0, filter: "", typeFilter: "all", upload: null,
+  sel: {key: null, set: new Set(), len: 0, anchor: null, bulkField: ""}};
 const PAGE = 50;
 const rowsOf = key => MDUI.draft[key] || MD.t[key];
 const isDirty = key => !!MDUI.draft[key];
@@ -344,13 +345,26 @@ function fieldsOf(key){
   const extra = new Set(); rowsOf(key).forEach(r => Object.keys(r).forEach(k => { if (!base.includes(k) && k !== "data_source" && !k.startsWith("_")) extra.add(k); }));
   return {base, extra: [...extra]};
 }
+// Row selection in the master data tables. Indexes into rowsOf(key); kept across pages and searches, cleared when
+// the table changes shape (upload, reset, discard, another tab). Add row and single delete shift it instead.
+function selOf(key){
+  const S = MDUI.sel, n = rowsOf(key).length;
+  if (S.key !== key || S.len !== n) { S.key = key; S.set = new Set(); S.len = n; S.anchor = null; }
+  return S;
+}
+function clearSel(){ MDUI.sel.key = null; }
+function shiftSel(key, fn){
+  const S = selOf(key), next = new Set();
+  S.set.forEach(i => { const j = fn(i); if (j != null) next.add(j); });
+  S.set = next; S.anchor = null;
+}
 function renderMD(){
   const tabs = MD_TABS.map(([k, l]) => {
     const n = k === "custom" ? MD.custom.length : rowsOf(k).length;
     return `<button type="button" role="tab" data-tab="${k}" aria-selected="${MDUI.tab === k}">${esc(l)} <span class="cnt">${n}</span>${isDirty(k) ? '<span class="dot" title="Unsaved changes"></span>' : ""}${MD.saved[k] ? '<span class="sv" title="Changed from built-in data">●</span>' : ""}</button>`;
   }).join("");
   $("mdTabs").innerHTML = tabs;
-  $("mdTabs").querySelectorAll("button").forEach(b => b.addEventListener("click", () => { MDUI.tab = b.dataset.tab; MDUI.page = 0; MDUI.filter = ""; MDUI.upload = null; renderMD(); }));
+  $("mdTabs").querySelectorAll("button").forEach(b => b.addEventListener("click", () => { MDUI.tab = b.dataset.tab; MDUI.page = 0; MDUI.filter = ""; MDUI.upload = null; clearSel(); renderMD(); }));
   if (MDUI.tab === "custom") renderCustom(); else renderTable(MDUI.tab);
   renderStoreStatus();
 }
@@ -377,7 +391,7 @@ function renderTable(key){
   const issues = validate(key, rows);
   const issueRows = new Set(issues.map(x => x.row));
   const typeSeg = key === "distribution_centers" ? `<div class="seg" role="group" aria-label="Provider type">${[["all", "All"], ["distributor", "Distributors"], ["3pl", "3PLs"], ["owned_warehouse", "Owned warehouses"], ["helmond_hub", "Helmond"]].map(([v, l]) => `<button type="button" data-tf="${v}" aria-pressed="${MDUI.typeFilter === v}">${l}</button>`).join("")}</div>` : "";
-  const saved = MD.saved[key];
+  const saved = MD.saved[key], S = selOf(key);
   $("mdPanel").innerHTML = `
     <div class="mdhead"><div><h2>${esc(MD_TABS.find(t => t[0] === key)[1])}</h2><p class="muted">${esc(MD_HINT[key])}</p></div>
       <div class="mdmeta faint">${rows.length} row(s) · ${saved ? `saved ${esc(new Date(saved.updated).toLocaleString("en-GB"))}` : "built-in data"}${issues.length ? ` · <span class="warnc">${new Set(issues.map(x => x.row)).size} row(s) need attention</span>` : ""}</div></div>
@@ -393,10 +407,11 @@ function renderTable(key){
       ${isDirty(key) ? '<button type="button" class="btn ghost" data-a="discard">Discard</button>' : ""}
       <button type="button" class="btn" data-a="save" ${isDirty(key) ? "" : "disabled"}>Save changes</button>
     </div>
+    <div id="mdSelBar" class="mdselbar" role="region" aria-label="Selected rows" aria-live="polite" hidden></div>
     <div id="mdUpload"></div>
     ${issues.length ? `<details class="mdissues"><summary>${issues.length} issue(s) to fix</summary><ul>${issues.slice(0, 40).map(x => `<li>Row ${x.row + 1} · <b>${esc(x.field)}</b>: ${esc(x.issue)}</li>`).join("")}${issues.length > 40 ? `<li>… and ${issues.length - 40} more</li>` : ""}</ul></details>` : ""}
-    <div class="tablewrap mdgrid"><table><thead><tr><th class="rn">#</th>${fields.map(f => `<th title="${esc((f.description || "") + (f.required ? " (required)" : ""))}">${esc(f.name)}${f.required ? ' <span class="req">*</span>' : ""}</th>`).join("")}<th>Source</th><th></th></tr></thead>
-    <tbody>${shown.map(i => `<tr class="${issueRows.has(i) ? "hasissue" : ""}"><td class="rn">${i + 1}</td>${fields.map(f => `<td>${inputCell(f, rows[i][f.name], i)}</td>`).join("")}<td>${srcBadge(rows[i].data_source)}</td><td><button type="button" class="del" data-del="${i}" aria-label="Delete row ${i + 1}" title="Delete row">×</button></td></tr>`).join("") || `<tr><td colspan="${fields.length + 3}" class="empty">No rows${q ? " match the search" : ". Add a row or upload a file"}.</td></tr>`}</tbody></table></div>
+    <div class="tablewrap mdgrid"><table><thead><tr><th class="ck"><input type="checkbox" id="mdSelPage" aria-label="Select every row on this page" title="Select every row on this page"></th><th class="rn">#</th>${fields.map(f => `<th title="${esc((f.description || "") + (f.required ? " (required)" : ""))}">${esc(f.name)}${f.required ? ' <span class="req">*</span>' : ""}</th>`).join("")}<th>Source</th><th></th></tr></thead>
+    <tbody>${shown.map(i => `<tr class="${issueRows.has(i) ? "hasissue" : ""}${S.set.has(i) ? " sel" : ""}"><td class="ck"><input type="checkbox" data-sel="${i}" aria-label="Select row ${i + 1}"${S.set.has(i) ? " checked" : ""}></td><td class="rn">${i + 1}</td>${fields.map(f => `<td>${inputCell(f, rows[i][f.name], i)}</td>`).join("")}<td>${srcBadge(rows[i].data_source)}</td><td><button type="button" class="del" data-del="${i}" aria-label="Delete row ${i + 1}" title="Delete row">×</button></td></tr>`).join("") || `<tr><td colspan="${fields.length + 4}" class="empty">No rows${q ? " match the search" : ". Add a row or upload a file"}.</td></tr>`}</tbody></table></div>
     <div class="pager">${pages > 1 ? `<button type="button" class="btn ghost" data-pg="-1" ${MDUI.page ? "" : "disabled"}>Previous</button><span class="num">Page ${MDUI.page + 1} of ${pages} · ${idx.length} row(s)</span><button type="button" class="btn ghost" data-pg="1" ${MDUI.page < pages - 1 ? "" : "disabled"}>Next</button>` : `<span class="faint">${idx.length} row(s) shown</span>`}</div>`;
   const P = $("mdPanel");
   $("mdSearch").addEventListener("input", e => { MDUI.filter = e.target.value; MDUI.page = 0; const pos = e.target.selectionStart; renderTable(key); const s = $("mdSearch"); s.focus(); s.setSelectionRange(pos, pos); });
@@ -409,11 +424,13 @@ function renderTable(key){
     r[f.name] = v; enrich(key, r); r.data_source = "manual";
     renderMD();
   }));
-  P.querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", () => { draftOf(key).splice(+b.dataset.del, 1); renderMD(); }));
+  P.querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", () => {
+    const d = +b.dataset.del; shiftSel(key, i => (i === d ? null : i > d ? i - 1 : i)); draftOf(key).splice(d, 1); MDUI.sel.len = rowsOf(key).length; renderMD();
+  }));
   P.querySelector('[data-a="add"]').addEventListener("click", () => {
     const r = {}; sc.fields.forEach(f => { r[f.name] = null; });
     if (key === "distribution_centers" && MDUI.typeFilter !== "all") r.dc_type = MDUI.typeFilter;
-    r.data_source = "manual"; draftOf(key).unshift(r); MDUI.page = 0; MDUI.filter = ""; renderMD();
+    shiftSel(key, i => i + 1); r.data_source = "manual"; draftOf(key).unshift(r); MDUI.sel.len = rowsOf(key).length; MDUI.page = 0; MDUI.filter = ""; renderMD();
     const first = $("mdPanel").querySelector("tbody [data-f]"); if (first) first.focus();
   });
   P.querySelector('[data-a="upload"]').addEventListener("click", () => { MDUI.upload = {key, step: "pick"}; renderUpload(); });
@@ -424,17 +441,93 @@ function renderTable(key){
   P.querySelector('[data-a="export"]').addEventListener("click", () => { const {base, extra} = fieldsOf(key); saveFile(`${key}.csv`, "﻿" + toCsv(base.concat(extra, ["data_source"]), rowsOf(key))); });
   P.querySelector('[data-a="reset"]').addEventListener("click", async () => {
     if (!confirmInline(P.querySelector('[data-a="reset"]'), "Click again to reset this table to the built-in data")) return;
-    delete MDUI.draft[key]; MD.t[key] = clone(MD_BUILTIN[key]);
+    delete MDUI.draft[key]; MD.t[key] = clone(MD_BUILTIN[key]); clearSel();
     try { await unpersist(key); toast("Reset to built-in data"); } catch (e) { toast(storeErrorText(e), "bad"); }
     masterDataChanged([key]);
   });
-  const disc = P.querySelector('[data-a="discard"]'); if (disc) disc.addEventListener("click", () => { delete MDUI.draft[key]; renderMD(); });
+  const disc = P.querySelector('[data-a="discard"]'); if (disc) disc.addEventListener("click", () => { delete MDUI.draft[key]; clearSel(); renderMD(); });
   P.querySelector('[data-a="save"]').addEventListener("click", () => saveTable(key));
+  wireSelection(key, fields, idx, shown);
   if (MDUI.upload && MDUI.upload.key === key) renderUpload();
 }
-function confirmInline(btn, text){
+
+// Selection: row checkboxes (Shift+click selects a range), page checkbox, and the bar with the bulk actions.
+// Updates in place so the table keeps its scroll position while you tick rows.
+function wireSelection(key, fields, idx, shown){
+  const P = $("mdPanel"), S = selOf(key), sc = SCHEMA[key];
+  const pageBox = $("mdSelPage");
+  const sync = () => {
+    P.querySelectorAll("tbody [data-sel]").forEach(c => { const on = S.set.has(+c.dataset.sel); c.checked = on; c.closest("tr").classList.toggle("sel", on); });
+    const onPage = shown.filter(i => S.set.has(i)).length;
+    pageBox.checked = shown.length > 0 && onPage === shown.length; pageBox.indeterminate = onPage > 0 && onPage < shown.length; pageBox.disabled = !shown.length;
+    renderSelBar(key, fields, idx);
+  };
+  P.querySelector("tbody").addEventListener("click", e => {
+    const c = e.target.closest("[data-sel]"); if (!c) return;
+    const i = +c.dataset.sel;
+    if (e.shiftKey && S.anchor != null && idx.includes(S.anchor)) {
+      const a = idx.indexOf(S.anchor), b = idx.indexOf(i), on = c.checked;
+      idx.slice(Math.min(a, b), Math.max(a, b) + 1).forEach(j => (on ? S.set.add(j) : S.set.delete(j)));
+    } else if (c.checked) S.set.add(i); else S.set.delete(i);
+    S.anchor = i; sync();
+  });
+  pageBox.addEventListener("change", () => { shown.forEach(i => (pageBox.checked ? S.set.add(i) : S.set.delete(i))); sync(); });
+  sync();
+}
+function bulkInput(f){
+  const a = 'id="mdBulkVal" aria-label="New value"';
+  if (!f) return `<input type="text" ${a} disabled>`;
+  if (f.allowed) return `<select ${a}><option value="">(empty)</option>${f.allowed.map(o => `<option>${esc(o)}</option>`).join("")}</select>`;
+  if (f.dtype === "bool") return `<select ${a}><option value="true">true</option><option value="false">false</option><option value="">(empty)</option></select>`;
+  if (f.dtype === "float" || f.dtype === "int") return `<input type="number" step="any" ${a} placeholder="empty clears">`;
+  if (f.dtype === "date") return `<input type="date" ${a}>`;
+  return `<input type="text" ${a} placeholder="empty clears">`;
+}
+function renderSelBar(key, fields, idx){
+  const bar = $("mdSelBar"), S = selOf(key), n = S.set.size; if (!bar) return;
+  bar.hidden = !n; if (!n) { bar.innerHTML = ""; return; }
+  const inView = idx.filter(i => S.set.has(i)).length, hidden = n - inView;
+  const editable = fields.filter(f => SCHEMA[key].fields.some(x => x.name === f.name));
+  if (!editable.some(f => f.name === S.bulkField)) S.bulkField = "";
+  const bf = editable.find(f => f.name === S.bulkField);
+  bar.innerHTML = `<div class="selinfo"><b class="num">${n}</b> row${n === 1 ? "" : "s"} selected${hidden ? ` <span class="faint">(${hidden} outside the current search)</span>` : ""}
+      ${inView < idx.length ? `<button type="button" class="btn ghost sm" data-s="all">Select all ${idx.length}${idx.length < rowsOf(key).length ? " matching" : ""}</button>` : ""}
+      <button type="button" class="btn ghost sm" data-s="none">Clear selection</button></div>
+    <div class="selacts">
+      <span class="bulkset"><label for="mdBulkField">Set</label><select id="mdBulkField" aria-label="Column to set"><option value="">column…</option>${editable.map(f => `<option value="${esc(f.name)}"${f.name === S.bulkField ? " selected" : ""}>${esc(f.name)}</option>`).join("")}</select>
+        <span>to</span>${bulkInput(bf)}<button type="button" class="btn ghost sm" data-s="set"${bf ? "" : " disabled"}>Apply</button></span>
+      <button type="button" class="btn ghost sm" data-s="csv">Export CSV</button>
+      <button type="button" class="btn ghost sm" data-s="xlsx">Export Excel</button>
+      <button type="button" class="btn ghost sm danger" data-s="del">Delete ${n}</button></div>`;
+  const picked = () => [...S.set].sort((a, b) => a - b).map(i => rowsOf(key)[i]).filter(Boolean);
+  const cols = () => { const {base, extra} = fieldsOf(key); return base.concat(extra, ["data_source"]); };
+  bar.querySelector('[data-s="none"]').addEventListener("click", () => { S.set.clear(); S.anchor = null; renderTable(key); });
+  const all = bar.querySelector('[data-s="all"]'); if (all) all.addEventListener("click", () => { idx.forEach(i => S.set.add(i)); renderTable(key); });
+  $("mdBulkField").addEventListener("change", e => { S.bulkField = e.target.value; renderSelBar(key, fields, idx); const v = $("mdBulkVal"); if (v && !v.disabled) v.focus(); });
+  bar.querySelector('[data-s="set"]').addEventListener("click", () => {
+    const f = SCHEMA[key].fields.find(x => x.name === S.bulkField); if (!f) return;
+    const raw = $("mdBulkVal").value, d = draftOf(key);
+    const v = f.dtype === "float" || f.dtype === "int" ? (raw === "" ? null : Number(raw)) : f.dtype === "bool" ? (raw === "" ? null : raw === "true") : coerce(f, raw);
+    S.set.forEach(i => { const r = d[i]; if (r) { r[f.name] = v; enrich(key, r); r.data_source = "manual"; } });
+    toast(`${f.name} set on ${n} row${n === 1 ? "" : "s"}. Save changes to keep it.`); renderMD();
+  });
+  bar.querySelector('[data-s="csv"]').addEventListener("click", () => saveFile(`${key}_selected_${n}.csv`, "\ufeff" + toCsv(cols(), picked())));
+  bar.querySelector('[data-s="xlsx"]').addEventListener("click", () => {
+    const c = cols(), wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([c].concat(picked().map(r => c.map(k => (r[k] == null ? "" : r[k]))))), key.slice(0, 31));
+    saveFile(`${key}_selected_${n}.xlsx`, new Blob([wbBytes(wb)], {type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}));
+  });
+  const del = bar.querySelector('[data-s="del"]');
+  del.addEventListener("click", () => {
+    if (!confirmInline(del, `Click again to delete ${n} row${n === 1 ? "" : "s"}. Discard undoes it until you save.`, `Confirm delete ${n}`)) return;
+    const d = draftOf(key); [...S.set].sort((a, b) => b - a).forEach(i => d.splice(i, 1));
+    S.set.clear(); S.len = d.length; S.anchor = null;
+    toast(`${n} row${n === 1 ? "" : "s"} deleted. Save changes to keep it, Discard to undo.`); renderMD();
+  });
+}
+function confirmInline(btn, text, label){
   if (btn.dataset.armed === "1") return true;
-  btn.dataset.armed = "1"; const old = btn.textContent; btn.textContent = "Confirm reset"; btn.title = text; toast(text);
+  btn.dataset.armed = "1"; const old = btn.textContent; btn.textContent = label || "Confirm reset"; btn.title = text; toast(text);
   setTimeout(() => { btn.dataset.armed = ""; btn.textContent = old; }, 4000);
   return false;
 }
@@ -501,7 +594,7 @@ function renderUpload(){
     el.querySelectorAll("[data-map]").forEach(s => s.addEventListener("change", () => { U.map[s.dataset.map] = s.value; renderUpload(); }));
     el.querySelector('[data-u="apply"]').addEventListener("click", () => {
       MDUI.draft[key] = mergeRows(key, rowsOf(key), res.rows, U.mode);
-      MDUI.upload = null; MDUI.page = 0; renderMD();
+      MDUI.upload = null; MDUI.page = 0; clearSel(); renderMD();
       toast(`${res.rows.length} row(s) added. Check them, then press Save changes.`);
     });
   }

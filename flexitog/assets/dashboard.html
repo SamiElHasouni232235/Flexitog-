@@ -303,6 +303,18 @@ body[data-view="md"] .top>.controls,body[data-view="report"] .top>.controls{disp
 .mdgrid td .bad{border-color:var(--st-critical);background:color-mix(in srgb,var(--st-critical) 8%,transparent)}
 .mdgrid .rn{color:var(--faint);font:11px var(--mono);text-align:right;width:1%}
 .mdgrid tr.hasissue td.rn{color:var(--st-critical);font-weight:600}
+.mdgrid .ck{width:1%;text-align:center;padding:3px 6px}
+.mdgrid .ck input{width:15px;height:15px;margin:0;accent-color:var(--accent);cursor:pointer;vertical-align:middle}
+.mdgrid tr.sel td{background:var(--accent-soft)}
+.mdselbar{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between;border:1px solid var(--accent);border-radius:8px;background:var(--accent-soft);padding:8px 10px;font-size:13px;position:sticky;top:0;z-index:3}
+.mdselbar .selinfo,.mdselbar .selacts,.mdselbar .bulkset{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.mdselbar .selacts{gap:6px 8px}
+.mdselbar .bulkset{padding-right:8px;margin-right:2px;border-right:1px solid color-mix(in srgb,var(--accent) 35%,transparent)}
+.mdselbar .bulkset label,.mdselbar .bulkset>span{color:var(--muted);font-size:12.5px}
+.mdselbar select,.mdselbar input{background:var(--surface);border:1px solid var(--rule);border-radius:5px;padding:4px 6px;font:12.5px var(--body);max-width:180px}
+.mdselbar .btn.sm{display:inline-flex}
+.mdselbar .btn.danger{color:var(--st-critical);border-color:var(--st-critical)}
+@media (max-width:760px){.mdselbar .bulkset{border-right:0;padding-right:0}}
 .req{color:var(--st-critical)}
 .srcb{font:500 10px/1 var(--mono);padding:3px 6px;border-radius:999px;white-space:nowrap}
 .srcb.ph{background:var(--band);box-shadow:inset 0 0 0 1px var(--band-edge)}
