@@ -130,6 +130,8 @@ def test_logo_file_is_embedded(tmp_path, monkeypatch):
     import flexitog.dashboard as D
     monkeypatch.setattr(D, "LOGO_DIR", tmp_path)
     assert D.logo_data_uri() is None
-    (tmp_path / "refrigiwear_logo.svg").write_text('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 100"/>')
-    uri = D.logo_data_uri()
-    assert uri.startswith("data:image/svg+xml;base64,")
+    (tmp_path / "refrigiwear_logo.png").write_bytes(b"\x89PNG")
+    assert D.logo_data_uri().startswith("data:image/png;base64,")
+    (tmp_path / "logo.svg").write_text('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 100"/>')
+    assert D.logo_data_uri().startswith("data:image/svg+xml;base64,")   # logo.* wins
+    assert (ASSETS / "brand" / "logo.jpg").is_file()

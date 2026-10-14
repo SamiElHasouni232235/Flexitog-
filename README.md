@@ -186,8 +186,8 @@ closing the tab logs you out. Every page shows the user and a Log out button top
 top left. The address bar hash follows the view (`#dash`, `#forecast`, `#bench`, `#report`, `#md`,
 `#users`), so a refresh stays on the same page.
 
-After login the home page shows the RefrigiWear logo (300 px, a placeholder box until the file is in
-`flexitog/assets/brand/`, see the README there) and one button per view in this order: Route Dashboard,
+After login the home page shows the logo from `flexitog/assets/brand/` (300 px wide, see the README
+there) and one button per view in this order: Route Dashboard,
 Forecast, Benchmarking, Report Extract, Master Data Upload, then Users for the admin. Five or six per row
 on desktop, three on a tablet, two on a phone.
 

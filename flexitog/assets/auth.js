@@ -19,12 +19,12 @@
   };
   const svg = (p, size) => `<svg viewBox="0 0 24 24" width="${size || 20}" height="${size || 20}" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
 
-  // ---- logo: the build embeds flexitog/assets/brand/refrigiwear_logo.* as window.FLEXI_LOGO; until then a sized box
+  // ---- logo: the build embeds flexitog/assets/brand/logo.* as window.FLEXI_LOGO; without a file, a sized box
   function paintLogos() {
     document.querySelectorAll("[data-logo]").forEach(slot => {
       const big = slot.dataset.logo === "big";
-      slot.innerHTML = window.FLEXI_LOGO ? `<img src="${h(window.FLEXI_LOGO)}" alt="RefrigiWear">`
-        : big ? `<span class="logo-ph" role="img" aria-label="RefrigiWear logo">${svg(ICON.image, 28)}<span>RefrigiWear logo</span></span>` : "";
+      slot.innerHTML = window.FLEXI_LOGO ? `<img src="${h(window.FLEXI_LOGO)}" alt="FlexiTog">`
+        : big ? `<span class="logo-ph" role="img" aria-label="Logo">${svg(ICON.image, 28)}<span>Logo</span></span>` : "";
       slot.classList.toggle("has-img", !!window.FLEXI_LOGO);
     });
   }

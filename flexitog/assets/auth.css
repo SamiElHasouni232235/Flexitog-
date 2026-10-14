@@ -7,7 +7,7 @@
 .authcard{width:min(400px,100%);background:var(--surface);border:1px solid var(--rule);border-radius:12px;padding:28px 26px 26px;display:flex;flex-direction:column;gap:14px;box-shadow:0 18px 48px rgba(10,16,22,.10)}
 .authcard h1{font-size:26px;margin-top:-6px}
 .authlogo:empty{display:none}
-.authlogo img{display:block;width:180px;max-width:100%;height:auto;margin:0 auto 6px}
+.authlogo img{display:block;width:180px;max-width:100%;height:auto;margin:0 auto 6px;border-radius:6px}
 .afld{display:flex;flex-direction:column;gap:5px}
 .afld label{font:500 11px var(--mono);color:var(--muted);letter-spacing:.04em;text-transform:uppercase}
 .afld input{width:100%;background:var(--surface);border:1px solid var(--rule);border-radius:7px;padding:10px 12px;font:15px var(--body);color:var(--ink)}
@@ -27,7 +27,7 @@
 .homelogo-sm{display:none}
 .homelogo-sm.has-img{display:inline-block}
 .homelogo-sm.has-img + svg{display:none}
-.homelogo-sm img{display:block;height:26px;width:auto}
+.homelogo-sm img{display:block;height:26px;width:auto;border-radius:3px}
 .who{display:flex;align-items:center;gap:10px;margin-left:auto}
 /* .sm is also the small-multiples grid on the dashboard: keep small buttons inline here */
 .who .btn.sm,.ausers .btn.sm,.adlg .btn.sm{display:inline-flex}
@@ -38,7 +38,7 @@ body[data-view="home"] .top,body[data-view="users"] .top>.controls,body[data-vie
 /* home page */
 .home{align-items:center;padding:26px 0 40px;gap:14px}
 .homelogo{display:block;width:300px;max-width:min(300px,78vw);text-decoration:none;color:inherit;border-radius:8px}
-.homelogo img{display:block;width:100%;height:auto}
+.homelogo img{display:block;width:100%;height:auto;border-radius:8px}
 .logo-ph{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;width:100%;aspect-ratio:300/110;border:2px dashed var(--rule);border-radius:8px;color:var(--faint);font:500 11px var(--mono);letter-spacing:.06em;text-transform:uppercase;background:var(--surface)}
 .hometitle{font:600 15px var(--display);color:var(--muted);letter-spacing:.02em;margin-bottom:12px;text-align:center}
 .homegrid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px;width:100%;max-width:1180px}

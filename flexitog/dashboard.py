@@ -32,17 +32,19 @@ from .schema import COUNTRY_ALIASES, COUNTRY_NAMES, COUNTRY_REGION, DC_TYPE_LABE
 
 ASSETS = Path(__file__).parent / "assets"
 RFQ_TEMPLATE = ASSETS / "rfq" / "Transport_Volume_Scenario_RFQ_FlexiTog.xlsx"
-# Home page and login logo. Drop the file here under one of these names and rebuild; without it the page
-# shows a 300 px placeholder box.
+# Home page and login logo: flexitog/assets/brand/logo.<ext> (refrigiwear_logo.<ext> also works). Drop the file
+# there and rebuild; without it the page shows a 300 px placeholder box.
 LOGO_DIR = ASSETS / "brand"
+LOGO_NAMES = ("logo", "refrigiwear_logo")
 LOGO_TYPES = {".svg": "image/svg+xml", ".png": "image/png", ".webp": "image/webp", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}
 
 
 def logo_data_uri() -> str | None:
-    for ext, mime in LOGO_TYPES.items():
-        f = LOGO_DIR / f"refrigiwear_logo{ext}"
-        if f.is_file():
-            return f"data:{mime};base64," + base64.b64encode(f.read_bytes()).decode("ascii")
+    for name in LOGO_NAMES:
+        for ext, mime in LOGO_TYPES.items():
+            f = LOGO_DIR / f"{name}{ext}"
+            if f.is_file():
+                return f"data:{mime};base64," + base64.b64encode(f.read_bytes()).decode("ascii")
     return None
 
 
