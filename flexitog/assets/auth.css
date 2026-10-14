@@ -1,0 +1,75 @@
+/* Login layer (assets/auth.js). Uses the dashboard tokens. Nothing of the app shows until auth.js sets
+   data-auth="in" on <html>; the login card shows on data-auth="out". With no script both stay hidden. */
+:root:not([data-auth="in"]) .app{display:none!important}
+.authgate{display:none}
+:root[data-auth="out"] .authgate{display:grid}
+.authgate{min-height:100vh;min-height:100dvh;place-items:center;padding:24px 16px;background:var(--ground)}
+.authcard{width:min(400px,100%);background:var(--surface);border:1px solid var(--rule);border-radius:12px;padding:28px 26px 26px;display:flex;flex-direction:column;gap:14px;box-shadow:0 18px 48px rgba(10,16,22,.10)}
+.authcard h1{font-size:26px;margin-top:-6px}
+.authlogo:empty{display:none}
+.authlogo img{display:block;width:180px;max-width:100%;height:auto;margin:0 auto 6px}
+.afld{display:flex;flex-direction:column;gap:5px}
+.afld label{font:500 11px var(--mono);color:var(--muted);letter-spacing:.04em;text-transform:uppercase}
+.afld input{width:100%;background:var(--surface);border:1px solid var(--rule);border-radius:7px;padding:10px 12px;font:15px var(--body);color:var(--ink)}
+.afld input:focus{border-color:var(--accent);outline:0;box-shadow:0 0 0 3px var(--accent-soft)}
+.apw{position:relative}
+.apw input{padding-right:46px}
+.apw-eye{position:absolute;right:4px;top:50%;transform:translateY(-50%);width:38px;height:36px;border:0;border-radius:6px;background:transparent;color:var(--muted);display:grid;place-items:center}
+.apw-eye:hover{color:var(--ink);background:var(--surface-2)}
+.aerr{color:var(--st-critical);font-size:13px;line-height:1.4}
+.authcard .btn{justify-content:center;padding:10px 14px;font-size:15px;margin-top:2px}
+.authcard .btn:disabled{opacity:.6;cursor:progress}
+
+/* session bar: Home link left, user and Log out right, on every page */
+.sessbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:-8px}
+.homelink{display:inline-flex;align-items:center;gap:8px;color:var(--ink);text-decoration:none;font:600 13px var(--body);padding:4px 8px 4px 4px;border-radius:6px}
+.homelink:hover{background:var(--surface-2)}
+.homelogo-sm{display:none}
+.homelogo-sm.has-img{display:inline-block}
+.homelogo-sm.has-img + svg{display:none}
+.homelogo-sm img{display:block;height:26px;width:auto}
+.who{display:flex;align-items:center;gap:10px;margin-left:auto}
+/* .sm is also the small-multiples grid on the dashboard: keep small buttons inline here */
+.who .btn.sm,.ausers .btn.sm,.adlg .btn.sm{display:inline-flex}
+.whoname{display:flex;align-items:baseline;gap:8px;font-size:13px}
+.whoname .faint{font:500 10.5px var(--mono);text-transform:uppercase;letter-spacing:.06em}
+body[data-view="home"] .top,body[data-view="users"] .top>.controls,body[data-view="users"] #chips{display:none}
+
+/* home page */
+.home{align-items:center;padding:26px 0 40px;gap:14px}
+.homelogo{display:block;width:300px;max-width:min(300px,78vw);text-decoration:none;color:inherit;border-radius:8px}
+.homelogo img{display:block;width:100%;height:auto}
+.logo-ph{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;width:100%;aspect-ratio:300/110;border:2px dashed var(--rule);border-radius:8px;color:var(--faint);font:500 11px var(--mono);letter-spacing:.06em;text-transform:uppercase;background:var(--surface)}
+.hometitle{font:600 15px var(--display);color:var(--muted);letter-spacing:.02em;margin-bottom:12px;text-align:center}
+.homegrid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px;width:100%;max-width:1180px}
+.homegrid:has(> .hbtn:not([hidden]):nth-child(6)){grid-template-columns:repeat(6,minmax(0,1fr))}
+.hbtn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;min-height:164px;padding:22px 12px;background:var(--surface);border:1px solid var(--rule);border-radius:10px;color:var(--ink);text-decoration:none;text-align:center;font:600 15.5px/1.25 var(--display);transition:border-color .15s,box-shadow .15s,transform .15s}
+.hbtn svg{width:44px;height:44px;color:var(--accent);flex:none}
+.hbtn:hover{border-color:var(--accent);box-shadow:0 8px 22px rgba(10,16,22,.10)}
+.hbtn:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+@media (prefers-reduced-motion:no-preference){.hbtn:hover{transform:translateY(-2px)}}
+@media (max-width:980px){.homegrid,.homegrid:has(> .hbtn:not([hidden]):nth-child(6)){grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (max-width:560px){.homelogo{width:220px}.homegrid,.homegrid:has(> .hbtn:not([hidden]):nth-child(6)){grid-template-columns:repeat(2,minmax(0,1fr))}.hbtn{min-height:128px;font-size:14px}.hbtn svg{width:36px;height:36px}.home{padding-top:12px}}
+
+/* Users view */
+.ausers{display:flex;flex-direction:column;gap:14px}
+.autable td{vertical-align:middle;white-space:nowrap}
+.autable td:first-child{white-space:normal}
+.ust{font:500 10.5px/1 var(--mono);padding:4px 7px;border-radius:999px;white-space:nowrap}
+.ust.on{background:color-mix(in srgb,var(--ok, #0ca30c) 22%,transparent)}
+.ust.off{background:var(--surface-2);box-shadow:inset 0 0 0 1px var(--rule);color:var(--muted)}
+.augrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px 16px}
+.augrid .full{grid-column:1/-1}
+.aufoot{display:flex;justify-content:flex-end;align-items:center;gap:12px}
+.aufoot .ferr{margin-right:auto;color:var(--st-critical);font-size:13px}
+.btn.danger{color:var(--st-critical);border-color:var(--st-critical)}
+.btn.danger:not(.ghost){background:var(--st-critical);color:#fff}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.adlg-wrap{border:1px solid var(--rule);border-radius:10px;background:var(--surface);color:var(--ink);padding:0;width:min(460px,calc(100vw - 24px));box-shadow:0 18px 48px rgba(0,0,0,.28)}
+.adlg-wrap::backdrop{background:rgba(10,16,22,.45)}
+.adlg{display:flex;flex-direction:column;gap:12px;padding:18px}
+.adlg-body{display:flex;flex-direction:column;gap:10px;font-size:14px}
+.adlg-foot{display:flex;justify-content:flex-end;gap:8px}
+.pwshow{display:flex;gap:8px}
+.pwshow input{flex:1;min-width:0;font-size:17px;letter-spacing:.06em;padding:9px 11px;border:1px solid var(--rule);border-radius:7px;background:var(--surface-2);color:var(--ink)}
+@media (max-width:760px){.augrid{grid-template-columns:minmax(0,1fr)}.autable td{white-space:normal}}

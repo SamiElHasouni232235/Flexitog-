@@ -9,6 +9,7 @@ is inlined for Excel read and write, jsPDF with AutoTable and docx for the bench
 No server and no external requests: fonts fall back to the system fonts.
 The Forecast view (assets/forecast_core.js, forecast.js) reads the Odoo sales order lines from the payload.
 The RFQ workflow (assets/rfq_core.js) embeds the RFQ template as base64 and patches it with JSZip.
+A login layer (assets/auth_*.js, auth.js, auth.css) sits in front: nothing shows until a user logs in.
 """
 from __future__ import annotations
 
@@ -31,6 +32,18 @@ from .schema import COUNTRY_ALIASES, COUNTRY_NAMES, COUNTRY_REGION, DC_TYPE_LABE
 
 ASSETS = Path(__file__).parent / "assets"
 RFQ_TEMPLATE = ASSETS / "rfq" / "Transport_Volume_Scenario_RFQ_FlexiTog.xlsx"
+# Home page and login logo. Drop the file here under one of these names and rebuild; without it the page
+# shows a 300 px placeholder box.
+LOGO_DIR = ASSETS / "brand"
+LOGO_TYPES = {".svg": "image/svg+xml", ".png": "image/png", ".webp": "image/webp", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}
+
+
+def logo_data_uri() -> str | None:
+    for ext, mime in LOGO_TYPES.items():
+        f = LOGO_DIR / f"refrigiwear_logo{ext}"
+        if f.is_file():
+            return f"data:{mime};base64," + base64.b64encode(f.read_bytes()).decode("ascii")
+    return None
 
 
 def _records(df: pd.DataFrame) -> list[dict]:
@@ -155,12 +168,19 @@ def build_html(ws, sales_orders: str | Path | None = None) -> str:
         "/*CHARTS*/": (ASSETS / "charts.js").read_text(encoding="utf-8"),
         "/*FORECASTCORE*/": (ASSETS / "forecast_core.js").read_text(encoding="utf-8"),
         "/*FORECAST*/": (ASSETS / "forecast.js").read_text(encoding="utf-8"),
+        # Login layer: seed credentials, the one storage module, the logic, then the UI.
+        "/*AUTHCONFIG*/": (ASSETS / "auth_config.js").read_text(encoding="utf-8"),
+        "/*AUTHSTORE*/": (ASSETS / "auth_store.js").read_text(encoding="utf-8"),
+        "/*AUTHCORE*/": (ASSETS / "auth_core.js").read_text(encoding="utf-8"),
+        "/*AUTH*/": (ASSETS / "auth.js").read_text(encoding="utf-8"),
     }
     for key, js in parts.items():
         if "</script" in js.lower():
             raise ValueError(f"{key} contains a closing script tag")
     parts["/*BENCHCSS*/"] = (ASSETS / "benchmark.css").read_text(encoding="utf-8")
     parts["/*FORECASTCSS*/"] = (ASSETS / "forecast.css").read_text(encoding="utf-8")
+    parts["/*AUTHCSS*/"] = (ASSETS / "auth.css").read_text(encoding="utf-8")
+    parts["/*LOGO*/null"] = json.dumps(logo_data_uri())
     html = template
     for key, text in parts.items():
         if key not in html:

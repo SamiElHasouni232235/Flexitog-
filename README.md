@@ -177,10 +177,47 @@ HTML file that runs the whole simulator in the browser, with no Python and no se
   country or factory for brands, SKUs, origin, lead time and share of the batch. Blue is reserved for
   suppliers: distributor-held stock is plum and the country value scale is violet.
 
+### Login, home page and users
+
+The page opens on a login card. Nothing of the app shows until a user logs in with username or email
+and password (Enter submits, the eye button shows or hides the password, a wrong login shows one
+message without naming the field). The session lives in sessionStorage: a refresh keeps you logged in,
+closing the tab logs you out. Every page shows the user and a Log out button top right, and a Home link
+top left. The address bar hash follows the view (`#dash`, `#forecast`, `#bench`, `#report`, `#md`,
+`#users`), so a refresh stays on the same page.
+
+After login the home page shows the RefrigiWear logo (300 px, a placeholder box until the file is in
+`flexitog/assets/brand/`, see the README there) and one button per view in this order: Route Dashboard,
+Forecast, Benchmarking, Report Extract, Master Data Upload, then Users for the admin. Five or six per row
+on desktop, three on a tablet, two on a phone.
+
+Users (admin only, blocked for everyone else, also by direct hash or `showView("users")`): table with
+username, email, role, status, created date and actions (reset password, disable or enable, delete with
+a confirm step). The admin account cannot be disabled or deleted. Add user takes username, email, role
+(Editor or Viewer, Admin is reserved) and one permission checkbox per view, then creates a random
+14-character password (upper, lower, digit, symbol, from `crypto.getRandomValues`) shown once with a
+Copy button. Usernames and emails are unique, emails are checked. Roles and permissions are saved on
+each user and not enforced yet (`FlexiAuth.permits(user, view)` is the hook). Export users and Import
+users move the accounts as JSON, password hashes included, so test users survive a storage change.
+
+Files: `auth_config.js` holds the seed admin (username, email, salt and hash, never the password),
+`auth_store.js` is the only code that reads or writes users and sessions (`getUsers`, `getUser`,
+`saveUser`, `deleteUser`, `getSession`, `setSession`, `clearSession`, all async; users in localStorage
+under `flexitog-auth-v1:users`), `auth_core.js` (`window.FlexiAuth`) holds hashing, random passwords,
+validation and import rules, `auth.js` and `auth.css` the screens. Password hash:
+hex(SHA-256(UTF-8(salt + password))) with a random 16-byte salt per user, Web Crypto API. Change the seed
+password by writing a new salt and hash in `auth_config.js`; the stored admin follows on the next load.
+Tests: `tests/test_auth.py`.
+
+The login runs in the browser. It keeps the screens away from someone who opens the page without an
+account. It does not protect the data: the master data, sales orders and the user list sit in the page
+file and in browser storage, and anyone with the file and the browser developer tools can read them or
+set a session. Real access control needs a server that checks the login before it sends any data.
+
 ### Menu, master data and report extract
 
-The menu button (three lines, top left) opens Route Dashboard, Benchmarking, Master data upload, Report
-extract and Parameters, plus shortcuts to the main master data tabs.
+The menu button (three lines, top left) opens Home, Route Dashboard, Forecast, Benchmarking, Report
+Extract, Master Data Upload, Users (admin only) and Parameters, plus shortcuts to the main master data tabs.
 
 - Master data upload: one tab per table. Products, Customers, Suppliers, Logistics providers
   (distributors, 3PLs, owned warehouses and the Helmond hub, filterable by type), Lanes, Sales history,

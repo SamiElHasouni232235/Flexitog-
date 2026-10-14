@@ -281,10 +281,12 @@ function masterDataChanged(keys){
 // ============================================================ views and menu
 // Each view keeps its DOM and state while hidden; switching back restores its scroll position.
 const VIEW = {current: "dash", scroll: {}};
-const VIEWS = {dash: ["viewDash", "FlexiTog Route Dashboard"], md: ["viewMD", "Master data"], report: ["viewReport", "Report extract"], bench: ["viewBench", "Benchmarking"],
-  forecast: ["viewForecast", "Sales Forecast"]};
+const VIEWS = {home: ["viewHome", "FlexiTog EU Supply Chain Simulator"], dash: ["viewDash", "FlexiTog Route Dashboard"], md: ["viewMD", "Master data"],
+  report: ["viewReport", "Report extract"], bench: ["viewBench", "Benchmarking"], forecast: ["viewForecast", "Sales Forecast"], users: ["viewUsers", "Users"]};
+// The login layer (auth.js) checks every switch: no user means no view, Users is for the admin only.
 function showView(v){
-  if (!VIEWS[v]) v = "dash";
+  if (!VIEWS[v]) v = "home";
+  if (window.Auth) v = window.Auth.route(v);
   const prev = VIEW.current;
   if (prev !== v) VIEW.scroll[prev] = window.scrollY;
   VIEW.current = v;
@@ -296,6 +298,7 @@ function showView(v){
   if (v === "report") renderReport();
   if (v === "bench" && window.BenchUI) window.BenchUI.show();
   if (v === "forecast" && window.ForecastUI) window.ForecastUI.show();
+  if (window.Auth) window.Auth.shown(v);
   if (prev !== v) window.scrollTo({top: VIEW.scroll[v] || 0});
 }
 function openMenu(open){
