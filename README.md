@@ -156,8 +156,8 @@ HTML file that runs the whole simulator in the browser, with no Python and no se
   (price, units per pallet, EU-made), general and risk, lead times, owned-warehouse fixed cost. Every
   change reruns the batch. Changes stay in the viewer's browser. "Copy changes" gives JSON that
   Parameters > Apply changes from the interactive dashboard writes back into the workspace.
-- Region cards, scorecard small multiples, order explorer with route override, issues list and the
-  data request table.
+- Best option per region, scenario comparison, order explorer with route steps, risks with the coverage
+  matrix and data readiness (see Route Dashboard layout below).
 - Map filters: modes shown (sea, road, air) and one supplier at a time. Air legs to customers draw
   as dotted arcs.
 - Parameters drawer, Transport modes: tick allowed modes per leg and choose preferred, cheapest or
@@ -176,6 +176,49 @@ HTML file that runs the whole simulator in the browser, with no Python and no se
   with the Red Sea switch on; Jeddah stays reachable via Suez. The Suppliers button (or S) frames the supply base. Click a supplier
   country or factory for brands, SKUs, origin, lead time and share of the batch. Blue is reserved for
   suppliers: distributor-held stock is plum and the country value scale is violet.
+
+### Route Dashboard layout
+
+The tab answers six questions in order. One store (`RS` in `dashboard.html`: selected region, country,
+order, option and the switch "Include partners not yet signed") feeds every section. The logic without DOM
+is `flexitog/assets/route_core.js` (`window.FlexiRoute`, tested in `tests/test_route.py`); engine.js and
+engine.py are untouched.
+
+1. Best option per region: one card per region (the cards are the region selector; click the active card
+   for all regions). Best scenario in its colour, cost to serve per unit, lead time (red when it misses the
+   target), the target, risk counts by severity and the share of cost on real data. `bestScenario` rule:
+   only Distributor, 3PL and Owned WH count (Baseline DAP is the reference); scenarios where every order meets
+   its target come first; then the lowest cost to serve plus customer pays per unit, weighted by order count;
+   then the lower hassle score; when none meets the target the cheapest wins, labelled "misses target". With
+   the switch off the batch reruns with signed partners only (status existing).
+2. Scenario comparison for the selection: four rows, order-weighted cost, customer cost, lead time, hassle,
+   FlexiTog paperwork, orders missing the target and partner status. Best in-scope value in bold. A scenario
+   without a route shows one line with the reason.
+3. Map and country detail: countries coloured by their best scenario, routes only for the selected country or
+   order, supplier and issue layers off behind the Suppliers and Issues buttons, legend entries only for layers
+   that are on. Clicking a country selects it and its region.
+4. Order explorer: orders of the selection, every route option ranked by total cost with its status (signed or
+   candidate) and data source (from RFQ, placeholder or entered rates). Click a bar to see its steps, who
+   handles each one and whether it meets the target.
+5. Risks (issues without the coverage type, by severity, faded outside the selection) and the coverage matrix
+   (nine lane countries by four scenarios: signed, candidate or no partner; an empty cell opens Parameters >
+   Partners).
+6. Data readiness (collapsed): share of cost on real data and the data request table with a done, partial or
+   missing status per dataset from the rows loaded.
+
+Targets come from the lane rules (working days after pickup on the destination weekend): Saudi Arabia, UAE,
+Kuwait and Qatar 2, Türkiye and Morocco 3, Egypt and Tunisia 4, Algeria 5. A Service Goal with a time unit
+that names a country (ISO code or name, not a region) overrides its lane rule. Engine lead times are calendar
+days; `workingDays` rolls a weekend delivery to the next working day and averages over the five pickup days.
+
+RFQ wiring: `getRfqRate(providerId, lane, band)` reads `rate.<lane>.<band>.cost_per_shipment` and
+`.transit_days` from the provider's latest RFQ response in Benchmarking, `getRfqStock` reads
+`stock.<lane>.serve_from_stock` and `.transit_days`. Lanes L01 Saudi Arabia to L09 Tunisia, weight bands by
+gross kg (quantity × unit_weight_kg plus 20 kg per pallet): B1 to 30, B2 to 100, B3 to 500, B4 to 2,000, B5
+above. Each provider with a rate adds a Baseline DAP option in the Order explorer (door-to-door freight replaces
+the main leg and local delivery). A partner node with `rfq_provider_id` (Master data > Logistics providers)
+takes its delivery-from-stock transit from `stock.<lane>`. No RFQ value means the placeholder rate stays.
+RFQ rates feed the Order explorer only; sections 1 and 2 still run on the engine rates.
 
 ### Login, home page and users
 

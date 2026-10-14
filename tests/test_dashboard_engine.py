@@ -120,7 +120,7 @@ def test_dashboard_html_is_self_contained(ws):
     assert "SheetJS" in page and "function renderMD" in page
     for key in ("/*JSPDF*/", "/*AUTOTABLE*/", "/*DOCX*/", "/*BENCHCORE*/", "/*BENCHMARK*/", "/*BENCHCSS*/", "/*CHARTS*/",
                 "/*FORECASTCORE*/", "/*FORECAST*/", "/*FORECASTCSS*/", "/*JSZIP*/", "/*RFQCORE*/",
-                "/*AUTHCONFIG*/", "/*AUTHSTORE*/", "/*AUTHCORE*/", "/*AUTH*/", "/*AUTHCSS*/", "/*LOGO*/"):
+                "/*AUTHCONFIG*/", "/*AUTHSTORE*/", "/*AUTHCORE*/", "/*AUTH*/", "/*AUTHCSS*/", "/*LOGO*/", "/*ROUTECORE*/"):
         assert key not in page
     assert 'id="viewBench"' in page and 'data-go="bench"' in page and "window.BenchUI" in page and "BenchCore" in page
     assert 'id="viewForecast"' in page and 'data-go="forecast"' in page and "window.ForecastUI" in page and "window.FlexCharts" in page
@@ -131,6 +131,9 @@ def test_dashboard_html_is_self_contained(ws):
     # login layer: inlined, the gate hides the app until auth.js sets data-auth="in"
     assert "window.FlexiAuth" in page and "window.AuthStore" in page and "FLEXI_AUTH_CONFIG" in page and 'id="authGate"' in page
     assert ':root:not([data-auth="in"]) .app{display:none!important}' in page
+    # Route Dashboard: route_core inlined, six sections, the old scorecard grid and region buttons gone
+    assert "root.FlexiRoute" in page and 'id="inclCand"' in page and 'id="cmpCard"' in page and 'id="covTable"' in page and 'id="dataReady"' in page
+    assert 'id="sm"' not in page and 'id="regionSeg"' not in page
     assert len(page.encode()) < 5_000_000
 
 

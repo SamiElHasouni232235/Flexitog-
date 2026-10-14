@@ -100,7 +100,7 @@ def build_payload(ws, per_region_synthetic: int = 15, sales_orders: str | Path |
                          "fields": [f.to_dict() for f in ws.entity(key).fields]} for key, e in ENTITIES.items()},
         "country_aliases": COUNTRY_ALIASES, "centroids": COUNTRY_CENTROIDS,
         "names": {"countries": COUNTRY_NAMES, "dc_types": DC_TYPE_LABELS},
-        "datasets": [{"sheet": d[0], "priority": d[3], "why": d[4], "where": d[5], "target": d[6]} for d in DATASETS],
+        "datasets": [{"sheet": d[0], "kind": d[1], "key": d[2], "priority": d[3], "why": d[4], "where": d[5], "target": d[6]} for d in DATASETS],
         # Odoo sales order lines for the Forecast view (the anonymized sample unless a path is given).
         "sales_orders": sales_orders_table(sales_orders),
         # The bundled RFQ template, served by Download latest RFQ until a newer one replaces it.
@@ -163,6 +163,8 @@ def build_html(ws, sales_orders: str | Path | None = None) -> str:
         # RFQ workflow: JSZip (MIT) patches the Provider Profile cells of the template without rewriting it.
         "/*JSZIP*/": vendor("jszip.min.js"),
         "/*ENGINE*/": engine,
+        # Route Dashboard: best scenario rule, aggregation, coverage, issue split and the RFQ adapter.
+        "/*ROUTECORE*/": (ASSETS / "route_core.js").read_text(encoding="utf-8"),
         "/*WORKSPACE*/": (ASSETS / "workspace.js").read_text(encoding="utf-8"),
         "/*BENCHCORE*/": (ASSETS / "bench_core.js").read_text(encoding="utf-8"),
         "/*RFQCORE*/": (ASSETS / "rfq_core.js").read_text(encoding="utf-8"),

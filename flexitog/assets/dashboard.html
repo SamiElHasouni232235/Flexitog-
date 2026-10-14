@@ -81,6 +81,32 @@ select{background:var(--surface);border:1px solid var(--rule);border-radius:6px;
 .rcard li .k{color:var(--muted)}
 .rcard li .v{display:inline-flex;align-items:center;gap:6px;justify-content:flex-end;text-align:right}
 .rcard .base{font:12px var(--mono);color:var(--faint)}
+/* Route Dashboard sections (layout only; colours and type come from the tokens above) */
+.dsec{display:flex;flex-direction:column;gap:10px}
+.sechead{display:flex;flex-wrap:wrap;gap:8px 16px;justify-content:space-between;align-items:center}
+.swtoggle{display:inline-flex;gap:8px;align-items:center;font-size:13px;cursor:pointer;color:var(--ink)}
+.swtoggle input{accent-color:var(--accent);width:16px;height:16px;margin:0}
+.rcard .rbest{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:14px}
+.rcard .v .sev{font-size:9.5px}
+.miss{color:var(--st-critical)}
+td.miss{color:var(--st-critical)}
+.cmp tr.oos td{font-size:12.5px}
+.lnkrow{cursor:pointer}
+.lnkrow:hover td,.lnkrow:focus-visible td{background:var(--surface-2)}
+.issues li.out,#covTable tr.out{opacity:.45}
+.explorer .xcol{min-width:0;display:flex;flex-direction:column;gap:10px}
+#orderCard g.opt{cursor:pointer;outline:none}
+#orderCard g.opt:focus-visible rect:first-child{stroke:var(--accent);stroke-width:1.5}
+#orderCard g.opt.on rect:first-child{fill:var(--accent-soft)}
+#covTable td{white-space:nowrap}
+/* .sm is also the small-multiples grid: keep small buttons inline in the new sections */
+#covTable .btn.sm,#countryPanel .btn.sm{display:inline-flex}
+details.dready>summary{align-items:center}
+.drsum{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px}
+.pbar{display:inline-block;width:160px;height:8px;border-radius:999px;background:var(--surface);border:1px solid var(--rule);overflow:hidden;vertical-align:middle}
+.pbar i{display:block;height:100%;background:var(--accent)}
+.dst{font:600 10px/1 var(--mono);padding:4px 6px;border-radius:3px;text-transform:uppercase}
+.dst.done{background:var(--accent);color:var(--accent-ink)}.dst.partial{background:var(--st-warning);color:#14212c}.dst.missing{background:var(--surface-2);box-shadow:inset 0 0 0 1px var(--rule);color:var(--muted)}
 .sw{width:10px;height:10px;border-radius:2px;display:inline-block;flex:none}
 
 /* map area */
@@ -429,7 +455,6 @@ details.custom .iact{display:flex;gap:6px;margin-top:8px}
       </div>
     </div>
     <div class="controls">
-      <div class="ctl"><label>Region</label><div class="seg" id="regionSeg"></div></div>
       <div class="ctl"><label for="method">Hassle method</label><select id="method"></select></div>
       <button class="btn" id="openParams" type="button">Parameters <span class="badge" id="chgCount">0</span></button>
     </div>
@@ -449,11 +474,20 @@ details.custom .iact{display:flex;gap:6px;margin-top:8px}
   </div>
 
   <div id="viewDash" class="view">
-  <section class="regions" id="regions" aria-label="Region summary"></section>
+  <!-- 1. Which scenario serves each region best? The cards are the region selector. -->
+  <section class="dsec" aria-labelledby="s1h">
+    <div class="sechead"><h2 id="s1h">Best option per region</h2>
+      <label class="swtoggle"><input type="checkbox" id="inclCand" checked> Include partners not yet signed</label></div>
+    <div class="regions" id="regions"></div>
+  </section>
 
+  <!-- 2. How do the scenarios compare? -->
+  <section class="card" id="cmpCard" aria-labelledby="s2h"></section>
+
+  <!-- 3. Where on the map? -->
   <section class="maprow">
     <div class="card">
-      <div class="cardhead"><h2 id="mapTitle">Routes and issues</h2><span class="faint" style="font-size:12px">Drag to pan · Ctrl + scroll or pinch to zoom · click anything for detail</span></div>
+      <div class="cardhead"><h2 id="mapTitle">Routes and issues</h2><span class="faint" style="font-size:12px">Drag to pan · Ctrl + scroll or pinch to zoom · click a country to select it</span></div>
       <div class="mapbox" id="mapbox">
         <div class="mtool">
           <div class="mgroup">
@@ -471,7 +505,8 @@ details.custom .iact{display:flex;gap:6px;margin-top:8px}
               <button type="button" id="zout" aria-label="Zoom out" title="Zoom out (−)">–</button>
               <button type="button" id="zreset" aria-label="Reset view" title="Reset view (0)">⟲</button>
             </div>
-            <button type="button" class="btn ghost" id="supView" title="Show the suppliers and their routes to Helmond (S)">Suppliers</button>
+            <button type="button" class="btn ghost" id="supView" aria-pressed="false" title="Show the suppliers and their routes to Helmond (S)">Suppliers</button>
+            <button type="button" class="btn ghost" id="issView" aria-pressed="false" title="Show the issue markers">Issues</button>
             <button type="button" class="btn ghost fs-only" id="fsParams">Parameters</button>
             <button type="button" class="btn" id="fsBtn" aria-pressed="false" title="Full screen (F)">Full screen</button>
           </div>
@@ -486,23 +521,24 @@ details.custom .iact{display:flex;gap:6px;margin-top:8px}
     <aside class="card" id="countryPanel" aria-live="polite"></aside>
   </section>
 
-  <section class="card">
-    <div class="cardhead"><h2>Scorecard by region</h2><span class="faint" style="font-size:12px">Lower is better on every row. Shared scale per row. Bold = best in-scope scenario.</span></div>
-    <div class="maplegend" id="smLegend"></div>
-    <div class="sm" id="sm"></div>
+  <!-- 4. For which orders? Order explorer and route steps in one section. -->
+  <section class="card" aria-labelledby="s4h">
+    <div class="cardhead"><h2 id="s4h">Order explorer</h2><span class="faint" style="font-size:12px" id="orderNote"></span></div>
+    <div class="explorer"><div id="orderCard" class="xcol"></div><div id="stepsCard" class="xcol"></div></div>
   </section>
 
-  <section class="explorer">
-    <div class="card" id="orderCard"></div>
-    <div class="card" id="stepsCard"></div>
-  </section>
-
+  <!-- 5. What could go wrong? -->
   <section class="bottom">
-    <div class="card"><div class="cardhead"><h2>Issues</h2><span class="faint" style="font-size:12px" id="issueNote"></span></div><ul class="issues" id="issueList"></ul></div>
-    <div class="card"><div class="cardhead"><h2>Data that replaces the placeholders</h2></div>
-      <p class="muted" style="font-size:13px">Collect in this order. The Excel pack <span class="num">templates/FlexiTog_data_request_pack.xlsx</span> has one sheet per row.</p>
-      <div class="tablewrap"><table id="dataReq"></table></div></div>
+    <div class="card"><div class="cardhead"><h2>Risks</h2><span class="faint" style="font-size:12px" id="issueNote"></span></div><ul class="issues" id="issueList"></ul></div>
+    <div class="card"><div class="cardhead"><h2>Coverage</h2><span class="faint" style="font-size:12px">Partner per country and scenario, from the countries each node serves</span></div>
+      <div class="tablewrap"><table id="covTable"></table></div></div>
   </section>
+
+  <!-- 6. How reliable are the numbers? -->
+  <details class="grp dready" id="dataReady">
+    <summary><span class="drsum" id="dataReadySum"></span></summary>
+    <div class="gbody"><div class="tablewrap"><table id="dataReq"></table></div></div>
+  </details>
   </div>
 
   <div id="viewMD" class="view" hidden>
@@ -572,6 +608,7 @@ details.custom .iact{display:flex;gap:6px;margin-top:8px}
 <script>/*DOCX*/</script>
 <script>/*JSZIP*/</script>
 <script>/*ENGINE*/</script>
+<script>/*ROUTECORE*/</script>
 <script>
 "use strict";
 const PAYLOAD = /*PAYLOAD*/null;
@@ -607,8 +644,9 @@ const BASE = {params: clone(PAYLOAD.data.params), dcs: clone(MD.t.distribution_c
 let W = clone(BASE);                      // working copy the drawer edits
 let whatIf = {redSea: false, euAll: false};
 let excluded = new Set();
-const ui = {region: "All", mapScenario: "best", mapMetric: "best", method: "customer_first", country: null,
-            orderId: null, override: "auto", zoom: 1, center: null, modes: new Set(["sea", "road", "air"]), supplier: "all"};
+const ui = {region: null, mapScenario: "best", mapMetric: "best", method: "customer_first", country: null,
+            orderId: null, override: "auto", orderPicked: false, zoom: 1, center: null, modes: new Set(["sea", "road", "air"]), supplier: "all",
+            layers: {suppliers: false, issues: false}};
 let R = null;                             // latest results
 
 function tableRef(t){ return t.startsWith("p:") ? W.params[t.slice(2)] : W[t]; }
@@ -665,22 +703,35 @@ function effectiveRaw(){
   return raw;
 }
 function compute(){
-  const data = E.makeData(effectiveRaw());
+  const raw = effectiveRaw();
+  const data = E.makeData(raw);
   const rows = E.runBatch(BATCH.orders, BATCH.lines, data);
+  // The same batch with signed partners only, for "Include partners not yet signed" switched off.
+  const signedDcs = raw.dcs.filter(d => d.dc_type === "helmond_hub" || String(d.status) === "existing");
+  const dataSigned = signedDcs.length === raw.dcs.length ? data : E.makeData(Object.assign({}, raw, {dcs: signedDcs}));
+  const rowsSigned = dataSigned === data ? rows : E.runBatch(BATCH.orders, BATCH.lines, dataSigned);
   // "best in-scope per order": the available in-scope row with the lowest risk-adjusted score
   const byOrder = {};
   rows.forEach(r => (byOrder[r.order_id] = byOrder[r.order_id] || []).push(r));
-  const best = [];
-  Object.values(byOrder).forEach(g => {
-    const cand = g.filter(r => r.scenario !== "cif_baseline" && r.available);
-    if (!cand.length) return;
-    const b = cand.reduce((a, r) => (E.M.score(r.route) < E.M.score(a.route) ? r : a));
-    best.push(Object.assign({}, b, {bestOf: b.scenario, scenario: "best"}));
-  });
-  R = {data, rows, best, byOrder};
+  const bestOf = rs => {
+    const by = {}; rs.forEach(r => (by[r.order_id] = by[r.order_id] || []).push(r));
+    const out = [];
+    Object.values(by).forEach(g => {
+      const cand = g.filter(r => r.scenario !== "cif_baseline" && r.available);
+      if (!cand.length) return;
+      const b = cand.reduce((a, r) => (E.M.score(r.route) < E.M.score(a.route) ? r : a));
+      out.push(Object.assign({}, b, {bestOf: b.scenario, scenario: "best"}));
+    });
+    return out;
+  };
+  R = {data, rows, best: bestOf(rows), byOrder, rowsSigned, bestSigned: rowsSigned === rows ? null : bestOf(rowsSigned)};
+  if (!R.bestSigned) R.bestSigned = R.best;
+  if (!ui.region) ui.region = defaultRegion();
   LOCS = {};
 }
 function rowsFor(scenario){ return scenario === "best" ? R.best : R.rows.filter(r => r.scenario === scenario); }
+// Rows under the "Include partners not yet signed" switch (map routes).
+function rowsForSwitch(scenario){ return RS.includeCandidates ? rowsFor(scenario) : scenario === "best" ? R.bestSigned : R.rowsSigned.filter(r => r.scenario === scenario); }
 function regionCard(){ return E.scorecard(R.rows, ui.method, r => r.region); }
 function countryCard(scenario){
   const rows = rowsFor(scenario);
@@ -692,7 +743,7 @@ function countryCard(scenario){
 
 // ============================================================ issues
 function issuesAll(){
-  const list = PAYLOAD.issues.map(i => Object.assign({kind: "briefing"}, i,
+  const list = PAYLOAD.issues.map(i => Object.assign({kind: "briefing", type: "briefing"}, i,
     i.id === "red-sea" && whatIf.redSea ? {severity: "info", title: "Red Sea reopened (what-if)",
       detail: "What-if active: Gulf sea transit runs 10 days shorter via Suez. Switch it off in Parameters to return to Cape routing."} : {}));
   const byC = {};
@@ -703,19 +754,19 @@ function issuesAll(){
       const sg = g.filter(r => r.scenario === s);
       const cov = sg.filter(r => r.available).length / (sg.length || 1);
       const none = sg.every(r => !r.route);
-      if (none) list.push({kind: "computed", severity: "warning", countries: [c], title: `No ${SHORT[s].toLowerCase()} option in ${CNAME(c)}`,
+      if (none) list.push({kind: "computed", type: "coverage", severity: "warning", countries: [c], title: `No ${SHORT[s].toLowerCase()} option in ${CNAME(c)}`,
         detail: `${sg.length} batch order(s) cannot use ${E.LABELS[s].toLowerCase()}: no node serves ${CNAME(c)}. Add a partner or extend a node's served countries.`, lever: "Parameters > Partners"});
-      else if (cov < 0.75) list.push({kind: "computed", severity: "info", countries: [c], title: `${E.LABELS[s]} misses ${pct(1 - cov)} of orders in ${CNAME(c)}`,
+      else if (cov < 0.75) list.push({kind: "computed", type: "mov", severity: "info", countries: [c], title: `${E.LABELS[s]} misses ${pct(1 - cov)} of orders in ${CNAME(c)}`,
         detail: "Orders fall below the node's minimum order value.", lever: "Parameters > Partners / Scenario defaults (MOV)"});
     });
     const base = g.filter(r => r.scenario === "cif_baseline" && r.available);
     if (base.length) {
       const duty = base.reduce((a, r) => a + r.route.steps.filter(s => s.category === "duty").reduce((x, s) => x + s.cost_eur, 0), 0);
       const val = base.reduce((a, r) => a + r.order_value_eur, 0);
-      if (val && duty / val > 0.1) list.push({kind: "computed", severity: "serious", countries: [c], title: `Duty ${fmt(100 * duty / val, 0)}% of order value in ${CNAME(c)}`,
+      if (val && duty / val > 0.1) list.push({kind: "computed", type: "duty", severity: "serious", countries: [c], title: `Duty ${fmt(100 * duty / val, 0)}% of order value in ${CNAME(c)}`,
         detail: "Most SKUs are of non-EU origin. EU-made goods would enter at the preferential rate.", lever: "What-if: all SKUs EU-made"});
       const lead = base.reduce((a, r) => a + r.lead_time_days, 0) / base.length;
-      if (lead > 30) list.push({kind: "computed", severity: "warning", countries: [c], title: `Baseline lead time ${fmt(lead, 0)} days to ${CNAME(c)}`,
+      if (lead > 30) list.push({kind: "computed", type: "lead_time", severity: "warning", countries: [c], title: `Baseline lead time ${fmt(lead, 0)} days to ${CNAME(c)}`,
         detail: "Sea transit plus clearance on the DAP baseline. Regional stock cuts this to days.", lever: "What-if: Red Sea reopens"});
     }
   });
@@ -832,7 +883,7 @@ let selected = null;   // {kind, id}
 
 function metricDefs(){
   return [
-    {key: "best", label: "Cheapest in-scope scenario", kind: "cat"},
+    {key: "best", label: "Best scenario", kind: "cat"},
     {key: "cost_per_unit_eur", label: "Cost to serve per unit (€)", kind: "seq", dp: 2},
     {key: "customer_cost_per_unit_eur", label: "Customer pays per unit (€)", kind: "seq", dp: 2},
     {key: "lead_time_days", label: "Lead time (days)", kind: "seq", dp: 1},
@@ -889,9 +940,8 @@ function countryValues(){
   const issueCount = {}; issuesAll().forEach(i => (i.countries || []).forEach(c => issueCount[c] = (issueCount[c] || 0) + 1));
   let values = {}, cats = {};
   if (metric.kind === "cat") {
-    const per = {};
-    INS.forEach(s => { Object.entries(countryCard(s)).forEach(([c, a]) => { if (a && a.cost_per_unit_eur != null && (!per[c] || a.cost_per_unit_eur < per[c].v)) per[c] = {v: a.cost_per_unit_eur, s}; }); });
-    Object.entries(per).forEach(([c, x]) => cats[c] = x.s);
+    // best scenario per country under the current switch (route_core bestScenario); no orders = neutral
+    Object.entries(VM.bestC).forEach(([c, b]) => { if (b.scenario) cats[c] = b.scenario; });
   } else if (metric.key === "issues") values = issueCount;
   else Object.entries(countryCard(ui.mapScenario)).forEach(([c, a]) => { if (a && a[metric.key] != null) values[c] = a[metric.key]; });
   return {metric, values, cats};
@@ -907,24 +957,25 @@ function drawCountries(){
   let h = "";
   const supC = supplierCountries();
   BM.countries.forEach(c => {
-    const study = studyCountries.has(c.iso), sup = !study && supC[c.iso];
+    const study = studyCountries.has(c.iso), sup = !study && ui.layers.suppliers && supC[c.iso];
     let fill = study ? "var(--land-study)" : sup ? "var(--supplier-land)" : "var(--land)";
     if (study && metric.kind === "cat" && cats[c.iso]) fill = `var(--s-${cats[c.iso]})`;
     if (study && metric.kind === "seq" && values[c.iso] != null) fill = `var(--q${bin(values[c.iso])})`;
-    const tipv = metric.kind === "cat" ? (cats[c.iso] ? E.LABELS[cats[c.iso]] : "no data") : (values[c.iso] != null ? fmt(values[c.iso], metric.dp) : "no data");
+    const tipv = metric.kind === "cat" ? (cats[c.iso] ? E.LABELS[cats[c.iso]] + (VM.bestC[c.iso].missesTarget ? " (misses target)" : "") : VM.byC[c.iso] ? "nothing in scope" : "no orders") : (values[c.iso] != null ? fmt(values[c.iso], metric.dp) : "no data");
     h += `<path class="country${study ? " study" : sup ? " supc" : ""}" d="${c.d}" style="fill:${fill}"` +
          (study ? ` data-kind="country" data-id="${c.iso}" data-tip="${esc(CNAME(c.iso))}: ${esc(metric.label)} ${esc(tipv)} · click for detail"` :
           sup ? ` data-kind="supc" data-id="${c.iso}" data-tip="${esc(CNAME(c.iso))}: supplier country · ${sup.map(x => esc(x.name)).join(", ")} · click for detail"` : "") + `/>`;
   });
   $("gCountries").innerHTML = h;
   markSelection();
-  drawLegend(metric);
+  drawLegend();
 }
 let overlayTimer = null;
 function scheduleOverlay(){ clearTimeout(overlayTimer); overlayTimer = setTimeout(drawOverlay, 60); }
 function drawOverlay(){
   const scale = view[2] / 1000; drawnW = view[2];
-  const rows = rowsFor(ui.mapScenario).filter(r => r.available && (ui.region === "All" || r.region === ui.region));
+  // Routes only for the order picked in the explorer, else the selected country, else none.
+  const rows = rowsForSwitch(ui.mapScenario).filter(r => r.available && (ui.orderPicked ? r.order_id === ui.orderId : ui.country ? r.country === ui.country : false));
   const lanes = {}, lasts = {}, custs = {}, nodes = {}, direct = {}, viaHlm = {}, inMode = {};
   rows.forEach(r => {
     const rt = r.route, sc = r.scenario === "best" ? r.bestOf : r.scenario;
@@ -957,12 +1008,12 @@ function drawOverlay(){
     if (end && cl) { const dm = deliveryMode(rt), k2 = end.join() + "|" + cl.join() + "|" + dm; lasts[k2] = lasts[k2] || {a: end, b: cl, mode: dm}; }
     if (cl) { const cu = custs[r.customer_id] = custs[r.customer_id] || {p: cl, pallets: 0, orders: 0, id: r.customer_id, country: r.country}; cu.pallets += r.pallets; cu.orders += 1; }
   });
-  const issues = issuesAll().filter(i => i.lat != null && (ui.region === "All" || (i.countries || []).some(c => R.data.regionFor(c) === ui.region)));
-  mapState = {lanes, custs, issues, nodes, direct, viaHlm};
+  const issues = !ui.layers.issues ? [] : VM.risks.filter(i => i.lat != null && (ui.region === "All" || (i.countries || []).some(c => R.data.regionFor(c) === ui.region)));
+  mapState = {lanes, custs, issues, nodes, direct, viaHlm, routes: rows.length};
   const maxP = Math.max(1, ...Object.values(lanes).map(l => l.pallets));
   const path = pts => pts.map((p, i) => { const [x, y] = proj(p[0], p[1]); return (i ? "L" : "M") + x.toFixed(1) + "," + y.toFixed(1); }).join("");
   let h = "";
-  const sups = (R.data.suppliers || []).filter(sp => loc("sup", sp.supplier_id));
+  const sups = !ui.layers.suppliers ? [] : (R.data.suppliers || []).filter(sp => loc("sup", sp.supplier_id));
   const maxS = Math.max(1, ...Object.values(viaHlm), ...Object.values(direct).map(d => d.pallets));
   const sw = p => (1.2 + 4.5 * Math.sqrt(p / maxS)).toFixed(1);
   let viaCape = false;
@@ -975,7 +1026,7 @@ function drawOverlay(){
     h += `<path class="hit" d="${path(sp2.pts)}" data-kind="sup" data-id="${esc(sp.supplier_id)}" data-tip="${esc(t)}"/>`;
   });
   Object.values(direct).sort((a, b) => b.pallets - a.pallets).forEach(d => {
-    if (!supOk(d.sup) || !ui.modes.has(d.mode)) return;
+    if (!ui.layers.suppliers || !supOk(d.sup) || !ui.modes.has(d.mode)) return;
     const dp = directPath(d.sup, d.dc, d.mode, d.port); if (!dp) return;
     viaCape = viaCape || dp.via === "Cape";
     const dcName = (R.data.dcs.find(x => x.dc_id === d.dc) || {}).name || d.dc;
@@ -1025,27 +1076,33 @@ function drawOverlay(){
     h += `<g class="issue${sel("issue", n) ? " on" : ""}" data-kind="issue" data-id="${n}" data-tip="${esc(i.severity.toUpperCase())}: ${esc(i.title)} · click for detail"><path d="M${x},${y - s}L${x + s},${y + s * .8}L${x - s},${y + s * .8}Z" style="fill:var(--st-${i.severity})"/>` +
          `<text x="${x}" y="${y + s * .6}" text-anchor="middle" style="font-size:${(10 * scale).toFixed(2)}px">!</text></g>`;
   });
-  const supC = supplierCountries();
+  const supC = ui.layers.suppliers ? supplierCountries() : {};
   BM.countries.filter(c => (studyCountries.has(c.iso) || supC[c.iso]) && c.c).forEach(c => {
     h += `<text class="clabel" x="${c.c[0]}" y="${c.c[1]}" text-anchor="middle" style="font-size:${(10 * scale).toFixed(2)}px">${esc(c.iso)}</text>`;
   });
   $("gOver").innerHTML = h;
+  drawLegend();
 }
 const sel = (kind, id) => selected && selected.kind === kind && String(selected.id) === String(id);
 function markSelection(){ $("gCountries").querySelectorAll(".country.study, .country.supc").forEach(el => el.classList.toggle("sel", sel(el.dataset.kind, el.dataset.id))); }
-function drawLegend(metric){
+function drawLegend(){
+  const metric = metricDefs().find(m => m.key === ui.mapMetric) || metricDefs()[0];
   let lg = "";
-  if (metric.kind === "cat") lg += INS.map(s => `<span><i class="sw" style="background:var(--s-${s})"></i>${esc(SHORT[s])} cheapest</span>`).join("");
+  if (metric.kind === "cat") lg += SC.map(s => `<span><i class="sw" style="background:var(--s-${s})"></i>${esc(SHORT[s])}</span>`).join("");
   else lg += `<span>${esc(metric.label)} <span class="ramp">${[1,2,3,4,5].map(i => `<i style="background:var(--q${i})"></i>`).join("")}</span> <span class="num">${fmt(legendRange[0], metric.dp)} → ${fmt(legendRange[1], metric.dp)}</span></span>`;
-  lg += `<span><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" style="stroke:var(--muted);stroke-width:3"/></svg>sea</span>`;
-  lg += `<span><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" style="stroke:var(--muted);stroke-width:3;stroke-dasharray:6 4"/></svg>road</span>`;
-  lg += `<span><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" style="stroke:var(--ink);stroke-width:2;stroke-dasharray:1 4;stroke-linecap:round"/></svg>air (to customer)</span>`;
+  lg += `<span><i class="sw" style="background:var(--land-study)"></i>no orders</span>`;
+  lg += `<span><svg width="14" height="14"><path d="${star(7, 7, 6.5)}" style="fill:var(--ink)"/></svg>Helmond</span>`;
   lg += `<span><svg width="12" height="12"><circle cx="6" cy="6" r="5" style="fill:var(--muted)"/></svg>distributor</span><span><svg width="12" height="12"><rect x="1" y="1" width="10" height="10" style="fill:var(--muted)"/></svg>3PL</span><span><svg width="14" height="14"><path d="M7,0L14,7L7,14L0,7Z" style="fill:var(--muted)"/></svg>owned</span><span class="faint">faded = not yet signed</span>`;
-  lg += `<span><i class="sw" style="background:var(--supplier-land)"></i>supplier country</span><span><svg width="14" height="12"><path d="M1,11L1,5L5,2L5,5L9,2L9,5L13,2L13,11Z" style="fill:var(--supplier-mark)"/></svg>supplier factory</span><span><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" style="stroke:var(--supplier);stroke-width:3"/></svg>supplier → Helmond</span><span><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" style="stroke:var(--supplier-mark);stroke-width:3"/></svg>supplier → partner, direct</span>`;
-  lg += ["critical","serious","warning","info"].map(s => `<span><svg width="12" height="11"><path d="M6,0L12,11L0,11Z" style="fill:var(--st-${s})"/></svg>${s}</span>`).join("");
+  if (mapState.routes) {
+    lg += `<span><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" style="stroke:var(--muted);stroke-width:3"/></svg>sea</span>`;
+    lg += `<span><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" style="stroke:var(--muted);stroke-width:3;stroke-dasharray:6 4"/></svg>road</span>`;
+    lg += `<span><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" style="stroke:var(--ink);stroke-width:2;stroke-dasharray:1 4;stroke-linecap:round"/></svg>air (to customer)</span>`;
+  }
+  if (ui.layers.suppliers) lg += `<span><i class="sw" style="background:var(--supplier-land)"></i>supplier country</span><span><svg width="14" height="12"><path d="M1,11L1,5L5,2L5,5L9,2L9,5L13,2L13,11Z" style="fill:var(--supplier-mark)"/></svg>supplier factory</span><span><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" style="stroke:var(--supplier);stroke-width:3"/></svg>supplier → Helmond</span><span><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" style="stroke:var(--supplier-mark);stroke-width:3"/></svg>supplier → partner, direct</span>`;
+  if (ui.layers.issues) lg += ["critical","serious","warning","info"].map(s => `<span><svg width="12" height="11"><path d="M6,0L12,11L0,11Z" style="fill:var(--st-${s})"/></svg>${s}</span>`).join("");
   $("mapLegend").innerHTML = lg;
   $("mapLegendFs").innerHTML = lg;
-  $("mapTitle").textContent = `Routes: ${ui.mapScenario === "best" ? "best in-scope option per order" : E.LABELS[ui.mapScenario]}`;
+  $("mapTitle").textContent = ui.orderPicked ? `Map: routes for order ${ui.orderId}` : ui.country ? `Map: routes to ${CNAME(ui.country)}` : `Map: ${ui.region === "All" ? "all regions" : ui.region}, click a country for its routes`;
 }
 function drawMap(){
   if (!view) view = fitBox(regionBox(ui.region));
@@ -1056,7 +1113,7 @@ function star(cx, cy, r){ let d = ""; for (let i = 0; i < 10; i++) { const a = M
 // ---- info card for the clicked object
 function select(kind, id){
   selected = kind ? {kind, id} : null;
-  if (kind === "country") { ui.country = id; renderCountry(); }
+  if (kind === "country") { setCountry(id); return; }
   markSelection(); drawOverlay(); renderInfo();
 }
 function zoomToCountry(iso){
@@ -1070,10 +1127,11 @@ function renderInfo(){
   const {kind, id} = selected; let h = "";
   const btn = (act, label) => `<button type="button" class="btn ghost sm" data-act="${act}">${label}</button>`;
   if (kind === "country") {
-    const rows = SC.map(s => ({s, a: countryCard(s)[id]})).filter(x => x.a);
-    const iss = issuesAll().filter(i => (i.countries || []).includes(id)).sort((a, b) => SEV_RANK[a.severity] - SEV_RANK[b.severity]);
+    // same figures as the country panel: switch-aware, working days, risks without coverage gaps
+    const x = VM.byC[id], rows = x ? SC.map(s => ({s, a: x.scenarios[s]})) : [];
+    const iss = VM.risks.filter(i => (i.countries || []).includes(id));
     h = `<div class="ih"><span class="eyebrow">${esc(R.data.regionFor(id))}</span><h3>${esc(CNAME(id))}</h3></div>` +
-      (rows.length ? `<table class="it"><thead><tr><th></th><th>€/unit</th><th>Cust €</th><th>Days</th></tr></thead><tbody>${rows.map(({s, a}) => `<tr><td><i class="sw" style="background:var(--s-${s})"></i> ${esc(SHORT[s])}</td><td class="n">${fmt(a.cost_per_unit_eur, 2)}</td><td class="n">${fmt(a.customer_cost_per_unit_eur, 2)}</td><td class="n">${fmt(a.lead_time_days, 0)}</td></tr>`).join("")}</tbody></table><p class="faint">${rows[0].a.orders} orders · ${fmt(rows[0].a.pallets)} pallets</p>` : `<p class="faint">No batch orders.</p>`) +
+      (rows.length ? `<table class="it"><thead><tr><th></th><th>€/unit</th><th>Cust €</th><th>Days</th></tr></thead><tbody>${rows.map(({s, a}) => `<tr><td><i class="sw" style="background:var(--s-${s})"></i> ${esc(SHORT[s])}</td><td class="n">${a.served ? fmt(a.costPerUnit, 2) : "–"}</td><td class="n">${a.served ? fmt(a.custPerUnit, 2) : "–"}</td><td class="n">${a.served ? fmt(a.leadWd, 1) : "–"}</td></tr>`).join("")}</tbody></table><p class="faint">${x.orders} orders · days = working days after pickup</p>` : `<p class="faint">No batch orders.</p>`) +
       (iss.length ? `<ul class="ilist">${iss.slice(0, 4).map(i => `<li><span class="sev ${i.severity}">${i.severity === "info" ? "i" : "▲"}</span> ${esc(i.title)}</li>`).join("")}</ul>` : "") +
       `<div class="iact">${btn("zoom-country", "Zoom to country")}${btn("panel", "Full detail")}</div>`;
   } else if (kind === "issue") {
@@ -1214,7 +1272,7 @@ svgEl.addEventListener("keydown", e => {
   else if (k === "-" || k === "_") { zoomCenter(1 / 1.4); e.preventDefault(); }
   else if (k === "0") { resetView(); e.preventDefault(); }
   else if (k === "f" || k === "F") { toggleFs(); e.preventDefault(); }
-  else if (k === "s" || k === "S") { supplyView(); e.preventDefault(); }
+  else if (k === "s" || k === "S") { $("supView").click(); e.preventDefault(); }
 });
 // Fit the suppliers and Helmond in view.
 function supplyView(){
@@ -1269,137 +1327,298 @@ function bindTips(root){
 }
 function move(e){ tip.style.left = Math.min(e.clientX + 12, innerWidth - 290) + "px"; tip.style.top = (e.clientY + 14) + "px"; }
 
-// ============================================================ region cards
-function winners(region){
-  const sc = regionCard().filter(r => r.group === region);
-  const base = sc.find(r => r.scenario === "cif_baseline");
-  const ins = sc.filter(r => r.scenario !== "cif_baseline" && r.coverage > 0);
-  const pick = k => { const v = ins.filter(r => r[k] != null); if (!v.length) return null; const lo = Math.min(...v.map(r => r[k])); return {v: lo, s: v.filter(r => Math.abs(r[k] - lo) <= Math.max(1e-9, Math.abs(lo) * .005)).map(r => r.scenario), base: base ? base[k] : null}; };
-  return {orders: base ? base.orders : 0, cost: pick("cost_per_unit_eur"), cust: pick("customer_cost_per_unit_eur"), lead: pick("lead_time_days"), paper: pick("flexitog_paperwork"), hassle: pick("hassle")};
+// ============================================================ Route Dashboard: shared state
+// One store every section reads. selectedRegion, selectedCountry, selectedOrder and selectedOption live in `ui`
+// (the map and the drawer already use it); RS is the single way to read and change them.
+const FR = window.FlexiRoute;
+const RS = {
+  includeCandidates: true,
+  get selectedRegion(){ return ui.region; },
+  get selectedCountry(){ return ui.country; },
+  get selectedOrder(){ return ui.orderPicked ? ui.orderId : null; },
+  get selectedOption(){ return ui.override; },
+};
+function setRegion(r){
+  ui.region = r; ui.orderPicked = false;
+  if (ui.country && (r === "All" || R.data.regionFor(ui.country) !== r)) { ui.country = null; if (selected && selected.kind === "country") selected = null; }
+  renderView(); resetView();
 }
+function setCountry(c){
+  ui.country = c; ui.orderPicked = false;
+  if (c) ui.region = R.data.regionFor(c);
+  renderView();
+}
+function setCandidates(on){ RS.includeCandidates = !!on; renderView(); }
+// Region with the most batch orders: the default selection.
+function defaultRegion(){
+  const n = {}; R.rows.filter(r => r.scenario === "cif_baseline").forEach(r => { n[r.region] = (n[r.region] || 0) + 1; });
+  return REGIONS.slice().sort((a, b) => (n[b] || 0) - (n[a] || 0))[0] || "All";
+}
+
+// View model for one render: country stats under the switch, best scenario per region and country, issue split.
+let VM = null;
+const goalsList = () => { try { return (window.BenchUI && BenchUI.state && BenchUI.state.goals) || []; } catch (e) { return []; } };
+const providersList = () => { try { return (window.BenchUI && BenchUI.state && BenchUI.state.providers) || []; } catch (e) { return []; } };
+const RFQ = FR.rfqAdapter(providersList);
+function buildVM(){
+  const rows = (RS.includeCandidates ? R.rows : R.rowsSigned).filter(r => REGIONS.includes(r.region));
+  const cs = FR.countryStats(rows, {method: ui.method, goals: goalsList(), dcs: R.data.dcs, includeCandidates: RS.includeCandidates});
+  const byC = Object.fromEntries(cs.map(c => [c.country, c]));
+  const regionCs = rg => cs.filter(c => R.data.regionFor(c.country) === rg);
+  const opt = {includeCandidates: RS.includeCandidates};
+  const best = Object.fromEntries(REGIONS.map(rg => [rg, FR.bestScenario(regionCs(rg), opt)]));
+  const bestC = Object.fromEntries(cs.map(c => [c.country, FR.bestScenario([c], opt)]));
+  const split = FR.splitIssues(issuesAll());
+  return {rows, cs, byC, regionCs, best, bestC, risks: split.risks};
+}
+function selCountries(){ return ui.country ? [VM.byC[ui.country]].filter(Boolean) : ui.region !== "All" ? VM.regionCs(ui.region) : VM.cs; }
+const selName = () => (ui.country ? CNAME(ui.country) : ui.region === "All" ? "All regions" : ui.region);
+const inSel = c => (ui.country ? c === ui.country : ui.region === "All" || R.data.regionFor(c) === ui.region);
+const wdTxt = v => (v == null ? "n/a" : `${fmt(v, Number.isInteger(v) ? 0 : 1)} working day${v === 1 ? "" : "s"}`);
+function targetTxt(cs){
+  const d = [...new Set(cs.map(c => c.target && c.target.days).filter(v => v != null))].sort((a, b) => a - b);
+  return !d.length ? "n/a" : d.length === 1 ? wdTxt(d[0]) : `${fmt(d[0])} to ${wdTxt(d[d.length - 1])}`;
+}
+const scName = (s, short) => `<i class="sw" style="background:var(--s-${s})"></i><b style="color:var(--s-${s})">${esc(short ? SHORT[s] : E.LABELS[s])}</b>`;
+const STATUS_TXT = {signed: "signed", candidate: "candidate", none: "no partner"};
+const realShareOf = rows => { const ok = rows.filter(r => r.available); return ok.length ? 1 - ok.reduce((a, r) => a + r.placeholder_cost_share, 0) / ok.length : null; };
+function noneText(where, reason){
+  return !RS.includeCandidates ? `No signed partner serves ${esc(where)}. Switch on ‘Include partners not yet signed’ to compare candidates.`
+    : `No partner serves ${esc(where)} yet. Add one in Parameters > Partners.`;
+}
+
+// ============================================================ 1. best option per region
 function renderRegions(){
+  $("inclCand").checked = RS.includeCandidates;
   $("regions").innerHTML = REGIONS.map(rg => {
-    const w = winners(rg);
-    const line = (k, x, unit, dp) => x ? `<li><span class="k">${k}</span><span class="v">${x.s.map(s => `<i class="sw" style="background:var(--s-${s})"></i>`).join("")}<b>${x.s.map(s => SHORT[s]).join(" = ")}</b> <span class="num">${unit}${fmt(x.v, dp)}</span></span></li>` +
-      `<li class="base"><span></span><span>baseline ${unit}${fmt(x.base, dp)}</span></li>` : "";
-    return `<button type="button" class="rcard" data-region="${esc(rg)}" aria-pressed="${ui.region === rg}"><div class="rh"><h3>${esc(rg)}</h3><span class="faint num">${w.orders} orders</span></div><ul>` +
-      line("Lowest cost/unit", w.cost, "€", 2) + line("Customer pays least", w.cust, "€", 2) + line("Fastest", w.lead, "", 1) + line("Least FlexiTog paperwork", w.paper, "", 1) + `</ul></button>`;
+    const cs = VM.regionCs(rg), b = VM.best[rg], orders = cs.reduce((a, c) => a + c.orders, 0);
+    const cnt = FR.severityCounts(VM.risks.filter(i => (i.countries || []).some(c => R.data.regionFor(c) === rg)));
+    const sev = ["critical", "serious", "warning", "info"].filter(k => cnt[k]).map(k => `<span class="sev ${k}">${cnt[k]} ${k}</span>`).join(" ") || '<span class="faint">none</span>';
+    const real = realShareOf(VM.rows.filter(r => r.region === rg));
+    let body;
+    if (!orders) body = `<p class="empty">No orders to ${esc(rg)} in this batch.</p>`;
+    else if (!b.scenario) body = `<p class="empty">${noneText(rg, b.reason)}</p>`;
+    else {
+      const st = b.stats[b.scenario];
+      body = `<div class="rbest">${scName(b.scenario)}${b.missesTarget ? ' <span class="miss">misses target</span>' : ""}</div><ul>` +
+        `<li><span class="k">Cost to serve per unit</span><span class="v num">€${fmt(st.costPerUnit, 2)}</span></li>` +
+        `<li><span class="k">Lead time</span><span class="v num${b.missesTarget ? " miss" : ""}">${wdTxt(st.leadWd)}</span></li>` +
+        `<li><span class="k">Target</span><span class="v num">${targetTxt(cs)}</span></li>`;
+    }
+    body += (orders && b.scenario ? "" : "<ul>") +
+      `<li><span class="k">Risks</span><span class="v">${sev}</span></li>` +
+      `<li><span class="k">Cost on real data</span><span class="v num">${real == null ? "n/a" : pct(real)}</span></li></ul>`;
+    return `<button type="button" class="rcard" data-region="${esc(rg)}" aria-pressed="${ui.region === rg}"><div class="rh"><h3>${esc(rg)}</h3><span class="faint num">${orders} orders</span></div>${body}</button>`;
   }).join("");
   $("regions").querySelectorAll(".rcard").forEach(b => b.addEventListener("click", () => setRegion(ui.region === b.dataset.region ? "All" : b.dataset.region)));
 }
 
-// ============================================================ country panel
+// ============================================================ 2. scenario comparison
+const CMP = [["costPerUnit", "Cost to serve per unit", "€", 2], ["custPerUnit", "Customer pays per unit", "€", 2], ["leadWd", "Lead time", "working days", 1],
+  ["hassle", "Hassle score", "pts", 1], ["paperwork", "FlexiTog paperwork", "steps / order", 1], ["missing", "Orders missing target", "orders", 0]];
+function oosReason(s, cs){
+  if (s === "cif_baseline") return "No Helmond route to this selection";
+  const st = cs.map(c => (c.scenarios[s] || {}).status || "none");
+  if (st.every(x => x === "none")) return "No partner in this selection";
+  if (!RS.includeCandidates && !st.includes("signed")) return "Only candidates, switch on the toggle";
+  return "No order qualifies: below the partner's minimum order value or a rate is missing";
+}
+function renderCompare(){
+  const cs = selCountries(), orders = cs.reduce((a, c) => a + c.orders, 0), agg = FR.combine(cs);
+  const live = SC.filter(s => agg[s].served > 0), ins = live.filter(s => s !== "cif_baseline");
+  const bestOf = k => { const v = ins.map(s => agg[s][k]).filter(x => x != null); return v.length ? Math.min(...v) : null; };
+  const best = Object.fromEntries(CMP.map(([k]) => [k, bestOf(k)]));
+  const isBest = (k, v) => v != null && best[k] != null && Math.abs(v - best[k]) <= Math.max(1e-9, Math.abs(best[k]) * .005);
+  const partner = s => { if (s === "cif_baseline") return "Helmond"; const ps = cs.map(c => (c.scenarios[s] || {}).status || "none");
+    const lab = STATUS_TXT[agg[s].status]; const k = ps.filter(x => x !== "none").length; return k && k < ps.length ? `${lab} (${k} of ${ps.length} countries)` : lab; };
+  const row = s => {
+    if (!agg[s].served) return `<tr class="oos"><td>${scName(s, true)}</td><td colspan="${CMP.length + 1}" class="faint">${esc(oosReason(s, cs))}</td></tr>`;
+    return `<tr><td>${scName(s, true)}</td>` + CMP.map(([k, , u, dp]) => { const v = agg[s][k], t = v == null ? "n/a" : (u === "€" ? "€" : "") + fmt(v, dp);
+      return `<td class="n">${s !== "cif_baseline" && isBest(k, v) ? `<b>${t}</b>` : t}</td>`; }).join("") + `<td>${esc(partner(s))}</td></tr>`;
+  };
+  $("cmpCard").innerHTML = `<div class="cardhead"><h2 id="s2h">Scenario comparison</h2><span class="faint" style="font-size:12px">${esc(selName())} · ${orders} orders · ${RS.includeCandidates ? "signed and candidate partners" : "signed partners only"}</span></div>` +
+    (orders ? `<div class="tablewrap"><table class="cmp"><thead><tr><th>Scenario</th>${CMP.map(([, l, u]) => `<th class="n">${esc(l)}<br><span class="faint">${esc(u)}</span></th>`).join("")}<th>Partner</th></tr></thead><tbody>${SC.map(row).join("")}</tbody></table></div>` +
+      `<p class="faint" style="font-size:12px">Weighted by order count. Lead time in working days after pickup, on each destination's weekend, against the lane rules. Bold = best in-scope value. Hassle: ${esc($("method").selectedOptions[0] ? $("method").selectedOptions[0].textContent : ui.method)}.</p>`
+      : `<p class="empty">No orders to ${esc(selName())} in this batch.</p>`);
+}
+
+// ============================================================ 3. country panel
 function renderCountry(){
-  const el = $("countryPanel");
-  const c = ui.country;
+  const el = $("countryPanel"), c = ui.country;
   if (!c) {
-    el.innerHTML = `<h2>Country detail</h2><p class="empty">Click a country on the map to compare the four scenarios for its orders and see its issues.</p>` +
-      `<dl class="kv"><dt>Batch</dt><dd>${BATCH.orders.length} orders from ${esc(BATCH.source)}</dd><dt>Countries</dt><dd>${[...new Set(R.rows.map(r => r.country))].length}</dd></dl>`;
+    const cs = selCountries().slice().sort((a, b) => b.orders - a.orders);
+    el.innerHTML = `<div class="cardhead"><h2>${esc(selName())}</h2><span class="faint">click a country</span></div>` +
+      (cs.length ? `<div class="tablewrap"><table><thead><tr><th>Country</th><th class="n">Orders</th><th>Best scenario</th></tr></thead><tbody>${cs.map(x => { const b = VM.bestC[x.country];
+        return `<tr class="lnkrow" data-c="${esc(x.country)}" tabindex="0"><td>${esc(CNAME(x.country))}</td><td class="n">${x.orders}</td><td>${b.scenario ? scName(b.scenario, true) + (b.missesTarget ? ' <span class="miss">misses target</span>' : "") : `<span class="faint">${RS.includeCandidates ? "no partner" : "no signed partner"}</span>`}</td></tr>`; }).join("")}</tbody></table></div>`
+        : `<p class="empty">No orders in this selection.</p>`) +
+      `<dl class="kv"><dt>Batch</dt><dd>${BATCH.orders.length} orders from ${esc(BATCH.source)}</dd></dl>`;
+    el.querySelectorAll(".lnkrow").forEach(tr => { const go = () => { select("country", tr.dataset.c); zoomToCountry(tr.dataset.c); };
+      tr.addEventListener("click", go); tr.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } }); });
     return;
   }
-  const rows = SC.map(s => ({s, a: countryCard(s)[c]}));
-  const nodes = R.data.dcs.filter(d => d.dc_type !== "helmond_hub" && (d.country === c || String(d.serves_countries || "").split(";").includes(c)));
-  const iss = issuesAll().filter(i => (i.countries || []).includes(c)).sort((a, b) => SEV_RANK[a.severity] - SEV_RANK[b.severity]);
-  el.innerHTML = `<div class="cardhead"><h2>${esc(CNAME(c))}</h2><span class="faint num">${esc(R.data.regionFor(c))}</span></div>` +
-    (rows[0].a ? `<div class="tablewrap"><table><thead><tr><th>Scenario</th><th>€/unit</th><th>Cust €/unit</th><th>Days</th><th>Cover</th></tr></thead><tbody>` +
-      rows.map(({s, a}) => a ? `<tr><td><i class="sw" style="background:var(--s-${s})"></i> ${esc(SHORT[s])}</td><td class="n">${fmt(a.cost_per_unit_eur, 2)}</td><td class="n">${fmt(a.customer_cost_per_unit_eur, 2)}</td><td class="n">${fmt(a.lead_time_days, 1)}</td><td class="n">${pct(a.coverage)}</td></tr>` : "").join("") +
-      `</tbody></table></div><p class="faint" style="font-size:12px">${rows[0].a.orders} batch order(s), ${fmt(rows[0].a.pallets)} pallets.</p>` : `<p class="empty">No batch orders to ${esc(CNAME(c))}.</p>`) +
-    `<h3>Nodes serving ${esc(CNAME(c))}</h3>` +
-    (nodes.length ? `<ul class="issues">${nodes.map(d => `<li><i class="sw" style="background:var(--s-${d.dc_type});margin-top:4px"></i><span><b>${esc(d.name)}</b> <span class="faint">${esc(d.status)}${d.country !== c ? ", cross-border from " + esc(d.country) : ""}</span></span></li>`).join("")}</ul>` : `<p class="empty">None. Only the DAP baseline serves this country.</p>`) +
-    `<h3>Issues</h3>` + (iss.length ? `<ul class="issues">${iss.map(issueLi).join("")}</ul>` : `<p class="empty">No issues recorded.</p>`);
+  const x = VM.byC[c], rg = R.data.regionFor(c), t = FR.targetFor(c, goalsList());
+  const custs = new Set(R.rows.filter(r => r.country === c && r.scenario === "cif_baseline").map(r => r.customer_id));
+  const cities = [...new Set([...custs].map(id => (R.data.customers.find(k => k.customer_id === id) || {}).city).filter(Boolean))];
+  const b = VM.bestC[c] || {};
+  const risks = VM.risks.filter(i => (i.countries || []).includes(c));
+  el.innerHTML = `<div class="cardhead"><h2>${esc(CNAME(c))}</h2><button type="button" class="btn ghost sm" id="showRegion">Show all of ${esc(rg)}</button></div>` +
+    `<dl class="kv"><dt>Orders</dt><dd>${x ? x.orders : 0}</dd><dt>Delivery to</dt><dd>${cities.length ? cities.map(esc).join(", ") : "country level only"}</dd>` +
+    `<dt>Target</dt><dd>${t ? `${wdTxt(t.days)} <span class="faint">(${esc(t.source)}: ${esc(t.note)})</span>` : "no lane rule"}</dd>` +
+    `<dt>Best</dt><dd>${b.scenario ? scName(b.scenario) + (b.missesTarget ? ' <span class="miss">misses target</span>' : "") : `<span class="faint">${x ? noneText(CNAME(c), b.reason) : "no orders"}</span>`}</dd></dl>` +
+    (x ? `<div class="tablewrap"><table><thead><tr><th>Scenario</th><th class="n">€/unit</th><th class="n">Days</th><th>Status</th></tr></thead><tbody>` +
+      SC.map(s => { const v = x.scenarios[s]; const miss = v.served && t && v.leadWd > t.days + 1e-9;
+        return `<tr><td>${scName(s, true)}</td><td class="n">${v.served ? fmt(v.costPerUnit, 2) : "–"}</td><td class="n${miss ? " miss" : ""}">${v.served ? fmt(v.leadWd, 1) : "–"}</td><td>${s === "cif_baseline" ? "Helmond" : esc(STATUS_TXT[v.status])}${v.served || s === "cif_baseline" || v.status === "none" ? "" : ' <span class="faint">· not in scope</span>'}</td></tr>`; }).join("") +
+      `</tbody></table></div><p class="faint" style="font-size:12px">Days = working days after pickup, red when above the target.</p>` : "") +
+    `<h3>Risks</h3>` + (risks.length ? `<ul class="issues">${risks.map(issueLi).join("")}</ul>` : `<p class="empty">No risks recorded.</p>`);
+  $("showRegion").addEventListener("click", () => { ui.country = null; if (selected && selected.kind === "country") selected = null; renderView(); resetView(); });
 }
 const issueLi = i => `<li><span class="sev ${i.severity}">${i.severity === "info" ? "i" : "▲"} ${esc(i.severity)}</span><span><b>${esc(i.title)}</b><br><span class="muted">${esc(i.detail)}</span>${i.lever ? `<br><span class="faint">Lever: ${esc(i.lever)}</span>` : ""}${i.kind === "briefing" ? ` <span class="faint">· briefing note, verify</span>` : ""}</span></li>`;
 
-// ============================================================ small multiples
-const SM_ROWS = [["cost_per_unit_eur","Cost to serve per unit","€",2],["customer_cost_per_unit_eur","Customer pays per unit","€",2],["lead_time_days","Lead time","days",1],["hassle","Hassle score","pts",1],["flexitog_paperwork","FlexiTog paperwork","steps / order",1]];
-function renderSM(){
-  const sc = regionCard(); const by = {}; sc.forEach(r => by[r.group + "|" + r.scenario] = r);
-  $("smLegend").innerHTML = SC.map(s => `<span><i class="sw" style="background:var(--s-${s})"></i>${esc(E.LABELS[s])}</span>`).join("");
-  let h = `<div class="ch first"></div>` + REGIONS.map(r => `<div class="ch${ui.region !== "All" && ui.region !== r ? " dim" : ""}">${esc(r)}</div>`).join("");
-  SM_ROWS.forEach(([k, label, unit, dp]) => {
-    const vals = sc.map(r => r[k]).filter(v => v != null); const max = Math.max(...vals, 0) || 1;
-    h += `<div class="rh sp"><b>${esc(label)}</b>${esc(unit)}</div>`;
-    REGIONS.forEach(rg => {
-      const Wd = 300, L = 78, Rr = 46, bh = 12, gap = 7, H = SC.length * (bh + gap);
-      const ins = INS.map(s => by[rg + "|" + s]?.[k]).filter(v => v != null); const best = ins.length ? Math.min(...ins) : null;
-      let svg = `<svg viewBox="0 0 ${Wd} ${H}" role="img" aria-label="${esc(label)}, ${esc(rg)}"><line x1="${L}" x2="${L}" y1="0" y2="${H - gap}" style="stroke:var(--rule)"/>`;
-      SC.forEach((s, i) => {
-        const r = by[rg + "|" + s], v = r ? r[k] : null, y = i * (bh + gap);
-        svg += `<text x="${L - 6}" y="${y + bh - 2}" text-anchor="end">${esc(SHORT[s])}</text>`;
-        if (v == null) { svg += `<text x="${L + 4}" y="${y + bh - 2}">not served</text>`; return; }
-        const w = Math.max((Wd - L - Rr) * v / max, v > 0 ? 2 : 0);
-        const isB = s !== "cif_baseline" && best != null && Math.abs(v - best) <= Math.max(1e-9, Math.abs(best) * .005);
-        const t = `${E.LABELS[s]} · ${rg}: ${fmt(v, dp)} ${unit}${r.coverage < 1 ? `, covers ${pct(r.coverage)}` : ""}`;
-        svg += `<rect x="${L}" y="${y}" width="${w}" height="${bh}" rx="3" style="fill:var(--s-${s})"/><rect x="${L}" y="${y - 3}" width="${Wd - L}" height="${bh + 6}" fill="transparent" data-tip="${esc(t)}"/>`;
-        svg += `<text class="${isB ? "best" : "v"}" x="${L + w + 5}" y="${y + bh - 2}">${fmt(v, dp)}${isB ? " ◂" : ""}</text>`;
-      });
-      h += `<div class="cell${ui.region !== "All" && ui.region !== rg ? " dim" : ""}">${svg}</svg></div>`;
-    });
-  });
-  $("sm").innerHTML = h; bindTips($("sm"));
-}
-
-// ============================================================ order explorer
+// ============================================================ 4. order explorer with route steps
 function orderList(){
-  const t = MD.t.orders.map(o => ({o, lines: MD.t.order_lines.filter(l => l.order_id === o.order_id), group: "Test orders"}));
-  const inRegion = o => { const c = R.data.customers.find(x => x.customer_id === o.customer_id); return ui.region === "All" || (c && R.data.regionFor(c.country) === ui.region); };
-  const b = BATCH.orders.filter(inRegion).slice(0, 300).map(o => ({o, lines: BATCH.lines.filter(l => l.order_id === o.order_id), group: "Batch orders"}));
+  const custOk = id => { const c = R.data.customers.find(x => x.customer_id === id); return c && inSel(c.country); };
+  const t = MD.t.orders.filter(o => custOk(o.customer_id)).map(o => ({o, lines: MD.t.order_lines.filter(l => l.order_id === o.order_id), group: "Test orders"}));
+  const b = BATCH.orders.filter(o => custOk(o.customer_id)).slice(0, 300).map(o => ({o, lines: BATCH.lines.filter(l => l.order_id === o.order_id), group: "Batch orders"}));
   return [...t, ...b];
+}
+const optKey = r => r.key || E.M.key(r);
+// Baseline DAP runs from FlexiTog's own hub ("Helmond"); RFQ forwarders are not contracted, so they count as candidates.
+const optStatus = r => (r.rfq ? "candidate" : r.scenario === "cif_baseline" ? "Helmond" : String(r.dc_status) === "existing" ? "signed" : "candidate");
+const optIn = r => RS.includeCandidates || optStatus(r) !== "candidate";
+const clip = (t, n) => (t.length > n ? t.slice(0, n - 1) + "…" : t);
+function optSource(r){
+  if (r.steps.some(x => x.source === "rfq")) return "from RFQ";
+  if (r.rfqStock) return "RFQ transit, placeholder cost";
+  const fr = r.steps.filter(x => x.category === "freight");
+  return fr.length && fr.every(x => x.source !== "placeholder") ? "entered rates" : "placeholder";
+}
+const optLabel = r => (r.rfq ? `${SHORT.cif_baseline} · ${r.rfq.providerName}` : SHORT[r.scenario] + (r.dc_id ? " · " + r.dc_id : ""));
+// RFQ adapter in use: an RFQ rate for the order's lane and weight band becomes an extra Baseline DAP option per
+// provider (door-to-door freight replaces the main leg and the local delivery); a node linked to a provider through
+// rfq_provider_id takes its delivery-from-stock transit days from stock.<lane>. No RFQ value: engine placeholder rates.
+function withRfq(ev, lines){
+  const lane = FR.laneFor(ev.ctx.country), kg = FR.grossKg(lines, R.data.products, ev.ctx.pallets), band = FR.bandFor(kg);
+  const out = ev.routes.map(r => {
+    const pid = r.dc_id && (R.data.dcs.find(d => d.dc_id === r.dc_id) || {}).rfq_provider_id; if (!pid) return r;
+    const q = RFQ.getRfqStock(String(pid), lane); if (q.source !== "rfq") return r;
+    const c = JSON.parse(JSON.stringify(r)), del = c.steps.filter(x => x.leg === "regional" || x.leg === "domestic");
+    del.forEach((x, i) => { x.days = i === 0 ? q.transitDays : 0; x.note = "transit from RFQ " + q.providerName; });
+    c.rfqStock = q; return c;
+  });
+  const base = ev.baseline;
+  if (lane && base) RFQ.quotes(lane, band).forEach(q => {
+    const c = JSON.parse(JSON.stringify(base)), i = c.steps.findIndex(x => x.leg === "main");
+    const st = {step: `Door-to-door freight Helmond -> ${CNAME(ev.ctx.country)} (${q.mode || "RFQ"}, ${lane} ${band})`, category: "freight", cost_eur: q.costPerShipment,
+      days: q.transitDays != null ? q.transitDays : (i >= 0 ? c.steps[i].days : 0), paid_by: E.FLEXITOG, party: q.providerName, customs: false, doc_steps: 0,
+      source: "rfq", note: `RFQ response ${q.responseDate}`, leg: "main", mode: "", pallets: ev.ctx.pallets};
+    if (i >= 0) c.steps[i] = st; else c.steps.splice(2, 0, st);
+    c.steps = c.steps.filter(x => x.leg !== "domestic");
+    c.issues = c.issues.filter(x => !/main freight rate/i.test(x));
+    c.rfq = q; c.key = "rfq:" + q.providerId; out.push(c);
+  });
+  return {routes: out, lane, band, kg};
 }
 function renderOrder(){
   const list = orderList();
-  if (!ui.orderId || !list.some(x => x.o.order_id === ui.orderId)) ui.orderId = list[0]?.o.order_id;
+  if (!ui.orderId || !list.some(x => x.o.order_id === ui.orderId)) { ui.orderId = list[0] ? list[0].o.order_id : null; ui.override = "auto"; ui.orderPicked = false; }
   const cur = list.find(x => x.o.order_id === ui.orderId);
-  if (!cur) { $("orderCard").innerHTML = "<p class='empty'>No orders.</p>"; $("stepsCard").innerHTML = ""; return; }
-  const ev = E.evaluate(cur.o, cur.lines, R.data, ui.override === "auto" ? null : ui.override);
-  const cust = R.data.customers.find(c => c.customer_id === cur.o.customer_id) || {};
-  const groups = ["Test orders", "Batch orders"].map(g => `<optgroup label="${g}">` + list.filter(x => x.group === g).map(x => `<option value="${esc(x.o.order_id)}"${x.o.order_id === ui.orderId ? " selected" : ""}>${esc(x.o.order_id)} · ${esc(x.o.customer_id)} · ${fmt(x.o.pallet_count)} pal</option>`).join("") + "</optgroup>").join("");
-  const opts = [`<option value="auto">Recommended</option>`, ...ev.routes.map(r => `<option value="${esc(E.M.key(r))}"${E.M.key(r) === ui.override ? " selected" : ""}>${esc(E.M.label(r))}</option>`)].join("");
-  const maxT = Math.max(1, ...ev.routes.map(r => E.M.cost(r)));
-  const Wd = 460, L = 150, bh = 15, gap = 10, H = ev.routes.length * (bh + gap);
-  let svg = `<svg viewBox="0 0 ${Wd} ${H}" style="width:100%;height:auto" role="img" aria-label="Cost per route split by payer">`;
-  ev.routes.forEach((r, i) => {
-    const y = i * (bh + gap); let x = L; const isRec = r === ev.recommended, isSel = r === ev.selected;
-    svg += `<text x="${L - 8}" y="${y + bh - 3}" text-anchor="end" class="${isSel ? "best" : ""}">${esc(SHORT[r.scenario] + (r.dc_id ? " · " + r.dc_id : ""))}${isRec ? " ★" : ""}</text>`;
+  $("orderNote").textContent = `${list.length} order(s) in ${selName()}`;
+  if (!cur) { $("orderCard").innerHTML = `<p class="empty">No orders in ${esc(selName())}.</p>`; $("stepsCard").innerHTML = ""; return; }
+  const ev = E.evaluate(cur.o, cur.lines, R.data, null);
+  const X = withRfq(ev, cur.lines);
+  const all = X.routes.filter(optIn).sort((a, b) => E.M.cost(a) - E.M.cost(b));
+  const pool = all.filter(r => r.scenario !== "cif_baseline" && !r.rfq && E.M.feasible(r) && !E.M.belowMov(r));
+  const rec = pool.reduce((a, r) => (!a || E.M.score(r) < E.M.score(a) ? r : a), null);
+  let sel = ui.override !== "auto" ? all.find(r => optKey(r) === ui.override) : null;
+  if (!sel) { ui.override = "auto"; sel = rec || all.find(r => r.scenario === "cif_baseline") || all[0] || null; }
+  const cust = R.data.customers.find(c => c.customer_id === cur.o.customer_id) || {}, country = ev.ctx.country, t = FR.targetFor(country, goalsList());
+  const groups = ["Test orders", "Batch orders"].map(g => { const xs = list.filter(x => x.group === g); return xs.length ? `<optgroup label="${g}">` + xs.map(x => `<option value="${esc(x.o.order_id)}"${x.o.order_id === ui.orderId ? " selected" : ""}>${esc(x.o.order_id)} · ${esc(x.o.customer_id)} · ${fmt(x.o.pallet_count)} pal</option>`).join("") + "</optgroup>" : ""; }).join("");
+  const opts = [`<option value="auto">Recommended</option>`, ...all.map(r => `<option value="${esc(optKey(r))}"${optKey(r) === ui.override ? " selected" : ""}>${esc(optLabel(r))} · ${optStatus(r)} · ${optSource(r)}</option>`)].join("");
+  // option bars: ranked by total cost, stacked by payer; click a row to select it
+  const maxT = Math.max(1, ...all.map(r => E.M.cost(r)));
+  const Wd = 460, L = 170, bh = 14, rowH = 34, H = Math.max(1, all.length) * rowH;
+  let svg = `<svg viewBox="0 0 ${Wd} ${H}" style="width:100%;height:auto" role="group" aria-label="Route options ranked by total cost, split by payer">`;
+  all.forEach((r, i) => {
+    const y = i * rowH + 4; let x = L; const isSel = r === sel, isRec = r === rec;
+    svg += `<g class="opt${isSel ? " on" : ""}" data-key="${esc(optKey(r))}" tabindex="0" role="button" aria-pressed="${isSel}" aria-label="${esc(optLabel(r))}, €${fmt(E.M.cost(r))}">` +
+      `<rect x="0" y="${y - 4}" width="${Wd}" height="${rowH}" fill="transparent"/>` +
+      `<text x="${L - 8}" y="${y + 10}" text-anchor="end" class="${isSel ? "best" : "v"}"><title>${esc(optLabel(r))}</title>${esc(clip(optLabel(r), 22))}${isRec ? " ★" : ""}</text>` +
+      `<text x="${L - 8}" y="${y + 23}" text-anchor="end" style="fill:var(--muted);font-size:10px">${optStatus(r)} · ${esc(optSource(r))}</text>`;
     [["flexitog", E.FLEXITOG], ["partner", E.PARTNER], ["customer", E.CUSTOMER]].forEach(([k, who]) => {
       const v = E.M.paid(r, who), w = (Wd - L - 64) * v / maxT; if (w <= 0) return;
-      svg += `<rect x="${x}" y="${y}" width="${Math.max(w - 2, 1)}" height="${bh}" rx="2" style="fill:var(--p-${k})" data-tip="${esc(E.M.label(r))}: ${who} pays €${fmt(v)}"/>`; x += w;
+      svg += `<rect x="${x}" y="${y + 2}" width="${Math.max(w - 2, 1)}" height="${bh}" rx="2" style="fill:var(--p-${k})" data-tip="${esc(optLabel(r))}: ${who} pays €${fmt(v)}"/>`; x += w;
     });
-    svg += `<text class="v" x="${x + 4}" y="${y + bh - 3}">€${fmt(E.M.cost(r))}${E.M.feasible(r) ? "" : " ✕"}</text>`;
+    svg += `<text class="v" x="${x + 4}" y="${y + 13}">€${fmt(E.M.cost(r))}${E.M.feasible(r) ? "" : " ✕"}</text></g>`;
   });
   svg += "</svg>";
-  const rec = ev.recommended;
-  $("orderCard").innerHTML = `<div class="cardhead"><h2>Order explorer</h2></div>
-    <div class="controls"><div class="ctl" style="flex:1 1 220px"><label for="orderSel">Order</label><select id="orderSel">${groups}</select></div>
-    <div class="ctl" style="flex:1 1 220px"><label for="ovSel">Route</label><select id="ovSel">${opts}</select></div></div>
-    <p class="muted num" style="font-size:12px">${esc(cust.name || cur.o.customer_id)} · ${esc(cust.city || "")} ${esc(CNAME(cust.country))} · €${fmt(ev.ctx.value)} · ${fmt(ev.ctx.units)} units · ${fmt(ev.ctx.pallets)} pallet(s)</p>
-    <div class="rec">${rec ? `<b>Recommended: ${esc(E.M.label(rec))}.</b> €${fmt(E.M.cost(rec))} + ${fmt(rec.risk_premium_pct)}% risk premium (${esc(rec.lane_status)} lane, ${esc(rec.dc_status)} node).` : "No feasible in-scope route."} ${ev.notes.map(esc).join(" ")}</div>
+  const why = () => {
+    const nodes = X.routes.filter(r => r.scenario !== "cif_baseline" && !r.rfq);
+    if (!nodes.length) return `No partner serves ${esc(CNAME(country))} yet, so only the DAP baseline runs.`;
+    if (!RS.includeCandidates && nodes.every(r => optStatus(r) === "candidate")) return `No signed partner serves ${esc(CNAME(country))}. Switch on ‘Include partners not yet signed’ to compare candidates.`;
+    const r0 = nodes.find(r => !E.M.feasible(r)) || nodes[0];
+    return `No partner route is feasible: ${esc(r0.issues[0] || (E.M.belowMov(r0) ? "the order is below the partner's minimum order value" : "no rate"))}.`;
+  };
+  $("orderCard").innerHTML = `<div class="controls"><div class="ctl" style="flex:1 1 220px"><label for="orderSel">Order</label><select id="orderSel">${groups}</select></div>
+    <div class="ctl" style="flex:1 1 220px"><label for="ovSel">Route option</label><select id="ovSel">${opts}</select></div></div>
+    <p class="muted num" style="font-size:12px">${esc(cust.city || "city not set")}, ${esc(CNAME(country))} · ${fmt(ev.ctx.units)} units · ${fmt(ev.ctx.pallets)} pallet(s) · ${fmt(X.kg)} kg (${esc(X.band)}) · target ${t ? wdTxt(t.days) : "n/a"}</p>
+    <div class="rec">${rec ? `<b>Recommended: ${esc(E.M.label(rec))}.</b> €${fmt(E.M.cost(rec))} + ${fmt(rec.risk_premium_pct)}% risk premium (${esc(rec.lane_status)} lane, ${esc(rec.dc_status)} node).` : why()} ${ev.notes.filter(n => RS.includeCandidates || !/node serves/.test(n)).map(esc).join(" ")}</div>
     <div class="maplegend"><span><i class="sw" style="background:var(--p-flexitog)"></i>FlexiTog pays</span><span><i class="sw" style="background:var(--p-partner)"></i>Partner pays</span><span><i class="sw" style="background:var(--p-customer)"></i>Customer pays</span></div>${svg}`;
   bindTips($("orderCard"));
-  $("orderSel").addEventListener("change", e => { ui.orderId = e.target.value; ui.override = "auto"; renderOrder(); });
-  $("ovSel").addEventListener("change", e => { ui.override = e.target.value; renderOrder(); });
-  const s = ev.selected;
-  if (!s) { $("stepsCard").innerHTML = "<h2>Steps</h2><p class='empty'>No route selected.</p>"; return; }
-  const b = ev.baseline;
+  const pick = k => { ui.override = k; ui.orderPicked = true; renderOrder(); drawOverlay(); drawLegend(); };
+  $("orderSel").addEventListener("change", e => { ui.orderId = e.target.value; ui.override = "auto"; ui.orderPicked = true; renderOrder(); drawOverlay(); drawLegend(); });
+  $("ovSel").addEventListener("change", e => pick(e.target.value));
+  $("orderCard").querySelectorAll("g.opt").forEach(g => {
+    g.addEventListener("click", () => pick(g.dataset.key));
+    g.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(g.dataset.key); } });
+  });
+  const s = sel;
+  if (!s) { $("stepsCard").innerHTML = `<h3>Steps</h3><p class="empty">${why()}</p>`; return; }
+  const b = ev.baseline, wk = (FR.laneRule(country) || {}).weekend || 1, wd = FR.workingDays(E.M.lead(s), wk);
+  const meets = t && wd <= t.days + 1e-9;
+  const verdict = t ? `<p class="${meets ? "" : "miss"}" style="font-size:13px">${meets ? "Meets" : "Misses"} the target of ${wdTxt(t.days)}: about ${fmt(wd, 1)} working days after pickup.</p>` : "";
   const delta = s !== b ? `<p class="num" style="font-size:12px">vs baseline: cost ${sign(E.M.cost(s) - E.M.cost(b))} € · customer ${sign(E.M.paid(s, E.CUSTOMER) - E.M.paid(b, E.CUSTOMER))} € · lead ${sign(E.M.lead(s) - E.M.lead(b))} d · customer steps ${sign(E.M.customerSteps(s) - E.M.customerSteps(b))}</p>` : "";
   const srcLine = (s.sourcing || []).filter(g => g.supplier_id).map(g => g.path === "direct"
     ? `${esc(g.supplier_id)} direct by ${esc(g.direct_mode)}, €${fmt(g.direct_eur_per_pallet)}/pallet${g.via_helmond_eur_per_pallet != null ? ` (via Helmond €${fmt(g.via_helmond_eur_per_pallet)})` : ""}`
     : `${esc(g.supplier_id)} via Helmond${g.direct_eur_per_pallet != null ? ` (direct would be €${fmt(g.direct_eur_per_pallet)}/pallet vs €${fmt(g.via_helmond_eur_per_pallet)})` : ""}`).join(" · ");
   const srcHtml = srcLine ? `<p class="faint" style="font-size:12px">Stock source: ${srcLine}</p>` : "";
-  $("stepsCard").innerHTML = `<div class="cardhead"><h2>${esc(E.M.label(s))}</h2><span class="num faint">€${fmt(E.M.cost(s))} · ${fmt(E.M.lead(s))} days</span></div>${delta}${srcHtml}
+  $("stepsCard").innerHTML = `<div class="cardhead"><h3>${esc(s.rfq ? `${E.LABELS.cif_baseline} | ${s.rfq.providerName}` : E.M.label(s))}</h3><span class="num faint">€${fmt(E.M.cost(s))} · ${fmt(E.M.lead(s))} days</span></div>${verdict}${delta}${srcHtml}
+    <p class="faint" style="font-size:12px">${optStatus(s)} · ${esc(optSource(s))}</p>
     ${s.warnings.concat(s.issues).map(w => `<p class="muted" style="font-size:12px">⚠ ${esc(w)}</p>`).join("")}
-    <ul class="steps">${s.steps.filter(x => x.category !== "receipt").map(x => `<li><span>${esc(x.step)}${x.customs ? '<span class="cus">CUSTOMS</span>' : ""}<br><span class="faint" style="font-size:11.5px">${esc(x.party)}${x.days ? " · " + fmt(x.days) + " d" : ""}${x.source === "placeholder" ? " · placeholder" : ""}</span></span><span class="pay ${esc(x.paid_by)}">${esc(x.paid_by)}</span><span class="num" style="text-align:right;min-width:56px">€${fmt(x.cost_eur)}</span></li>`).join("")}</ul>`;
+    <ul class="steps">${s.steps.filter(x => x.category !== "receipt").map(x => `<li><span>${esc(x.step)}${x.customs ? '<span class="cus">CUSTOMS</span>' : ""}<br><span class="faint" style="font-size:11.5px">${esc(x.party)}${x.days ? " · " + fmt(x.days) + " d" : ""}${x.source === "placeholder" ? " · placeholder" : x.source === "rfq" ? " · from RFQ" : ""}${x.note && /RFQ/.test(x.note) ? " · " + esc(x.note) : ""}</span></span><span class="pay ${esc(x.paid_by)}">${esc(x.paid_by)}</span><span class="num" style="text-align:right;min-width:56px">€${fmt(x.cost_eur)}</span></li>`).join("")}</ul>`;
 }
 const sign = v => (v > 0 ? "+" : "") + fmt(v);
 
-// ============================================================ issues + data request
+// ============================================================ 5. risks and coverage
 function renderIssues(){
-  const all = issuesAll().filter(i => ui.region === "All" || (i.countries || []).some(c => R.data.regionFor(c) === ui.region))
-    .sort((a, b) => SEV_RANK[a.severity] - SEV_RANK[b.severity]);
-  $("issueList").innerHTML = all.map(issueLi).join("") || `<li class="empty">No issues in this region.</li>`;
-  $("issueNote").textContent = `${all.length} issue(s). Briefing notes are general trade knowledge to verify; the rest are computed from the run.`;
-  $("dataReq").innerHTML = `<thead><tr><th>Priority</th><th>Dataset</th><th>Why</th><th>Source</th></tr></thead><tbody>` +
-    PAYLOAD.datasets.map(d => `<tr><td><span class="prio ${esc(d.priority)}">${esc(d.priority)}</span></td><td><b>${esc(d.sheet)}</b><br><span class="faint">${esc(d.target)}</span></td><td>${esc(d.why)}</td><td>${esc(d.where)}</td></tr>`).join("") + "</tbody>";
+  const all = VM.risks;
+  $("issueList").innerHTML = all.map(i => issueLi(i).replace("<li>", `<li class="${(i.countries || []).some(inSel) || !(i.countries || []).length ? "" : "out"}">`)).join("") || `<li class="empty">No risks recorded.</li>`;
+  $("issueNote").textContent = `${all.length} risk(s), faded outside ${selName()}. Coverage gaps are in the matrix. Briefing notes are general trade knowledge to verify.`;
+  const m = FR.coverageMatrix(R.data.dcs, FR.LANES.map(l => l.country));
+  const cell = (c, s, st) => st === "none" ? `<td><button type="button" class="btn ghost sm" data-cov="${esc(c)}" title="Add a partner: Parameters > Partners">no partner</button></td>`
+    : `<td>${st === "signed" ? "<b>signed</b>" : '<span class="muted">candidate</span>'}</td>`;
+  $("covTable").innerHTML = `<thead><tr><th>Country</th>${SC.map(s => `<th>${scName(s, true)}</th>`).join("")}</tr></thead><tbody>` +
+    m.map(r => `<tr class="${inSel(r.country) ? "" : "out"}"><td>${esc(CNAME(r.country))} <span class="faint num">${esc(FR.laneFor(r.country))}</span></td>${SC.map(s => cell(r.country, s, r.cells[s])).join("")}</tr>`).join("") + "</tbody>";
+  $("covTable").querySelectorAll("[data-cov]").forEach(b => b.addEventListener("click", () => {
+    openDrawer(); const g = document.querySelector('details.grp[data-g="dcs"]'); if (g) { g.open = true; g.scrollIntoView({block: "start"}); }
+  }));
+}
+
+// ============================================================ 6. data readiness
+// Status per dataset from the data actually loaded: master data rows by data_source, parameter rows by source.
+function datasetStatus(d){
+  const rows = d.kind === "entity" ? MD.t[d.key] : (W.params[d.key] || null);
+  if (!rows || !rows.length) return "missing";
+  const ph = rows.filter(r => String(r.data_source ?? r.source ?? "placeholder") === "placeholder").length;
+  return ph === 0 ? "done" : ph === rows.length ? "missing" : "partial";
+}
+function renderReadiness(){
+  const okRows = R.rows.filter(r => r.available), real = okRows.length ? 1 - okRows.reduce((a, r) => a + r.placeholder_cost_share, 0) / okRows.length : 0;
+  const st = PAYLOAD.datasets.map(d => datasetStatus(d)), n = k => st.filter(x => x === k).length;
+  $("dataReadySum").innerHTML = `<b>Data readiness</b><span class="pbar" role="img" aria-label="${pct(real)} of cost on real data"><i style="width:${(100 * real).toFixed(1)}%"></i></span>` +
+    `<span class="muted" style="font-weight:400;font-size:13px">${pct(real)} of cost runs on real data. ${n("done")} of ${st.length} datasets done, ${n("partial")} partial, ${n("missing")} missing.</span>`;
+  const label = {done: "done", partial: "partial", missing: "missing"};
+  $("dataReq").innerHTML = `<thead><tr><th>Priority</th><th>Dataset</th><th>Why</th><th>Source</th><th>Status</th></tr></thead><tbody>` +
+    PAYLOAD.datasets.map((d, i) => `<tr><td><span class="prio ${esc(d.priority)}">${esc(d.priority)}</span></td><td><b>${esc(d.sheet)}</b><br><span class="faint">${esc(d.target)}</span></td><td>${esc(d.why)}</td><td>${esc(d.where)}</td><td><span class="dst ${st[i]}">${label[st[i]]}</span></td></tr>`).join("") + "</tbody>";
 }
 
 // ============================================================ chips + controls
@@ -1411,13 +1630,8 @@ function renderChips(){
     (n ? `<span class="chip" style="background:var(--accent);color:var(--accent-ink)">${n} what-if change(s)</span>` : "");
   $("chgCount").textContent = n;
 }
-function setRegion(r){
-  ui.region = r;
-  if (ui.country && r !== "All" && R.data.regionFor(ui.country) !== r) { ui.country = null; if (selected && selected.kind === "country") selected = null; }
-  renderView(); resetView();
-}
 function initControls(){
-  ["regionSeg", "regionSegFs"].forEach(id => {
+  ["regionSegFs"].forEach(id => {
     $(id).innerHTML = ["All", ...REGIONS].map(r => `<button type="button" data-r="${esc(r)}" aria-pressed="${ui.region === r}">${esc(r)}</button>`).join("");
     $(id).querySelectorAll("button").forEach(b => b.addEventListener("click", () => setRegion(b.dataset.r)));
   });
@@ -1437,7 +1651,10 @@ function initControls(){
   $("zout").addEventListener("click", () => zoomCenter(1 / 1.4));
   $("zreset").addEventListener("click", resetView);
   $("fsBtn").addEventListener("click", toggleFs);
-  $("supView").addEventListener("click", supplyView);
+  // Supplier and issue layers start off; the buttons switch them on (Suppliers also frames the supply base).
+  $("supView").addEventListener("click", () => { ui.layers.suppliers = !ui.layers.suppliers; $("supView").setAttribute("aria-pressed", String(ui.layers.suppliers)); drawCountries(); drawOverlay(); if (ui.layers.suppliers) supplyView(); });
+  $("issView").addEventListener("click", () => { ui.layers.issues = !ui.layers.issues; $("issView").setAttribute("aria-pressed", String(ui.layers.issues)); drawOverlay(); drawLegend(); });
+  $("inclCand").addEventListener("change", e => setCandidates(e.target.checked));
   $("fsParams").addEventListener("click", openDrawer);
 }
 
@@ -1555,9 +1772,11 @@ function renderSupplierFilter(){
   sel.innerHTML = `<option value="all">All suppliers</option>` + list.map(sp => `<option value="${esc(sp.supplier_id)}"${String(sp.supplier_id) === ui.supplier ? " selected" : ""}>${esc(sp.city || sp.supplier_id)} · ${esc(String(sp.brands || "").split(";").join(", ") || sp.supplier_id)}</option>`).join("");
 }
 function renderView(){
-  document.querySelectorAll("#regionSeg button, #regionSegFs button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.r === ui.region)));
+  document.querySelectorAll("#regionSegFs button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.r === ui.region)));
   renderSupplierFilter();
-  renderChips(); renderRegions(); drawMap(); renderCountry(); renderSM(); renderOrder(); renderIssues();
+  VM = buildVM();
+  // sections in reading order: best option, comparison, map + country, orders, risks + coverage, data readiness
+  renderChips(); renderRegions(); renderCompare(); renderOrder(); drawMap(); renderCountry(); renderIssues(); renderReadiness();
 }
 load(); initControls(); compute(); renderView();
 </script>
