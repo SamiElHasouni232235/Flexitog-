@@ -134,6 +134,9 @@ def test_dashboard_html_is_self_contained(ws):
     # Route Dashboard: route_core inlined, six sections, the old scorecard grid and region buttons gone
     assert "root.FlexiRoute" in page and 'id="inclCand"' in page and 'id="cmpCard"' in page and 'id="covTable"' in page and 'id="dataReady"' in page
     assert 'id="sm"' not in page and 'id="regionSeg"' not in page
+    # Benchmarking reads providers from Master Data; the RFQ source map for unsaved files is embedded
+    assert '"sources":{"meta.rfq_version"' in page or '"sources":{"provider.provider_id"' in page
+    assert "window.FlexiDash" in page and "SEED_PROVIDERS" not in page and "DataStore" in page
     assert len(page.encode()) < 5_000_000
 
 

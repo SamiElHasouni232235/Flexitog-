@@ -107,12 +107,14 @@ COUNTRY_ALIASES = {
 EU27 = {"AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IE", "IT", "LV",
         "LT", "LU", "MT", "NL", "PL", "PT", "RO", "SK", "SI", "ES", "SE"}
 
-DC_TYPES = ["helmond_hub", "distributor", "3pl", "owned_warehouse"]
+DC_TYPES = ["helmond_hub", "distributor", "3pl", "owned_warehouse", "freight_forwarder"]
+PROVIDER_TYPES = ["3PL", "Freight forwarder", "Own hub"]
 DC_TYPE_LABELS = {
     "helmond_hub": "Helmond EU hub",
     "distributor": "Distributor-held stock",
     "3pl": "3PL presence",
     "owned_warehouse": "Owned non-EU warehouse",
+    "freight_forwarder": "Freight forwarder (no stock, not routed by the engine)",
 }
 DC_STATUS = ["existing", "potential", "candidate"]
 LANE_STATUS = ["proven", "occasional", "unproven"]
@@ -195,9 +197,15 @@ ENTITIES: dict[str, Entity] = {
             Field("outbound_eur_per_order", dtype="float",
                   description="3PL/warehouse pick and dispatch fee per order. Blank = scenario default",
                   aliases=["outbound", "outboundrate", "pickfee"]),
-            Field("rfq_provider_id",
-                  description="Optional. Benchmarking provider ID (PRV-0001) whose RFQ response prices this node",
-                  aliases=["rfqprovider", "providerid", "rfqid"]),
+            # Logistics provider fields for Benchmarking (the RFQ workflow reads providers from this table).
+            Field("provider_type", allowed=PROVIDER_TYPES,
+                  description="3PL, Freight forwarder or Own hub. Rows with a type appear in Benchmarking. "
+                              "Blank = from dc_type (helmond_hub = Own hub, 3pl = 3PL, freight_forwarder = Freight forwarder)",
+                  aliases=["providertype", "lsptype"]),
+            Field("contact_name", description="Contact person for the RFQ", aliases=["contact", "contactperson"]),
+            Field("contact_email", description="Contact email for the RFQ", aliases=["email", "contactemail", "e-mail"]),
+            Field("contact_phone", description="Contact phone, with country code", aliases=["phone", "telephone", "contactphone"]),
+            Field("website", aliases=["web", "url", "site"]),
             Field("latitude", dtype="float", description="Optional. For the dashboard map", aliases=["lat"]),
             Field("longitude", dtype="float", description="Optional. For the dashboard map",
                   aliases=["lon", "lng", "long"]),

@@ -164,3 +164,86 @@ def test_detail_tables(tmp_path):
               tmp_path, FIXTURE)
     assert out["rates"] == 45 and out["bands"] == ["B1", "B2", "B3", "B4", "B5"] and out["kpi"] == 31 and out["cov"] == 9 and out["t"] == 9
     assert out["costs"][1]["total"] == pytest.approx(243169.23, abs=0.01)
+
+
+# ------------------------------------------------------------------ metadata sheet, validation per cell, rates
+def _sources(tmp_path):
+    from flexitog.dashboard import rfq_sources
+    f = tmp_path / "sources.json"
+    f.write_text(json.dumps(rfq_sources(RFQ_TEMPLATE)))
+    return f
+
+
+def test_template_source_map():
+    from flexitog.dashboard import rfq_sources
+    m = rfq_sources(RFQ_TEMPLATE)
+    assert len(m) >= 700
+    assert m["rate.L01.B1.rate_per_kg"] == ["Rate Card", "I5"] and m["rate.L09.B5.transit_days"] == ["Rate Card", "H49"]
+    assert m["provider.currency"] == ["Provider Profile", "B16"] and m["provider.provider_id"] == ["Provider Profile", "B6"]
+
+
+def test_prefill_adds_hidden_metadata_sheet(tmp_path):
+    out_file = tmp_path / "meta.xlsx"
+    out = run("""const res = await R.prefill(fs.readFileSync(F[0]), {id: 'PRV-0007', name: 'Meta Co'}, JSZip, {version: 'RFQ-MENA-TR v1.0'});
+      fs.writeFileSync(F[1], res);
+      const wb = X.read(res, {cellDates: true}), again = await R.prefill(res, {id: 'PRV-0008', name: 'Meta Co'}, JSZip, {version: 'RFQ-MENA-TR v1.0'});
+      const out = {meta: R.readMeta(wb), sheets: wb.SheetNames, hidden: (wb.Workbook.Sheets || []).map(s => !!s.Hidden), cells: Object.keys(wb.Sheets._rfqmeta).filter(k => k[0] !== '!'),
+        again: R.readMeta(X.read(again)), againSheets: X.read(again).SheetNames.length, none: R.readMeta(X.read(fs.readFileSync(F[2])))};""",
+              tmp_path, RFQ_TEMPLATE, out_file, FIXTURE)
+    assert out["meta"] == {"version": "RFQ-MENA-TR v1.0", "providerId": "PRV-0007"}
+    assert out["sheets"][-1] == "_rfqmeta" and out["hidden"][-1] is True and len(out["sheets"]) == 13
+    assert sorted(out["cells"]) == ["A1", "A2", "B1", "B2"]          # template version and provider ID, nothing else
+    assert out["again"]["providerId"] == "PRV-0008" and out["againSheets"] == 13   # prefilling a prefilled file rewrites, never duplicates
+    assert out["none"] is None                                         # files sent before the sheet existed
+    orig, new = zipfile.ZipFile(RFQ_TEMPLATE), zipfile.ZipFile(out_file)
+    changed = sorted(n for n in orig.namelist() if orig.read(n) != new.read(n))
+    added = sorted(set(new.namelist()) - set(orig.namelist()))
+    assert changed == ["[Content_Types].xml", "xl/_rels/workbook.xml.rels", "xl/workbook.xml", "xl/worksheets/sheet2.xml"] and added == ["xl/worksheets/sheet13.xml"]
+    openpyxl = pytest.importorskip("openpyxl")
+    wb = openpyxl.load_workbook(out_file)
+    assert wb["_rfqmeta"].sheet_state == "hidden" and wb["_rfqmeta"]["B2"].value == "PRV-0007" and wb["_rfqmeta"].max_row == 2
+
+
+def _broken(tmp_path):
+    openpyxl = pytest.importorskip("openpyxl")
+    wb = openpyxl.load_workbook(FIXTURE)
+    rc = wb["Rate Card"]
+    rc["H12"] = None          # L02 B3 transit missing
+    rc["I13"] = "abc"         # L02 B4 rate not a number
+    rc["K14"] = -0.2          # L02 B5 fuel negative
+    rc["I15"] = None; rc["J15"] = None   # L03 B1 neither rate nor minimum
+    wb["Provider Profile"]["B16"] = None  # currency
+    f = tmp_path / "broken.xlsx"
+    wb.save(f)                # saved by openpyxl: no cached formula results, like a file never opened in Excel
+    return f
+
+
+def test_validate_rates_lists_every_problem_with_its_cell(tmp_path):
+    src = _sources(tmp_path)
+    out = run("""const S = JSON.parse(fs.readFileSync(F[3], 'utf8')), go = f => { const wb = X.read(fs.readFileSync(f), {cellDates: true}); const P = R.parseWorkbook(wb, X, {sources: S}); return R.validateRates(wb, P); };
+      const out = {ok: go(F[0]), broken: go(F[1]).map(x => [x.sheet, x.cell, x.message]), empty: go(F[2]).map(x => [x.sheet, x.cell, x.message])};""",
+              tmp_path, FIXTURE, _broken(tmp_path), RFQ_TEMPLATE, src)
+    assert out["ok"] == []                                             # the answered sample passes (L01 is marked Not served)
+    refs = {(s, c): m for s, c, m in out["broken"]}
+    assert set(refs) == {("Provider Profile", "B16"), ("Rate Card", "H12"), ("Rate Card", "I13"), ("Rate Card", "K14"), ("Rate Card", "I15")}
+    assert "currency" in refs[("Provider Profile", "B16")] and "transit time is missing" in refs[("Rate Card", "H12")]
+    assert '"abc" is not a number' in refs[("Rate Card", "I13")] and "negative" in refs[("Rate Card", "K14")]
+    assert "rate per kg or minimum charge is missing" in refs[("Rate Card", "I15")]
+    # The blank template: one line per lane, pointing at its Rate Card rows and the Not served cell.
+    lanes = [m for s, c, m in out["empty"] if "has no rates" in m]
+    assert len(lanes) == 9 and "Fill in rows 15 to 19" in lanes[2] and "Provider Profile D55" in lanes[2]
+
+
+def test_unsaved_file_reads_input_cells_and_prices_a_shipment(tmp_path):
+    src = _sources(tmp_path)
+    out = run("""const S = JSON.parse(fs.readFileSync(F[1], 'utf8')), wb = X.read(fs.readFileSync(F[0]), {cellDates: true});
+      const P = R.parseWorkbook(wb, X, {sources: S}), v = R.effectiveValues(P), t = R.rateTable(v), row = t.find(r => r.lane === 'L02' && r.band === 'B3');
+      const out = {fromInputs: P.fromInputs, uncached: R.isUncached(P), row, n: t.length, served: t.filter(r => r.served).length,
+        c200: R.shipmentCost(row, 200), c10: R.shipmentCost(row, 10), none: R.shipmentCost({perKg: null, minCharge: null}, 50)};""", tmp_path, _broken(tmp_path), src)
+    assert out["uncached"] and out["fromInputs"] > 400                 # no cached results: values come from the input cells
+    r = out["row"]
+    assert (r["mode"], r["perKg"], r["minCharge"], r["fuel"], r["docs"], r["other"], r["transit"]) == ("Air", 4.43, 120, 0.18, 25, 10, None)
+    assert out["n"] == 45 and out["served"] == 40                       # L01 not served
+    assert out["c200"] == pytest.approx(max(120, 4.43 * 200) * 1.18 + 25 + 10)
+    assert out["c10"] == pytest.approx(120 * 1.18 + 35)                 # the minimum charge applies
+    assert out["none"] is None

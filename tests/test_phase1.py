@@ -120,7 +120,10 @@ def test_workspace_seeds_and_roundtrips(ws):
         assert len(again) == len(df), key
     assert (ws.load("customers")[SOURCE_COL] == PLACEHOLDER).all()
     dcs = ws.load("distribution_centers")
-    assert set(dcs["dc_type"]) == {"helmond_hub", "distributor", "3pl", "owned_warehouse"}
+    assert set(dcs["dc_type"]) == {"helmond_hub", "distributor", "3pl", "owned_warehouse", "freight_forwarder"}
+    # Benchmarking reads its logistics providers from this table: Helmond is the Own hub baseline
+    types = dict(zip(dcs["dc_id"], dcs["provider_type"]))
+    assert types["HLM"] == "Own hub" and types["3PL-JAFZ"] == "3PL" and types["PRV-0001"] == "Freight forwarder"
 
 
 def test_custom_field_extends_schema(ws):

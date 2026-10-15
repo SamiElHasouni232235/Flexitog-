@@ -256,6 +256,81 @@ async function persistCustom(){
     await STORE.db.doc("mdmeta/state").set(metaDoc());
   } else localStorage.setItem(MD_LOCAL + "custom", JSON.stringify(MD.custom.map(c => Object.assign({}, c, {_saved: undefined}))));
 }
+// ============================================================ shared storage layer: named datasets, files, view preferences
+// Master Data tables are saved by persist() above. Every other dataset (Benchmarking: RFQ status and uploads,
+// parsed rates, sales sources, goals, settings) goes through DataStore, on the same backends: the artifact
+// database when the dashboard is published, this browser otherwise. Original files (uploaded RFQs, a replaced
+// template) go to IndexedDB through DataStore.files. View files do not call localStorage or IndexedDB themselves.
+const DS_LOCAL = "flexitog-bench-v1:";
+const DataStore = {
+  chunks: {},
+  async get(name){
+    if (STORE.db) {
+      const m = await STORE.db.doc("bench/" + name).get();
+      if (!m.exists) return undefined;
+      const meta = m.data();
+      if (meta.chunks == null) return meta.value;
+      DataStore.chunks[name] = meta.chunks;
+      let rows = [];
+      for (let i = 0; i < meta.chunks; i++) { const d = await STORE.db.doc(`benchrows/${name}__${i}`).get(); if (d.exists) rows = rows.concat(d.data().rows || []); }
+      return rows;
+    }
+    try { const v = localStorage.getItem(DS_LOCAL + name); return v == null ? undefined : JSON.parse(v); } catch (e) { return undefined; }
+  },
+  async set(name, value){
+    const updated = new Date().toISOString();
+    if (STORE.db) {
+      if (Array.isArray(value)) {
+        const parts = chunks(value), old = DataStore.chunks[name] || 0;
+        for (let i = 0; i < parts.length; i++) await STORE.db.doc(`benchrows/${name}__${i}`).set({rows: parts[i]});
+        for (let i = parts.length; i < old; i++) await STORE.db.doc(`benchrows/${name}__${i}`).delete();
+        DataStore.chunks[name] = parts.length;
+        await STORE.db.doc("bench/" + name).set({chunks: parts.length, rows: value.length, updated});
+      } else await STORE.db.doc("bench/" + name).set({value, updated});
+      return "artifact";
+    }
+    localStorage.setItem(DS_LOCAL + name, JSON.stringify(value));
+    return "browser";
+  },
+  async del(name){
+    if (STORE.db) {
+      for (let i = 0; i < (DataStore.chunks[name] || 0); i++) await STORE.db.doc(`benchrows/${name}__${i}`).delete();
+      delete DataStore.chunks[name]; await STORE.db.doc("bench/" + name).delete();
+    } else { try { localStorage.removeItem(DS_LOCAL + name); } catch (e) {} }
+  },
+  // Files in this browser (IndexedDB "flexitog-bench"); memory for this tab when IndexedDB is blocked.
+  files: (() => {
+    let dbp = null; const mem = new Map();
+    const open = () => dbp || (dbp = new Promise(res => {
+      try { const rq = indexedDB.open("flexitog-bench", 1); rq.onupgradeneeded = () => rq.result.createObjectStore("files"); rq.onsuccess = () => res(rq.result); rq.onerror = () => res(null); rq.onblocked = () => res(null); }
+      catch (e) { res(null); }
+    }));
+    const run = async (mode, fn) => {
+      const db = await open(); if (!db) throw new Error("no IndexedDB");
+      return new Promise((res, rej) => { const t = db.transaction("files", mode), rq = fn(t.objectStore("files")); t.oncomplete = () => res(rq.result); t.onerror = () => rej(t.error); t.onabort = () => rej(t.error); });
+    };
+    return {
+      async get(k){ try { const v = await run("readonly", st => st.get(k)); return v === undefined ? mem.get(k) : v; } catch (e) { return mem.get(k); } },
+      async put(k, v){ mem.set(k, v); try { await run("readwrite", st => st.put(v, k)); return true; } catch (e) { return false; } },
+      async del(k){ mem.delete(k); try { await run("readwrite", st => st.delete(k)); } catch (e) {} },
+    };
+  })(),
+  // Per-viewer conveniences (a remembered sub-tab): this browser only, never shared.
+  pref: {
+    get(k){ try { return JSON.parse(localStorage.getItem("flexitog-pref:" + k) || "null"); } catch (e) { return null; } },
+    set(k, v){ try { localStorage.setItem("flexitog-pref:" + k, JSON.stringify(v)); } catch (e) {} },
+  },
+};
+// Master Data writes from other views (Benchmarking creates or completes a logistics provider): insert or merge rows by
+// primary key into the saved table and its open draft, save it like the editor does, then rerun every view.
+async function mdUpsertRows(key, rows){
+  const pk = (SCHEMA[key].primary_key || [])[0];
+  const merge = list => rows.forEach(r => { const i = list.findIndex(x => String(x[pk]) === String(r[pk])); if (i >= 0) list[i] = enrich(key, Object.assign({}, list[i], r)); else list.push(enrich(key, Object.assign({}, r))); });
+  MD.t[key] = clone(MD.t[key]); merge(MD.t[key]);
+  if (MDUI.draft[key]) merge(MDUI.draft[key]);
+  await persist(key);
+  masterDataChanged([key]);
+}
 function storeErrorText(e){
   const code = e && e.code;
   if (code === "quota_exceeded") return "The artifact's storage is full. Remove a large table (for example old sales history) and save again.";
@@ -296,6 +371,7 @@ function showView(v){
   document.querySelectorAll("#menu [data-go]").forEach(b => b.setAttribute("aria-current", String(b.dataset.go === v)));
   if (v === "md") renderMD();
   if (v === "report") renderReport();
+  if (v === "dash" && prev !== "dash") renderView();   // RFQ answers saved in Benchmarking price the order options
   if (v === "bench" && window.BenchUI) window.BenchUI.show();
   if (v === "forecast" && window.ForecastUI) window.ForecastUI.show();
   if (window.Auth) window.Auth.shown(v);
@@ -390,7 +466,7 @@ function renderTable(key){
   const shown = idx.slice(MDUI.page * PAGE, MDUI.page * PAGE + PAGE);
   const issues = validate(key, rows);
   const issueRows = new Set(issues.map(x => x.row));
-  const typeSeg = key === "distribution_centers" ? `<div class="seg" role="group" aria-label="Provider type">${[["all", "All"], ["distributor", "Distributors"], ["3pl", "3PLs"], ["owned_warehouse", "Owned warehouses"], ["helmond_hub", "Helmond"]].map(([v, l]) => `<button type="button" data-tf="${v}" aria-pressed="${MDUI.typeFilter === v}">${l}</button>`).join("")}</div>` : "";
+  const typeSeg = key === "distribution_centers" ? `<div class="seg" role="group" aria-label="Provider type">${[["all", "All"], ["distributor", "Distributors"], ["3pl", "3PLs"], ["owned_warehouse", "Owned warehouses"], ["freight_forwarder", "Forwarders"], ["helmond_hub", "Helmond"]].map(([v, l]) => `<button type="button" data-tf="${v}" aria-pressed="${MDUI.typeFilter === v}">${l}</button>`).join("")}</div>` : "";
   const saved = MD.saved[key], S = selOf(key);
   $("mdPanel").innerHTML = `
     <div class="mdhead"><div><h2>${esc(MD_TABS.find(t => t[0] === key)[1])}</h2><p class="muted">${esc(MD_HINT[key])}</p></div>

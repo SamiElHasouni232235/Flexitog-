@@ -14,6 +14,7 @@ A login layer (assets/auth_*.js, auth.js, auth.css) sits in front: nothing shows
 from __future__ import annotations
 
 import base64
+import re
 import json
 from dataclasses import replace
 from datetime import date
@@ -37,6 +38,22 @@ RFQ_TEMPLATE = ASSETS / "rfq" / "Transport_Volume_Scenario_RFQ_FlexiTog.xlsx"
 LOGO_DIR = ASSETS / "brand"
 LOGO_NAMES = ("logo", "refrigiwear_logo")
 LOGO_TYPES = {".svg": "image/svg+xml", ".png": "image/png", ".webp": "image/webp", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}
+
+
+_PASS = re.compile(r"""^=IF\((('?)([^'!]+)\2!\$?([A-Z]+)\$?(\d+))="","",\1\)$""")
+
+
+def rfq_sources(path: Path) -> dict[str, list[str]]:
+    """Export key -> [sheet, cell] of the provider's input cell, for every pass-through row of the RFQ template.
+    The upload reads and validates those cells directly, also in files never saved in Excel (no cached values)."""
+    import openpyxl
+    ws = openpyxl.load_workbook(path, read_only=True)["Export"]
+    out = {}
+    for key, formula, *_ in ws.iter_rows(min_row=2, values_only=True):
+        m = _PASS.match(str(formula or ""))
+        if key and m:
+            out[str(key)] = [m.group(3).replace("''", "'"), m.group(4) + m.group(5)]
+    return out
 
 
 def logo_data_uri() -> str | None:
@@ -104,7 +121,8 @@ def build_payload(ws, per_region_synthetic: int = 15, sales_orders: str | Path |
         # Odoo sales order lines for the Forecast view (the anonymized sample unless a path is given).
         "sales_orders": sales_orders_table(sales_orders),
         # The bundled RFQ template, served by Download latest RFQ until a newer one replaces it.
-        "rfq_template": {"name": RFQ_TEMPLATE.name, "base64": base64.b64encode(RFQ_TEMPLATE.read_bytes()).decode("ascii")},
+        "rfq_template": {"name": RFQ_TEMPLATE.name, "base64": base64.b64encode(RFQ_TEMPLATE.read_bytes()).decode("ascii"),
+                         "sources": rfq_sources(RFQ_TEMPLATE)},
     }
 
 

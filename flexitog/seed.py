@@ -34,7 +34,7 @@ SUPPLIERS = [
 ]
 
 DCS = [
-    {"dc_id": "HLM", "name": "Helmond EU hub", "dc_type": "helmond_hub", "status": "existing",
+    {"dc_id": "HLM", "name": "Helmond EU hub", "dc_type": "helmond_hub", "status": "existing", "provider_type": "Own hub",
      "country": "NL", "city": "Helmond", "port_of_entry": "Rotterdam",
      "serves_countries": "TR;MA;DZ;TN;EG;LY;SA;AE;QA;KW;BH;OM",
      "notes": "Origin of every flow in this tool"},
@@ -50,14 +50,28 @@ DCS = [
     {"dc_id": "DIST-EG", "name": "Distributor Egypt", "dc_type": "distributor", "status": "potential",
      "country": "EG", "city": "Cairo", "port_of_entry": "Alexandria", "serves_countries": "EG"},
     # 3PL
-    {"dc_id": "3PL-JAFZ", "name": "3PL Jebel Ali Free Zone", "dc_type": "3pl", "status": "candidate",
+    {"dc_id": "3PL-JAFZ", "name": "3PL Jebel Ali Free Zone", "dc_type": "3pl", "status": "candidate", "provider_type": "3PL",
      "country": "AE", "city": "Dubai", "port_of_entry": "Jebel Ali",
      "serves_countries": "AE;SA;QA;KW;BH;OM", "notes": "Duty-suspended storage, re-export to GCC"},
-    {"dc_id": "3PL-IST", "name": "3PL Istanbul", "dc_type": "3pl", "status": "candidate",
+    {"dc_id": "3PL-IST", "name": "3PL Istanbul", "dc_type": "3pl", "status": "candidate", "provider_type": "3PL",
      "country": "TR", "city": "Istanbul", "port_of_entry": "Istanbul (Kapıkule)", "serves_countries": "TR"},
-    {"dc_id": "3PL-TNG", "name": "3PL Tanger Med", "dc_type": "3pl", "status": "candidate",
+    {"dc_id": "3PL-TNG", "name": "3PL Tanger Med", "dc_type": "3pl", "status": "candidate", "provider_type": "3PL",
      "country": "MA", "city": "Tangier", "port_of_entry": "Tanger Med (ferry)",
      "serves_countries": "MA;TN;EG;DZ", "notes": "Free zone, onward short sea"},
+    # Logistics providers for Benchmarking (moved here from the Benchmarking view). Dummy records to try the
+    # RFQ workflow: replace or delete them. Freight forwarders hold no stock, so the engine does not route them.
+    {"dc_id": "PRV-0001", "name": "Example Forwarding Co. (dummy)", "dc_type": "freight_forwarder", "status": "candidate",
+     "provider_type": "Freight forwarder", "country": "NL", "city": "Eindhoven", "serves_countries": "TR;MA;TN;EG",
+     "contact_name": "Alex Example", "contact_email": "alex@forwarder.example.com", "contact_phone": "+31 40 000 0001",
+     "website": "https://forwarder.example.com", "notes": "Dummy record to try the tool. Replace or delete it."},
+    {"dc_id": "PRV-0002", "name": "Sample Gulf 3PL (dummy)", "dc_type": "3pl", "status": "candidate",
+     "provider_type": "3PL", "country": "AE", "city": "Dubai", "port_of_entry": "Jebel Ali", "serves_countries": "AE;SA;QA;KW;BH;OM",
+     "contact_name": "Sam Sample", "contact_email": "sam@gulf3pl.example.com", "contact_phone": "+971 4 000 0002",
+     "website": "https://gulf3pl.example.com", "notes": "Dummy record to try the tool. Replace or delete it."},
+    {"dc_id": "PRV-0003", "name": "Demo Road Carrier (dummy)", "dc_type": "freight_forwarder", "status": "candidate",
+     "provider_type": "Freight forwarder", "country": "TR", "city": "Istanbul", "serves_countries": "TR",
+     "contact_name": "Dana Demo", "contact_email": "dana@roadcarrier.example.com", "contact_phone": "+90 212 000 0003",
+     "notes": "Dummy record to try the tool. Replace or delete it."},
     # Owned
     {"dc_id": "OWN-AE", "name": "Owned warehouse UAE (hypothetical)", "dc_type": "owned_warehouse",
      "status": "candidate", "country": "AE", "city": "Dubai", "port_of_entry": "Jebel Ali",

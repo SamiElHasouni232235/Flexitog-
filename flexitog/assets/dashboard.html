@@ -1050,7 +1050,7 @@ function drawOverlay(){
     const [x, y] = proj(c.p[0], c.p[1]);
     h += `<circle class="cust${sel("cust", c.id) ? " on" : ""}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${((2 + Math.sqrt(c.pallets) * .35) * scale).toFixed(2)}" data-kind="cust" data-id="${esc(c.id)}" data-tip="${esc(c.id)} · ${c.orders} orders, ${fmt(c.pallets)} pallets · click for detail"/>`;
   });
-  R.data.dcs.filter(d => d.dc_type !== "helmond_hub").forEach(d => {
+  R.data.dcs.filter(d => d.dc_type !== "helmond_hub" && d.dc_type !== "freight_forwarder").forEach(d => {   // forwarders hold no stock
     const p = loc("dc", d.dc_id); if (!p) return;
     const [x, y] = proj(p[0], p[1]); const s = 6 * scale;
     const cls = `node${d.status === "existing" ? "" : " cand"}${sel("node", d.dc_id) ? " on" : ""}`, st = `fill:var(--s-${d.dc_type});stroke:var(--s-${d.dc_type})`;
@@ -1494,12 +1494,12 @@ function optSource(r){
 }
 const optLabel = r => (r.rfq ? `${SHORT.cif_baseline} · ${r.rfq.providerName}` : SHORT[r.scenario] + (r.dc_id ? " · " + r.dc_id : ""));
 // RFQ adapter in use: an RFQ rate for the order's lane and weight band becomes an extra Baseline DAP option per
-// provider (door-to-door freight replaces the main leg and the local delivery); a node linked to a provider through
-// rfq_provider_id takes its delivery-from-stock transit days from stock.<lane>. No RFQ value: engine placeholder rates.
+// provider (door-to-door freight replaces the main leg and the local delivery); a partner node with its own RFQ
+// answer takes its delivery-from-stock transit days from stock.<lane>. No RFQ value: engine placeholder rates.
 function withRfq(ev, lines){
   const lane = FR.laneFor(ev.ctx.country), kg = FR.grossKg(lines, R.data.products, ev.ctx.pallets), band = FR.bandFor(kg);
   const out = ev.routes.map(r => {
-    const pid = r.dc_id && (R.data.dcs.find(d => d.dc_id === r.dc_id) || {}).rfq_provider_id; if (!pid) return r;
+    const pid = r.dc_id; if (!pid) return r;   // a partner node is a Master Data provider: its own RFQ answer prices it
     const q = RFQ.getRfqStock(String(pid), lane); if (q.source !== "rfq") return r;
     const c = JSON.parse(JSON.stringify(r)), del = c.steps.filter(x => x.leg === "regional" || x.leg === "domestic");
     del.forEach((x, i) => { x.days = i === 0 ? q.transitDays : 0; x.note = "transit from RFQ " + q.providerName; });
@@ -1778,6 +1778,21 @@ function renderView(){
   // sections in reading order: best option, comparison, map + country, orders, risks + coverage, data readiness
   renderChips(); renderRegions(); renderCompare(); renderOrder(); drawMap(); renderCountry(); renderIssues(); renderReadiness();
 }
+// Benchmarking's Helmond baseline for one test order: DAP from Helmond with the engine on Master Data and the
+// parameters. cost = what FlexiTog pays to the door; lead time in calendar and working days. Null when the
+// country has no customer to place the order or the route is not feasible.
+window.FlexiDash = {
+  helmond(o){
+    if (!R || !R.data || !o) return null;
+    const cust = R.data.customers.find(c => c.country === o.country); if (!cust) return null;
+    const lines = (o.lines || []).filter(l => l.sku).map(l => ({order_id: o.id, sku: l.sku, quantity: l.quantity}));
+    if (!lines.length) return null;
+    const ev = E.evaluate({order_id: o.id, customer_id: cust.customer_id, pallet_count: o.pallets || 1}, lines, R.data, null);
+    const b = ev.baseline; if (!b || !E.M.feasible(b)) return null;
+    const lead = E.M.lead(b), rule = FR.laneRule(o.country);
+    return {cost: E.M.paid(b, E.FLEXITOG), leadDays: lead, leadWd: FR.workingDays(lead, (rule || {}).weekend || 1)};
+  },
+};
 load(); initControls(); compute(); renderView();
 </script>
 <script>/*WORKSPACE*/</script>
