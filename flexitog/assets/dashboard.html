@@ -328,6 +328,24 @@ body[data-view="md"] .top>.controls,body[data-view="report"] .top>.controls{disp
 .mdgrid td input:focus,.mdgrid td select:focus{border-color:var(--accent);background:var(--surface);outline:0}
 .mdgrid td .bad{border-color:var(--st-critical);background:color-mix(in srgb,var(--st-critical) 8%,transparent)}
 .mdgrid .rn{color:var(--faint);font:11px var(--mono);text-align:right;width:1%}
+.mdgrid table.mdt th{position:static}
+.mdgrid table.mdt thead{position:sticky;top:0;z-index:2}
+.thsort{display:inline-flex;align-items:center;gap:4px;background:none;border:0;padding:0;margin:0;font:inherit;letter-spacing:inherit;text-transform:inherit;color:inherit;cursor:pointer;white-space:nowrap}
+.thsort:hover{color:var(--ink)}
+.thsort .sarr{font-size:9px;opacity:.35}
+th[aria-sort=ascending] .thsort,th[aria-sort=descending] .thsort{color:var(--accent)}
+th[aria-sort=ascending] .sarr,th[aria-sort=descending] .sarr{opacity:1}
+.mdgrid tr.colf th{padding:3px 4px;text-transform:none;letter-spacing:0;font-weight:400}
+.mdgrid tr.colf input,.mdgrid tr.colf select{width:100%;min-width:72px;background:var(--surface);border:1px solid var(--rule);border-radius:4px;padding:3px 5px;font:12px var(--body);color:var(--ink)}
+.mdgrid tr.colf .on{border-color:var(--accent);background:var(--accent-soft)}
+.mdview{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;font-size:12.5px;color:var(--muted)}
+.mdgrid td.rn{white-space:nowrap}
+.grip{display:inline-block;cursor:grab;color:var(--faint);padding:0 5px 0 0;font-size:13px;line-height:1;user-select:none;border-radius:3px}
+.grip:hover,.grip:focus-visible{color:var(--accent);outline:0}
+.grip:focus-visible{box-shadow:0 0 0 2px var(--accent)}
+tr.dragging td{opacity:.45}
+tr.drop-before td{box-shadow:inset 0 2px 0 var(--accent)}
+tr.drop-after td{box-shadow:inset 0 -2px 0 var(--accent)}
 .mdgrid tr.hasissue td.rn{color:var(--st-critical);font-weight:600}
 .mdgrid .ck{width:1%;text-align:center;padding:3px 6px}
 .mdgrid .ck input{width:15px;height:15px;margin:0;accent-color:var(--accent);cursor:pointer;vertical-align:middle}
@@ -338,7 +356,7 @@ body[data-view="md"] .top>.controls,body[data-view="report"] .top>.controls{disp
 .mdselbar .bulkset{padding-right:8px;margin-right:2px;border-right:1px solid color-mix(in srgb,var(--accent) 35%,transparent)}
 .mdselbar .bulkset label,.mdselbar .bulkset>span{color:var(--muted);font-size:12.5px}
 .mdselbar select,.mdselbar input{background:var(--surface);border:1px solid var(--rule);border-radius:5px;padding:4px 6px;font:12.5px var(--body);max-width:180px}
-.mdselbar .btn.sm{display:inline-flex}
+.mdselbar .btn.sm,.mdview .btn.sm{display:inline-flex}
 .mdselbar .btn.danger{color:var(--st-critical);border-color:var(--st-critical)}
 @media (max-width:760px){.mdselbar .bulkset{border-right:0;padding-right:0}}
 .req{color:var(--st-critical)}

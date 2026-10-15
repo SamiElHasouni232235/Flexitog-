@@ -410,7 +410,7 @@ const MD_HINT = {
   order_lines: "SKU lines of the test orders.",
   custom: "Any other dataset: rate cards, quotes, shipment logs. Stored with the dashboard and listed in the report.",
 };
-const MDUI = {tab: "products", draft: {}, page: 0, filter: "", typeFilter: "all", upload: null,
+const MDUI = {tab: "products", draft: {}, page: 0, filter: "", typeFilter: "all", upload: null, sort: {}, colf: {}, grid: null,
   sel: {key: null, set: new Set(), len: 0, anchor: null, bulkField: ""}};
 const PAGE = 50;
 const rowsOf = key => MDUI.draft[key] || MD.t[key];
@@ -454,6 +454,67 @@ function inputCell(f, v, ri){
   if (f.dtype === "date") return `<input type="date" ${a} value="${isBlank(v) ? "" : esc(String(v).slice(0, 10))}">`;
   return `<input type="text" ${a} value="${isBlank(v) ? "" : esc(v)}">`;
 }
+// ---- column sort, column filters and row order. Sort and filters change the view only (per table, this session);
+// moving rows changes the table's own order, which Save changes keeps. Blanks sort last in both directions.
+const COLL = new Intl.Collator("en", {numeric: true, sensitivity: "base"});
+function cmpVal(x, y){
+  if (typeof x === "number" && typeof y === "number") return x - y;
+  if (typeof x === "boolean" || typeof y === "boolean") return Number(x === true) - Number(y === true);
+  return COLL.compare(String(x), String(y));
+}
+function sortIdx(idx, get, dir){
+  return idx.slice().sort((a, b) => {
+    const x = get(a), y = get(b), bx = isBlank(x), by = isBlank(y);
+    if (bx || by) return (bx - by) || a - b;
+    return dir * cmpVal(x, y) || a - b;
+  });
+}
+const EMPTY_F = "(empty)";
+// A column filter: a list column matches its value, a number column takes >, <, >=, <= or = and a number,
+// anything else matches text that contains the filter. "(empty)" matches blank cells.
+function colMatch(f, v, want){
+  if (want === EMPTY_F) return isBlank(v);
+  if (f.allowed || f.dtype === "bool") return String(v ?? "") === want;
+  const m = (f.dtype === "float" || f.dtype === "int") && String(want).trim().match(/^(>=|<=|>|<|=)\s*(-?\d+(?:[.,]\d+)?)$/);
+  if (m) { if (isBlank(v)) return false; const n = Number(v), t = Number(m[2].replace(",", ".")); return {">": n > t, "<": n < t, ">=": n >= t, "<=": n <= t, "=": n === t}[m[1]]; }
+  return String(v ?? "").toLowerCase().includes(String(want).trim().toLowerCase());
+}
+const sortWords = (f, dir) => (f.dtype === "float" || f.dtype === "int" ? (dir > 0 ? "low to high" : "high to low") : f.dtype === "date" ? (dir > 0 ? "oldest first" : "newest first") : (dir > 0 ? "A to Z" : "Z to A"));
+// New orders as lists of old row indexes: move the picked rows (top, up, down, bottom), or one row before or after another.
+function moveOrder(n, picked, how){
+  const all = [...Array(n).keys()], on = i => picked.has(i);
+  if (how === "top") return all.filter(on).concat(all.filter(i => !on(i)));
+  if (how === "bottom") return all.filter(i => !on(i)).concat(all.filter(on));
+  const o = all.slice();
+  if (how === "up") for (let k = 1; k < n; k++) { if (on(o[k]) && !on(o[k - 1])) [o[k - 1], o[k]] = [o[k], o[k - 1]]; }
+  if (how === "down") for (let k = n - 2; k >= 0; k--) { if (on(o[k]) && !on(o[k + 1])) [o[k], o[k + 1]] = [o[k + 1], o[k]]; }
+  return o;
+}
+function dragOrder(n, from, to, after){
+  const o = [...Array(n).keys()].filter(i => i !== from);
+  o.splice(o.indexOf(to) + (after ? 1 : 0), 0, from);
+  return o;
+}
+function applyOrder(key, order){
+  const d = draftOf(key), pos = new Map(order.map((old, k) => [old, k]));
+  shiftSel(key, i => pos.get(i));
+  MDUI.draft[key] = order.map(i => d[i]); MDUI.sel.len = order.length;
+}
+// Put the rows whose key is in ids into that order, in the places they hold now; other rows keep their place.
+// Saves at once (used by Benchmarking, which shows Master Data's provider order).
+async function mdReorderRows(key, ids){
+  const pk = (SCHEMA[key].primary_key || [])[0], want = ids.map(String), set = new Set(want);
+  const fix = list => {
+    const slots = [], byId = new Map(list.map(r => [String(r[pk]), r]));
+    list.forEach((r, i) => { if (set.has(String(r[pk]))) slots.push(i); });
+    const seq = want.filter(id => byId.has(id)); if (seq.length !== slots.length) return list;
+    const out = list.slice(); slots.forEach((sl, k) => { out[sl] = byId.get(seq[k]); }); return out;
+  };
+  MD.t[key] = fix(clone(MD.t[key]));
+  if (MDUI.draft[key]) { MDUI.draft[key] = fix(MDUI.draft[key]); clearSel(); }
+  await persist(key);
+  masterDataChanged([key]);
+}
 function srcBadge(s){ s = String(s || "placeholder"); return s === "placeholder" ? '<span class="srcb ph" title="Placeholder data">placeholder</span>' : s.startsWith("imported:") ? `<span class="srcb im" title="${esc(s)}">imported</span>` : `<span class="srcb mn">${esc(s === "history" ? "history" : "entered")}</span>`; }
 function renderTable(key){
   const sc = SCHEMA[key], rows = rowsOf(key), {base, extra} = fieldsOf(key);
@@ -462,12 +523,30 @@ function renderTable(key){
   let idx = rows.map((r, i) => i);
   if (key === "distribution_centers" && MDUI.typeFilter !== "all") idx = idx.filter(i => rows[i].dc_type === MDUI.typeFilter);
   if (q) idx = idx.filter(i => Object.values(rows[i]).some(v => String(v ?? "").toLowerCase().includes(q)));
+  const CF = MDUI.colf[key] || (MDUI.colf[key] = {});
+  Object.entries(CF).forEach(([n, want]) => { const f = fields.find(x => x.name === n); if (f && want !== "") idx = idx.filter(i => colMatch(f, rows[i][n], want)); });
+  const nf = Object.entries(CF).filter(([n, v]) => v !== "" && fields.some(f => f.name === n)).length;
+  if (MDUI.sort[key] && !fields.some(f => f.name === MDUI.sort[key].f)) MDUI.sort[key] = null;
+  const SRT = MDUI.sort[key], sortF = SRT && fields.find(f => f.name === SRT.f);
+  if (SRT) idx = sortIdx(idx, i => rows[i][SRT.f], SRT.dir);
+  const oldGrid = $("mdPanel").querySelector(".mdgrid"), keepScroll = oldGrid && MDUI.grid === key ? [oldGrid.scrollLeft, oldGrid.scrollTop] : null;
   const pages = Math.max(1, Math.ceil(idx.length / PAGE)); MDUI.page = Math.min(MDUI.page, pages - 1);
   const shown = idx.slice(MDUI.page * PAGE, MDUI.page * PAGE + PAGE);
   const issues = validate(key, rows);
   const issueRows = new Set(issues.map(x => x.row));
   const typeSeg = key === "distribution_centers" ? `<div class="seg" role="group" aria-label="Provider type">${[["all", "All"], ["distributor", "Distributors"], ["3pl", "3PLs"], ["owned_warehouse", "Owned warehouses"], ["freight_forwarder", "Forwarders"], ["helmond_hub", "Helmond"]].map(([v, l]) => `<button type="button" data-tf="${v}" aria-pressed="${MDUI.typeFilter === v}">${l}</button>`).join("")}</div>` : "";
   const saved = MD.saved[key], S = selOf(key);
+  const th = f => {
+    const on = SRT && SRT.f === f.name, req = f.required ? ' <span class="req">*</span>' : "";
+    return `<th aria-sort="${on ? (SRT.dir > 0 ? "ascending" : "descending") : "none"}"><button type="button" class="thsort" data-sort="${esc(f.name)}" title="${esc((f.description ? f.description + ". " : "") + (f.required ? "Required. " : "") + "Click to sort: " + sortWords(f, 1) + ", again " + sortWords(f, -1) + ", a third time off")}">${esc(f.name)}${req}<span class="sarr" aria-hidden="true">${on ? (SRT.dir > 0 ? "▲" : "▼") : "↕"}</span></button></th>`;
+  };
+  const cfIn = f => {
+    const v = CF[f.name] ?? "", a = `data-cf="${esc(f.name)}" aria-label="Filter ${esc(f.name)}"${v !== "" ? ' class="on"' : ""}`;
+    if (f.allowed || f.dtype === "bool") return `<select ${a}><option value="">All</option>${(f.allowed || ["true", "false"]).map(o => `<option${v === o ? " selected" : ""}>${esc(o)}</option>`).join("")}<option${v === EMPTY_F ? " selected" : ""}>${EMPTY_F}</option></select>`;
+    return `<input type="text" ${a} value="${esc(v)}" placeholder="${f.dtype === "float" || f.dtype === "int" ? "e.g. >10" : "Filter"}" title="Text that the cell contains${f.dtype === "float" || f.dtype === "int" ? ", or >, <, >=, <=, = and a number" : ""}. ${EMPTY_F} finds blank cells.">`;
+  };
+  const view = (SRT || nf) ? `<div class="mdview">${SRT ? `<span>Sorted by <b>${esc(SRT.f)}</b>, ${sortWords(sortF, SRT.dir)}. Drag to reorder is off while sorted.</span><button type="button" class="btn ghost sm" data-v="keep" title="Make this the table order (Save changes keeps it)">Keep this order</button><button type="button" class="btn ghost sm" data-v="unsort">Turn off sort</button>` : ""}${nf ? `<span>${nf} column filter${nf === 1 ? "" : "s"} on.</span><button type="button" class="btn ghost sm" data-v="unfilter">Clear column filters</button>` : ""}</div>` : "";
+  const grip = i => (SRT ? "" : `<span class="grip" draggable="true" data-drag="${i}" tabindex="0" role="button" aria-label="Move row ${i + 1}. Drag it, or press Alt and the arrow keys" title="Drag to move this row (or Alt + ↑ / ↓)">⠿</span>`);
   $("mdPanel").innerHTML = `
     <div class="mdhead"><div><h2>${esc(MD_TABS.find(t => t[0] === key)[1])}</h2><p class="muted">${esc(MD_HINT[key])}</p></div>
       <div class="mdmeta faint">${rows.length} row(s) · ${saved ? `saved ${esc(new Date(saved.updated).toLocaleString("en-GB"))}` : "built-in data"}${issues.length ? ` · <span class="warnc">${new Set(issues.map(x => x.row)).size} row(s) need attention</span>` : ""}</div></div>
@@ -483,13 +562,18 @@ function renderTable(key){
       ${isDirty(key) ? '<button type="button" class="btn ghost" data-a="discard">Discard</button>' : ""}
       <button type="button" class="btn" data-a="save" ${isDirty(key) ? "" : "disabled"}>Save changes</button>
     </div>
+    ${view}
     <div id="mdSelBar" class="mdselbar" role="region" aria-label="Selected rows" aria-live="polite" hidden></div>
     <div id="mdUpload"></div>
     ${issues.length ? `<details class="mdissues"><summary>${issues.length} issue(s) to fix</summary><ul>${issues.slice(0, 40).map(x => `<li>Row ${x.row + 1} · <b>${esc(x.field)}</b>: ${esc(x.issue)}</li>`).join("")}${issues.length > 40 ? `<li>… and ${issues.length - 40} more</li>` : ""}</ul></details>` : ""}
-    <div class="tablewrap mdgrid"><table><thead><tr><th class="ck"><input type="checkbox" id="mdSelPage" aria-label="Select every row on this page" title="Select every row on this page"></th><th class="rn">#</th>${fields.map(f => `<th title="${esc((f.description || "") + (f.required ? " (required)" : ""))}">${esc(f.name)}${f.required ? ' <span class="req">*</span>' : ""}</th>`).join("")}<th>Source</th><th></th></tr></thead>
-    <tbody>${shown.map(i => `<tr class="${issueRows.has(i) ? "hasissue" : ""}${S.set.has(i) ? " sel" : ""}"><td class="ck"><input type="checkbox" data-sel="${i}" aria-label="Select row ${i + 1}"${S.set.has(i) ? " checked" : ""}></td><td class="rn">${i + 1}</td>${fields.map(f => `<td>${inputCell(f, rows[i][f.name], i)}</td>`).join("")}<td>${srcBadge(rows[i].data_source)}</td><td><button type="button" class="del" data-del="${i}" aria-label="Delete row ${i + 1}" title="Delete row">×</button></td></tr>`).join("") || `<tr><td colspan="${fields.length + 4}" class="empty">No rows${q ? " match the search" : ". Add a row or upload a file"}.</td></tr>`}</tbody></table></div>
+    <div class="tablewrap mdgrid"><table class="mdt"><thead><tr><th class="ck"><input type="checkbox" id="mdSelPage" aria-label="Select every row on this page" title="Select every row on this page"></th><th class="rn">#</th>${fields.map(th).join("")}<th>Source</th><th></th></tr>
+    <tr class="colf"><th class="ck"></th><th class="rn"></th>${fields.map(f => `<th>${cfIn(f)}</th>`).join("")}<th></th><th></th></tr></thead>
+    <tbody>${shown.map(i => `<tr data-row="${i}" class="${issueRows.has(i) ? "hasissue" : ""}${S.set.has(i) ? " sel" : ""}"><td class="ck"><input type="checkbox" data-sel="${i}" aria-label="Select row ${i + 1}"${S.set.has(i) ? " checked" : ""}></td><td class="rn">${grip(i)}${i + 1}</td>${fields.map(f => `<td>${inputCell(f, rows[i][f.name], i)}</td>`).join("")}<td>${srcBadge(rows[i].data_source)}</td><td><button type="button" class="del" data-del="${i}" aria-label="Delete row ${i + 1}" title="Delete row">×</button></td></tr>`).join("") || `<tr><td colspan="${fields.length + 4}" class="empty">No rows${q || nf ? " match the search or column filters" : ". Add a row or upload a file"}.</td></tr>`}</tbody></table></div>
     <div class="pager">${pages > 1 ? `<button type="button" class="btn ghost" data-pg="-1" ${MDUI.page ? "" : "disabled"}>Previous</button><span class="num">Page ${MDUI.page + 1} of ${pages} · ${idx.length} row(s)</span><button type="button" class="btn ghost" data-pg="1" ${MDUI.page < pages - 1 ? "" : "disabled"}>Next</button>` : `<span class="faint">${idx.length} row(s) shown</span>`}</div>`;
   const P = $("mdPanel");
+  MDUI.grid = key;
+  if (keepScroll) { const g = P.querySelector(".mdgrid"); g.scrollLeft = keepScroll[0]; g.scrollTop = keepScroll[1]; }
+  wireOrder(key, rows, idx, CF);
   $("mdSearch").addEventListener("input", e => { MDUI.filter = e.target.value; MDUI.page = 0; const pos = e.target.selectionStart; renderTable(key); const s = $("mdSearch"); s.focus(); s.setSelectionRange(pos, pos); });
   P.querySelectorAll("[data-tf]").forEach(b => b.addEventListener("click", () => { MDUI.typeFilter = b.dataset.tf; MDUI.page = 0; renderTable(key); }));
   P.querySelectorAll("[data-pg]").forEach(b => b.addEventListener("click", () => { MDUI.page += Number(b.dataset.pg); renderTable(key); }));
@@ -506,7 +590,8 @@ function renderTable(key){
   P.querySelector('[data-a="add"]').addEventListener("click", () => {
     const r = {}; sc.fields.forEach(f => { r[f.name] = null; });
     if (key === "distribution_centers" && MDUI.typeFilter !== "all") r.dc_type = MDUI.typeFilter;
-    shiftSel(key, i => i + 1); r.data_source = "manual"; draftOf(key).unshift(r); MDUI.sel.len = rowsOf(key).length; MDUI.page = 0; MDUI.filter = ""; renderMD();
+    shiftSel(key, i => i + 1); r.data_source = "manual"; draftOf(key).unshift(r); MDUI.sel.len = rowsOf(key).length; MDUI.page = 0; MDUI.filter = "";
+    MDUI.colf[key] = {}; MDUI.sort[key] = null; renderMD();   // the new row is first and nothing hides it
     const first = $("mdPanel").querySelector("tbody [data-f]"); if (first) first.focus();
   });
   P.querySelector('[data-a="upload"]').addEventListener("click", () => { MDUI.upload = {key, step: "pick"}; renderUpload(); });
@@ -525,6 +610,59 @@ function renderTable(key){
   P.querySelector('[data-a="save"]').addEventListener("click", () => saveTable(key));
   wireSelection(key, fields, idx, shown);
   if (MDUI.upload && MDUI.upload.key === key) renderUpload();
+}
+
+// Sort headers, column filters, drag and keyboard reordering. Re-rendering keeps the grid's scroll position and
+// puts the focus back where it was.
+function wireOrder(key, rows, idx, CF){
+  const P = $("mdPanel"), tb = P.querySelector("tbody"), refocus = sel => { const el = $("mdPanel").querySelector(sel); if (el) el.focus({preventScroll: true}); return el; };
+  P.querySelectorAll("[data-sort]").forEach(b => b.addEventListener("click", () => {
+    const f = b.dataset.sort, s = MDUI.sort[key];
+    MDUI.sort[key] = !s || s.f !== f ? {f, dir: 1} : s.dir > 0 ? {f, dir: -1} : null; MDUI.page = 0;
+    renderTable(key); refocus(`[data-sort="${CSS.escape(f)}"]`);
+  }));
+  P.querySelectorAll("[data-cf]").forEach(el => el.addEventListener(el.tagName === "SELECT" ? "change" : "input", () => {
+    const n = el.dataset.cf, pos = el.tagName === "SELECT" ? null : el.selectionStart;
+    CF[n] = el.value; MDUI.page = 0; renderTable(key);
+    const ne = refocus(`[data-cf="${CSS.escape(n)}"]`); if (ne && pos != null) ne.setSelectionRange(pos, pos);
+  }));
+  const vb = a => P.querySelector(`[data-v="${a}"]`);
+  if (vb("unsort")) vb("unsort").addEventListener("click", () => { MDUI.sort[key] = null; renderTable(key); });
+  if (vb("unfilter")) vb("unfilter").addEventListener("click", () => { MDUI.colf[key] = {}; MDUI.page = 0; renderTable(key); });
+  if (vb("keep")) vb("keep").addEventListener("click", () => {
+    const s = MDUI.sort[key]; applyOrder(key, sortIdx(rows.map((r, i) => i), i => rows[i][s.f], s.dir)); MDUI.sort[key] = null;
+    toast(`Rows ordered by ${s.f}. Save changes to keep the new order.`); renderMD();
+  });
+  if (MDUI.sort[key]) return;
+  let from = null;
+  const marks = () => tb.querySelectorAll(".drop-before,.drop-after,.dragging").forEach(t => t.classList.remove("drop-before", "drop-after", "dragging"));
+  const below = (e, tr) => e.clientY > tr.getBoundingClientRect().top + tr.offsetHeight / 2;
+  const move = (f, to, after) => { const o = dragOrder(rows.length, f, to, after); applyOrder(key, o); return o.indexOf(f); };
+  tb.addEventListener("dragstart", e => {
+    const g = e.target.closest && e.target.closest("[data-drag]"); if (!g) return;
+    from = +g.dataset.drag; const tr = g.closest("tr"); tr.classList.add("dragging");
+    e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", String(from));
+    try { e.dataTransfer.setDragImage(tr, 24, 16); } catch (x) {}
+  });
+  tb.addEventListener("dragover", e => {
+    if (from == null) return; const tr = e.target.closest("tr[data-row]"); if (!tr) return;
+    e.preventDefault(); e.dataTransfer.dropEffect = "move";
+    tb.querySelectorAll(".drop-before,.drop-after").forEach(t => t.classList.remove("drop-before", "drop-after"));
+    if (+tr.dataset.row !== from) tr.classList.add(below(e, tr) ? "drop-after" : "drop-before");
+  });
+  tb.addEventListener("drop", e => {
+    if (from == null) return; e.preventDefault();
+    const tr = e.target.closest("tr[data-row]"), f = from; from = null; marks();
+    if (!tr || +tr.dataset.row === f) return;
+    move(f, +tr.dataset.row, below(e, tr)); toast("Row moved. Save changes to keep the new order."); renderMD();
+  });
+  tb.addEventListener("dragend", () => { from = null; marks(); });
+  tb.addEventListener("keydown", e => {
+    const g = e.target.closest && e.target.closest("[data-drag]"); if (!g || !e.altKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
+    e.preventDefault();
+    const f = +g.dataset.drag, k = idx.indexOf(f), nb = idx[k + (e.key === "ArrowUp" ? -1 : 1)]; if (nb == null) return;
+    const at = move(f, nb, e.key === "ArrowDown"); renderMD(); refocus(`[data-drag="${at}"]`);
+  });
 }
 
 // Selection: row checkboxes (Shift+click selects a range), page checkbox, and the bar with the bulk actions.
@@ -572,6 +710,7 @@ function renderSelBar(key, fields, idx){
     <div class="selacts">
       <span class="bulkset"><label for="mdBulkField">Set</label><select id="mdBulkField" aria-label="Column to set"><option value="">column…</option>${editable.map(f => `<option value="${esc(f.name)}"${f.name === S.bulkField ? " selected" : ""}>${esc(f.name)}</option>`).join("")}</select>
         <span>to</span>${bulkInput(bf)}<button type="button" class="btn ghost sm" data-s="set"${bf ? "" : " disabled"}>Apply</button></span>
+      ${MDUI.sort[key] ? "" : `<span class="bulkset moveset" role="group" aria-label="Move the selected rows"><span>Move</span>${[["top", "To top"], ["up", "Up"], ["down", "Down"], ["bottom", "To bottom"]].map(([k, l]) => `<button type="button" class="btn ghost sm" data-s="mv-${k}">${l}</button>`).join("")}</span>`}
       <button type="button" class="btn ghost sm" data-s="csv">Export CSV</button>
       <button type="button" class="btn ghost sm" data-s="xlsx">Export Excel</button>
       <button type="button" class="btn ghost sm danger" data-s="del">Delete ${n}</button></div>`;
@@ -587,6 +726,11 @@ function renderSelBar(key, fields, idx){
     S.set.forEach(i => { const r = d[i]; if (r) { r[f.name] = v; enrich(key, r); r.data_source = "manual"; } });
     toast(`${f.name} set on ${n} row${n === 1 ? "" : "s"}. Save changes to keep it.`); renderMD();
   });
+  bar.querySelectorAll('[data-s^="mv-"]').forEach(b => b.addEventListener("click", () => {
+    const how = b.dataset.s.slice(3); applyOrder(key, moveOrder(rowsOf(key).length, S.set, how));
+    if (how === "top") MDUI.page = 0; if (how === "bottom") MDUI.page = 1e6;
+    toast(`${n} row${n === 1 ? "" : "s"} moved. Save changes to keep the new order.`); renderMD();
+  }));
   bar.querySelector('[data-s="csv"]').addEventListener("click", () => saveFile(`${key}_selected_${n}.csv`, "\ufeff" + toCsv(cols(), picked())));
   bar.querySelector('[data-s="xlsx"]').addEventListener("click", () => {
     const c = cols(), wb = XLSX.utils.book_new();

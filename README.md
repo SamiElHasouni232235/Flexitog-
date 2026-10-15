@@ -274,6 +274,13 @@ Extract, Master Data Upload, Users (admin only) and Parameters, plus shortcuts t
   Select all takes every row that matches the search and filter). The selection bar then deletes the
   selected rows (with a confirm click), exports only them as CSV or Excel, or sets one column to the same
   value on all of them. Delete and Set change the draft: Save changes keeps them, Discard undoes them.
+  Click a column header to sort: A to Z (numbers low to high, dates oldest first), again Z to A, a third
+  time off. Blanks sort last. The row under the headers filters per column: text that the cell contains,
+  a dropdown for list columns, `>`, `<`, `>=`, `<=` or `=` with a number for number columns, `(empty)`
+  for blank cells. Sort and filters change the view only. Keep this order makes the sorted order the
+  table order. Move rows by dragging the ⠿ handle in the # column, with Alt + ↑ / ↓ on the focused
+  handle, or with Move To top, Up, Down, To bottom in the selection bar. Drag is off while a sort is on.
+  A new order is a draft change: Save changes keeps it.
   Sales history rebuilds the batch in the browser (one order per historical order, same rules as
   `batch.history_batch`). Header buttons give the whole master data as one Excel workbook and an
   Excel workbook of upload templates.
@@ -351,7 +358,9 @@ Four sub-tabs; each view keeps its state when you switch back to the Route Dashb
   provider type). Columns: name, type, countries and lanes, RFQ status, last upload (file name and date),
   actions. Helmond (type Own hub) comes first, labelled Baseline, with no RFQ upload: its costs and lead
   times come from Master Data and the parameters. Add, edit and delete providers in Master Data; they show
-  here the next time the view opens. Print report (PDF) writes the printable A4 provider report (cover,
+  here the next time the view opens. The table follows the Master Data order. Drag ⠿ (or Alt + ↑ / ↓) to
+  move a provider: the new order saves in Master Data at once. Click a column header to sort by provider,
+  type, number of countries, RFQ status or last upload; Helmond stays first. Print report (PDF) writes the printable A4 provider report (cover,
   overview, RFQ comparison, one page per provider). The RFQ workflow below runs on this tab.
 - Sales Data and Analysis: the default source is Master data > Sales history (192 demo orders). Add
   CSV or Excel exports from each merged entity; a mapping step matches columns (English and Dutch

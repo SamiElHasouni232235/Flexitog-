@@ -119,6 +119,8 @@ body[data-view="bench"] .top>.controls,body[data-view="bench"] #chips{display:no
 tr.baserow td{background:var(--surface-2)}
 tr.noans td{opacity:.55}
 .bacts select,td select[data-st]{font-size:12.5px;padding:3px 6px;border:1px solid var(--rule);border-radius:5px;background:var(--surface);color:var(--ink)}
+#bp-providers .pcell{display:flex;align-items:flex-start;gap:2px}
+#bp-providers .pcell .grip{padding-top:2px}
 #bp-providers .pname{display:flex;flex-wrap:wrap;align-items:center;gap:3px 6px;min-width:150px;max-width:220px;line-height:1.3}
 #bp-providers .pname .lnk{text-align:left}
 #bp-providers .bacts{flex-wrap:wrap;justify-content:flex-start;min-width:280px}

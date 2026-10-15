@@ -65,7 +65,7 @@ const storeReady = () => new Promise(res => { const t = () => (STORE.ready ? res
 const B = {
   ready: false, tab: "providers", ver: 0,
   providers: [], rfq: {}, goals: [], settings: DEFAULT_SETTINGS(), packages: [], sources: [],
-  ui: {q: "", status: "all", type: "all", region: "all", metric: "units", dim: "region", showReal: false, sel: new Set(["generic"]), formats: {pdf: true, docx: true, xlsx: true}, busy: false},
+  ui: {psort: null, q: "", status: "all", type: "all", region: "all", metric: "units", dim: "region", showReal: false, sel: new Set(["generic"]), formats: {pdf: true, docx: true, xlsx: true}, busy: false},
   upload: null, clean: null, analysis: null, test: null, testKey: "", stale: {}, mdRef: null, respDirty: false,
 };
 { const u = DataStore.pref.get("bench-ui"); if (u && u.tab) B.tab = u.tab; }
@@ -228,7 +228,7 @@ function syncProviders(){
       dateRfqSent: st.sentDate || "", dateTestOrderSent: st.testOrderSent || "",
       dateResponseReceived: a ? ((a.summary || {}).responseDate || String(a.uploadedAt).slice(0, 10)) : "",
       rfqResponses: ups, latestResponseIndex: act};
-  }).sort((a, b) => (b.baseline - a.baseline) || a.name.localeCompare(b.name, "en"));
+  }).sort((a, b) => b.baseline - a.baseline);   // Master Data order, Helmond first
 }
 // RFQ state is stored without the parsed values; values and rate tables sit apart in "rfqvalues" (chunked).
 async function saveRfq(msg){
@@ -242,7 +242,7 @@ async function saveRfq(msg){
 }
 const latestOf = p => R.latest(p);
 const nextProviderId = () => "PRV-" + String(Math.max(0, ...(MD.t.distribution_centers || []).map(r => { const m = String(r.dc_id).match(/^PRV-(\d+)$/); return m ? Number(m[1]) : 0; })) + 1).padStart(4, "0");
-const editInMd = id => { MDUI.tab = "distribution_centers"; MDUI.typeFilter = "all"; MDUI.filter = id || ""; MDUI.page = 0; showView("md"); };
+const editInMd = id => { MDUI.tab = "distribution_centers"; MDUI.typeFilter = "all"; MDUI.colf.distribution_centers = {}; MDUI.filter = id || ""; MDUI.page = 0; showView("md"); };
 
 // ---- RFQ template: the bundled file, or the one you replaced it with (kept in this browser)
 const RFQT = {bundled: null, current: null};
@@ -284,11 +284,20 @@ async function downloadPrefilled(id){
 }
 
 // ---- table
+// Header sort for the provider table; Helmond stays first. Without a sort the table shows Master Data's order,
+// which drag (or Alt + arrow keys) on the grip changes and saves in Master Data.
+const PSORT = {name: ["Provider", p => p.name], type: ["Type", p => p.type], countries: ["Countries and lanes", p => p.countriesCovered.length || null],
+  status: ["RFQ status", p => ["not_sent", "sent", "answered"].indexOf(p.status) + 1 || null], upload: ["Last upload", p => { const a = p.rfqResponses[p.latestResponseIndex]; return a ? String(a.uploadedAt || "") : null; }]};
+function provSorted(rows){
+  const s = B.ui.psort; if (!s || !PSORT[s.f]) return rows;
+  const rest = rows.filter(p => !p.baseline), get = PSORT[s.f][1];
+  return rows.filter(p => p.baseline).concat(sortIdx(rest.map((p, i) => i), i => get(rest[i]), s.dir).map(i => rest[i]));
+}
 function provFiltered(){
   const q = norm(B.ui.q);
-  return B.providers.filter(p => (B.ui.status === "all" || p.status === B.ui.status) && (B.ui.type === "all" || p.type === B.ui.type) &&
+  return provSorted(B.providers.filter(p => (B.ui.status === "all" || p.status === B.ui.status) && (B.ui.type === "all" || p.type === B.ui.type) &&
     (B.ui.region === "all" || p.regionsCovered.includes(B.ui.region)) &&
-    (!q || [p.name, p.id, p.type, p.contactName, p.contactEmail, p.notes, p.countriesCovered.map(CNAME).join(" ")].some(x => norm(x).includes(q))));
+    (!q || [p.name, p.id, p.type, p.contactName, p.contactEmail, p.notes, p.countriesCovered.map(CNAME).join(" ")].some(x => norm(x).includes(q)))));
 }
 const safeUrl = u => { const s = String(u || "").trim(); return /^https?:\/\//i.test(s) ? s : "https://" + s; };
 const badge = p => (p.baseline ? ' <span class="st baseline">Baseline</span>' : "") + (p.dummy ? ' <span class="srcb ph" title="Placeholder or dummy data from Master Data">dummy</span>' : "");
@@ -306,13 +315,21 @@ function provRow(p){
       <button type="button" class="btn ghost sm" data-a="rm"${dis}>Remove upload</button>
       <button type="button" class="btn ghost sm" data-a="prefill"${tmpl() ? "" : " disabled"} title="RFQ with this provider's details and the metadata sheet; sets status Sent">Prefilled RFQ</button>
       <button type="button" class="btn ghost sm" data-a="md">Edit in Master Data</button>`;
-  return `<tr data-id="${esc(p.id)}" class="${p.baseline ? "baserow" : ""}">
-    <td><div class="pname"><button type="button" class="lnk" data-a="detail" title="Open the provider detail">${esc(p.name)}</button>${badge(p)}</div><span class="faint num">${esc(p.id)}</span></td>
+  return `<tr data-id="${esc(p.id)}" data-row="${esc(p.id)}" class="${p.baseline ? "baserow" : ""}">
+    <td><div class="pcell">${p.baseline || B.ui.psort ? "" : `<span class="grip" draggable="true" data-drag="${esc(p.id)}" tabindex="0" role="button" aria-label="Move ${esc(p.name)}. Drag it, or press Alt and the arrow keys" title="Drag to change the order (saved in Master Data)">⠿</span>`}<div><div class="pname"><button type="button" class="lnk" data-a="detail" title="Open the provider detail">${esc(p.name)}</button>${badge(p)}</div><span class="faint num">${esc(p.id)}</span></div></div></td>
     <td>${esc(p.type)}</td>
     <td class="wrap"><div class="tags">${p.countriesCovered.map(c => `<span class="tag r-${rc(regionOf(c))}">${esc(laneTag(c))}</span>`).join("") || '<span class="faint">none set</span>'}</div></td>
     <td>${status}</td><td>${last}</td><td><div class="bacts">${acts}</div></td></tr>`;
 }
+function renderProvHead(){
+  const h = $("bxProvHead"), s = B.ui.psort; if (!h) return;
+  const words = (f, d) => (f === "name" || f === "type" ? (d > 0 ? "A to Z" : "Z to A") : f === "upload" ? (d > 0 ? "oldest first" : "newest first") : f === "status" ? (d > 0 ? "Not sent first" : "Answered first") : (d > 0 ? "fewest first" : "most first"));
+  const th = k => { const on = s && s.f === k; return `<th aria-sort="${on ? (s.dir > 0 ? "ascending" : "descending") : "none"}"><button type="button" class="thsort" data-psort="${k}" title="Click to sort: ${words(k, 1)}, again ${words(k, -1)}, a third time back to the Master Data order">${PSORT[k][0]}<span class="sarr" aria-hidden="true">${on ? (s.dir > 0 ? "▲" : "▼") : "↕"}</span></button></th>`; };
+  h.innerHTML = `<tr>${th("name")}${th("type")}${th("countries")}${th("status")}${th("upload")}<th><span class="faint">Actions</span></th></tr>`;
+  $("bxProvNote").innerHTML = s ? `Sorted by ${esc(PSORT[s.f][0].toLowerCase())}, ${words(s.f, s.dir)}. Helmond stays first. <button type="button" class="btn ghost sm" data-a="unsort">Back to Master Data order</button>` : "Drag ⠿ to change the order. It is saved in Master Data, so both lists match. Click a column header to sort.";
+}
 function renderProvTable(){
+  renderProvHead();
   const rows = provFiltered(), el = $("bxProvBody"); if (!el) return;
   el.innerHTML = rows.map(provRow).join("") ||
     `<tr><td colspan="6" class="empty">${B.providers.length ? "No provider matches the search or filters." : "No logistics providers in Master Data. Add rows with a provider type in Master Data > Logistics providers."}</td></tr>`;
@@ -330,6 +347,7 @@ function renderProviders(){
         <label class="btn ghost sm filebtn">Replace RFQ template<input type="file" id="bxRfqTpl" accept=".xlsx,.xlsm" aria-label="Replace the RFQ template"></label>
         ${RFQT.current ? `<button type="button" class="btn ghost sm" data-a="rfq-reset">Reset to bundled</button>` : ""}</div></div>
     <p class="muted bcard-lead">Providers come from Master Data > Logistics providers (rows with a provider type). Send the RFQ, then use Upload answered RFQ when it comes back: the file is checked, you see the parsed rates, and it saves only after you confirm. Helmond is the baseline: its costs come from Master Data. <span class="faint" id="bxProvCount"></span></p>
+    <p class="faint mdview" id="bxProvNote"></p>
     <div class="mdbar">
       <input type="search" id="bxQ" placeholder="Search name, ID, contact, country" value="${esc(B.ui.q)}" aria-label="Search providers">
       ${sel("bxFStatus", "Filter by RFQ status", "All statuses", [["baseline", "Baseline"]].concat(RFQ_STATUS), B.ui.status)}
@@ -340,12 +358,19 @@ function renderProviders(){
       <button type="button" class="btn ghost" data-a="md-add">Add provider in Master Data</button>
       <button type="button" class="btn ghost" data-a="print">Print report (PDF)</button>
     </div>
-    <div class="tablewrap mdgrid"><table><thead><tr><th>Provider</th><th>Type</th><th>Countries and lanes</th><th>RFQ status</th><th>Last upload</th><th><span class="faint">Actions</span></th></tr></thead><tbody id="bxProvBody"></tbody></table></div>
+    <div class="tablewrap mdgrid"><table><thead id="bxProvHead"></thead><tbody id="bxProvBody"></tbody></table></div>
     <p class="faint bnote">Add, edit or delete providers in Master Data; they show here the next time this view opens. Upload history stays per provider: the latest confirmed upload is active, older ones open from View parsed rates. Uploaded files stay in this browser.</p>
   </div>
   <div id="bxCompare"></div>`;
   renderProvTable();
   $("bxQ").addEventListener("input", e => { B.ui.q = e.target.value; renderProvTable(); });
+  P.querySelector(".card").addEventListener("click", e => {   // the card is new on each render, so one listener
+    const b = e.target.closest("[data-psort],[data-a=unsort]"); if (!b) return;
+    const k = b.dataset.psort, s = B.ui.psort;
+    B.ui.psort = !k ? null : !s || s.f !== k ? {f: k, dir: 1} : s.dir > 0 ? {f: k, dir: -1} : null;
+    renderProvTable(); const nb = k && P.querySelector(`[data-psort="${k}"]`); if (nb) nb.focus({preventScroll: true});
+  });
+  wireProvOrder();
   [["bxFStatus", "status"], ["bxFType", "type"], ["bxFRegion", "region"]].forEach(([id, k]) => $(id).addEventListener("change", e => { B.ui[k] = e.target.value; renderProvTable(); }));
   P.querySelector('[data-a="print"]').addEventListener("click", printProviders);
   P.querySelector('[data-a="md-add"]').addEventListener("click", () => editInMd(""));
@@ -367,6 +392,46 @@ function renderProviders(){
     const id = b.closest("tr").dataset.id;
     ({detail: () => openDetail(id), rates: () => openDetail(id, "rates"), orig: () => downloadOriginal(id), rm: () => removeUpload(id),
       prefill: () => downloadPrefilled(id), md: () => editInMd(id)})[b.dataset.a]();
+  });
+}
+
+// Drag a provider (or Alt + arrow keys on the grip) to change the order. The new order goes to Master Data at once.
+function wireProvOrder(){
+  const tb = $("bxProvBody"); let from = null;
+  const ids = () => B.providers.filter(p => !p.baseline).map(p => p.id);
+  const marks = () => tb.querySelectorAll(".drop-before,.drop-after,.dragging").forEach(t => t.classList.remove("drop-before", "drop-after", "dragging"));
+  const below = (e, tr) => e.clientY > tr.getBoundingClientRect().top + tr.offsetHeight / 2;
+  const target = e => { const tr = e.target.closest("tr[data-row]"); return tr && !tr.classList.contains("baserow") ? tr : null; };
+  async function move(id, to, after){
+    const o = ids().filter(x => x !== id); o.splice(o.indexOf(to) + (after ? 1 : 0), 0, id);
+    try { await mdReorderRows("distribution_centers", o); } catch (err) { toast(storeErrorText(err), "bad"); return false; }
+    syncProviders(); renderProvTable(); return true;
+  }
+  tb.addEventListener("dragstart", e => {
+    const g = e.target.closest && e.target.closest("[data-drag]"); if (!g) return;
+    from = g.dataset.drag; const tr = g.closest("tr"); tr.classList.add("dragging");
+    e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", from);
+    try { e.dataTransfer.setDragImage(tr, 24, 16); } catch (x) {}
+  });
+  tb.addEventListener("dragover", e => {
+    if (from == null) return; const tr = target(e); if (!tr) return;
+    e.preventDefault(); e.dataTransfer.dropEffect = "move";
+    tb.querySelectorAll(".drop-before,.drop-after").forEach(t => t.classList.remove("drop-before", "drop-after"));
+    if (tr.dataset.row !== from) tr.classList.add(below(e, tr) ? "drop-after" : "drop-before");
+  });
+  tb.addEventListener("drop", async e => {
+    if (from == null) return; e.preventDefault();
+    const tr = target(e), id = from; from = null; marks();
+    if (!tr || tr.dataset.row === id) return;
+    if (await move(id, tr.dataset.row, below(e, tr))) toast("Order saved in Master Data");
+  });
+  tb.addEventListener("dragend", () => { from = null; marks(); });
+  tb.addEventListener("keydown", async e => {
+    const g = e.target.closest && e.target.closest("[data-drag]"); if (!g || !e.altKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
+    e.preventDefault();
+    const id = g.dataset.drag, vis = provFiltered().filter(p => !p.baseline).map(p => p.id), k = vis.indexOf(id), nb = vis[k + (e.key === "ArrowUp" ? -1 : 1)];
+    if (nb == null) return;
+    if (await move(id, nb, e.key === "ArrowDown")) { const ng = tb.querySelector(`[data-drag="${CSS.escape(id)}"]`); if (ng) ng.focus({preventScroll: true}); }
   });
 }
 
