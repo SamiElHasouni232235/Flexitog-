@@ -126,7 +126,12 @@ details.dready>summary{align-items:center}
 #map .last{fill:none;stroke:var(--muted);opacity:.5;stroke-width:1;vector-effect:non-scaling-stroke}
 #map .last.air{stroke:var(--ink);opacity:.7;stroke-width:1.4;stroke-dasharray:1 4;stroke-linecap:round}
 #map .last.road{stroke-dasharray:5 3}
-#map .cust{fill:var(--muted);stroke:var(--surface);stroke-width:.8;vector-effect:non-scaling-stroke}
+#map .cust{fill:#ffffff;stroke:#14212c;stroke-width:.9;vector-effect:non-scaling-stroke}
+#map .cust.grp{stroke-width:1.3}
+#supView[aria-pressed="true"],#custView[aria-pressed="true"],#issView[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent)}
+.clist{margin:6px 0;padding-left:16px;font-size:12.5px;max-height:220px;overflow:auto}
+.clist li{margin:2px 0}
+#map .cust.approx{stroke-dasharray:2 1.5}
 #map .node{stroke:var(--surface);stroke-width:1.4;vector-effect:non-scaling-stroke;cursor:default}
 #map .node.cand{fill-opacity:.35;stroke-dasharray:2 2}
 #map .issue path{stroke:var(--surface);stroke-width:1;vector-effect:non-scaling-stroke}
@@ -153,7 +158,8 @@ details.dready>summary{align-items:center}
 #map .hit{fill:none;stroke:transparent;stroke-width:14px;vector-effect:non-scaling-stroke;cursor:pointer}
 #map .node,#map .cust,#map .issue,#map .hub{cursor:pointer}
 #map .lane.on{opacity:1;filter:drop-shadow(0 0 3px var(--ink))}
-#map .node.on,#map .cust.on{stroke:var(--ink);stroke-width:2.5}
+#map .node.on{stroke:var(--ink);stroke-width:2.5}
+#map .cust.on{stroke:var(--accent);stroke-width:2.5}
 #map .issue.on path{stroke:var(--ink);stroke-width:2.5}
 .mtool{position:absolute;left:8px;right:8px;top:8px;display:flex;justify-content:space-between;align-items:flex-start;gap:8px;pointer-events:none;z-index:2}
 .mgroup{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;pointer-events:auto;background:color-mix(in srgb,var(--surface) 88%,transparent);border:1px solid var(--rule);border-radius:8px;padding:6px 8px;backdrop-filter:blur(4px)}
@@ -524,6 +530,7 @@ details.custom .iact{display:flex;gap:6px;margin-top:8px}
               <button type="button" id="zreset" aria-label="Reset view" title="Reset view (0)">⟲</button>
             </div>
             <button type="button" class="btn ghost" id="supView" aria-pressed="false" title="Show the suppliers and their routes to Helmond (S)">Suppliers</button>
+            <button type="button" class="btn ghost" id="custView" aria-pressed="true" title="Show every customer in Master Data as a white point (C)">Customers</button>
             <button type="button" class="btn ghost" id="issView" aria-pressed="false" title="Show the issue markers">Issues</button>
             <button type="button" class="btn ghost fs-only" id="fsParams">Parameters</button>
             <button type="button" class="btn" id="fsBtn" aria-pressed="false" title="Full screen (F)">Full screen</button>
@@ -664,7 +671,7 @@ let whatIf = {redSea: false, euAll: false};
 let excluded = new Set();
 const ui = {region: null, mapScenario: "best", mapMetric: "best", method: "customer_first", country: null,
             orderId: null, override: "auto", orderPicked: false, zoom: 1, center: null, modes: new Set(["sea", "road", "air"]), supplier: "all",
-            layers: {suppliers: false, issues: false}};
+            layers: {suppliers: false, issues: false, customers: true}};
 let R = null;                             // latest results
 
 function tableRef(t){ return t.startsWith("p:") ? W.params[t.slice(2)] : W[t]; }
@@ -814,6 +821,9 @@ function loc(kind, id){
   return (LOCS[k] = p);
 }
 const city = name => PAYLOAD.geo.cities[String(name || "").toLowerCase()] || null;
+// A customer sits on its own coordinates or its city; otherwise loc() falls back to the country centre.
+const custExact = cu => (cu.latitude != null && cu.latitude !== "" && Number.isFinite(Number(cu.latitude)) && cu.longitude != null && cu.longitude !== "" && Number.isFinite(Number(cu.longitude))) || !!city(cu.city);
+const custPlace = cu => [cu.city, CNAME(cu.country)].filter(Boolean).join(", ");
 function supplierCountries(){
   const out = {};
   (R.data.suppliers || []).forEach(sp => { const c = String(sp.country || "").toUpperCase(); if (c) (out[c] = out[c] || []).push(sp); });
@@ -1064,9 +1074,25 @@ function drawOverlay(){
     h += `<path class="lane ${l.mode === "road" ? "road" : ""}${sel("lane", l.key) ? " on" : ""}" d="${path(l.pts)}" style="stroke:var(--s-${l.sc});stroke-width:${w.toFixed(1)}px"/>`;
     h += `<path class="hit" d="${path(l.pts)}" data-kind="lane" data-id="${esc(l.key)}" data-tip="${esc(t)}"/>`;
   });
+  // Customers layer: every Master Data customer in the region as a white point (forecast placeholders left out); customers on the same spot share one point
+  // (bigger, with the count). A routed customer keeps its own point, sized by pallets in this view.
+  const custGroups = {};
+  if (ui.layers.customers) (R.data.customers || []).forEach(cu => {
+    if (custs[cu.customer_id] || cu.data_source === "forecast" || !(ui.region === "All" || R.data.regionFor(cu.country) === ui.region)) return;
+    const p = loc("cust", cu.customer_id); if (!p) return;
+    const k = p.map(v => v.toFixed(3)).join(","), g = custGroups[k] = custGroups[k] || {key: k, p, rows: [], approx: false};
+    g.rows.push(cu); if (!custExact(cu)) g.approx = true;
+  });
+  mapState.custGroups = custGroups;
+  Object.values(custGroups).forEach(g => {
+    const [x, y] = proj(g.p[0], g.p[1]), n = g.rows.length, one = n === 1 ? g.rows[0] : null;
+    const where = custPlace(g.rows[0]) + (g.approx ? " (country centre: city not on the map)" : "");
+    const t = one ? `${one.name || one.customer_id} · ${where} · click for detail` : `${n} customers · ${where}: ${g.rows.slice(0, 4).map(c => c.name || c.customer_id).join(", ")}${n > 4 ? "…" : ""} · click for the list`;
+    h += `<circle class="cust${n > 1 ? " grp" : ""}${g.approx ? " approx" : ""}${sel(one ? "cust" : "custgrp", one ? one.customer_id : g.key) ? " on" : ""}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${((4 + 1.8 * Math.sqrt(n - 1)) * scale).toFixed(2)}" data-kind="${one ? "cust" : "custgrp"}" data-id="${esc(one ? one.customer_id : g.key)}" data-tip="${esc(t)}"/>`;
+  });
   Object.values(custs).forEach(c => {
     const [x, y] = proj(c.p[0], c.p[1]);
-    h += `<circle class="cust${sel("cust", c.id) ? " on" : ""}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${((2 + Math.sqrt(c.pallets) * .35) * scale).toFixed(2)}" data-kind="cust" data-id="${esc(c.id)}" data-tip="${esc(c.id)} · ${c.orders} orders, ${fmt(c.pallets)} pallets · click for detail"/>`;
+    h += `<circle class="cust${sel("cust", c.id) ? " on" : ""}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${((2 + Math.sqrt(c.pallets) * .35) * scale).toFixed(2)}" data-kind="cust" data-id="${esc(c.id)}" data-tip="${esc((R.data.customers.find(x => x.customer_id === c.id) || {}).name || c.id)} · ${c.orders} orders, ${fmt(c.pallets)} pallets · click for detail"/>`;
   });
   R.data.dcs.filter(d => d.dc_type !== "helmond_hub" && d.dc_type !== "freight_forwarder").forEach(d => {   // forwarders hold no stock
     const p = loc("dc", d.dc_id); if (!p) return;
@@ -1117,6 +1143,7 @@ function drawLegend(){
     lg += `<span><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" style="stroke:var(--ink);stroke-width:2;stroke-dasharray:1 4;stroke-linecap:round"/></svg>air (to customer)</span>`;
   }
   if (ui.layers.suppliers) lg += `<span><i class="sw" style="background:var(--supplier-land)"></i>supplier country</span><span><svg width="14" height="12"><path d="M1,11L1,5L5,2L5,5L9,2L9,5L13,2L13,11Z" style="fill:var(--supplier-mark)"/></svg>supplier factory</span><span><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" style="stroke:var(--supplier);stroke-width:3"/></svg>supplier → Helmond</span><span><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" style="stroke:var(--supplier-mark);stroke-width:3"/></svg>supplier → partner, direct</span>`;
+  if (ui.layers.customers || mapState.routes) lg += `<span><svg width="12" height="12"><circle cx="6" cy="6" r="4.5" style="fill:#ffffff;stroke:#14212c;stroke-width:1"/></svg>customer</span><span><svg width="16" height="16"><circle cx="8" cy="8" r="7" style="fill:#ffffff;stroke:#14212c;stroke-width:1.3"/></svg>several customers</span>`;
   if (ui.layers.issues) lg += ["critical","serious","warning","info"].map(s => `<span><svg width="12" height="11"><path d="M6,0L12,11L0,11Z" style="fill:var(--st-${s})"/></svg>${s}</span>`).join("");
   $("mapLegend").innerHTML = lg;
   $("mapLegendFs").innerHTML = lg;
@@ -1172,6 +1199,11 @@ function renderInfo(){
       `<dl class="kv"><dt>Mode</dt><dd>${esc(l.mode)}</dd><dt>Orders</dt><dd class="num">${l.orders}</dd><dt>Pallets</dt><dd class="num">${fmt(l.pallets)}</dd>` +
       `<dt>Cost/unit</dt><dd class="num">€${fmt(l.units ? l.cost / l.units : null, 2)}</dd><dt>Avg lead</dt><dd class="num">${fmt(l.lead / l.orders, 1)} days</dd>` +
       `<dt>Countries</dt><dd>${Object.entries(l.countries).map(([c, k]) => `${esc(CNAME(c))} ${k}`).join(", ")}</dd></dl>`;
+  } else if (kind === "custgrp") {
+    const g = (mapState.custGroups || {})[id]; if (!g) { el.hidden = true; return; }
+    h = `<div class="ih"><span class="eyebrow">Customers</span><h3>${g.rows.length} customers · ${esc(custPlace(g.rows[0]))}</h3></div>` +
+      `<ul class="clist">${g.rows.slice(0, 15).map(cu => `<li>${esc(cu.name || cu.customer_id)} <span class="faint num">${esc(cu.customer_id)}${cu.city ? " · " + esc(cu.city) : ""}</span></li>`).join("")}${g.rows.length > 15 ? `<li class="faint">and ${g.rows.length - 15} more</li>` : ""}</ul>` +
+      (g.approx ? `<p class="faint">Some of these have no coordinates and a city the map does not know, so they sit on the country centre. Add latitude and longitude in Master Data > Customers.</p>` : "");
   } else if (kind === "cust") {
     const c = mapState.custs[id]; const cu = R.data.customers.find(x => x.customer_id === id) || {};
     h = `<div class="ih"><span class="eyebrow">Customer</span><h3>${esc(cu.name || id)}</h3></div>` +
@@ -1291,6 +1323,7 @@ svgEl.addEventListener("keydown", e => {
   else if (k === "0") { resetView(); e.preventDefault(); }
   else if (k === "f" || k === "F") { toggleFs(); e.preventDefault(); }
   else if (k === "s" || k === "S") { $("supView").click(); e.preventDefault(); }
+  else if (k === "c" || k === "C") { $("custView").click(); e.preventDefault(); }
 });
 // Fit the suppliers and Helmond in view.
 function supplyView(){
@@ -1671,6 +1704,7 @@ function initControls(){
   $("fsBtn").addEventListener("click", toggleFs);
   // Supplier and issue layers start off; the buttons switch them on (Suppliers also frames the supply base).
   $("supView").addEventListener("click", () => { ui.layers.suppliers = !ui.layers.suppliers; $("supView").setAttribute("aria-pressed", String(ui.layers.suppliers)); drawCountries(); drawOverlay(); if (ui.layers.suppliers) supplyView(); });
+  $("custView").addEventListener("click", () => { ui.layers.customers = !ui.layers.customers; $("custView").setAttribute("aria-pressed", String(ui.layers.customers)); drawOverlay(); });
   $("issView").addEventListener("click", () => { ui.layers.issues = !ui.layers.issues; $("issView").setAttribute("aria-pressed", String(ui.layers.issues)); drawOverlay(); drawLegend(); });
   $("inclCand").addEventListener("change", e => setCandidates(e.target.checked));
   $("fsParams").addEventListener("click", openDrawer);

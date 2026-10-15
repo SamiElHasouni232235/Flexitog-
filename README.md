@@ -196,7 +196,10 @@ engine.py are untouched.
    without a route shows one line with the reason.
 3. Map and country detail: countries coloured by their best scenario, routes only for the selected country or
    order, supplier and issue layers off behind the Suppliers and Issues buttons, legend entries only for layers
-   that are on. Clicking a country selects it and its region.
+   that are on. Clicking a country selects it and its region. The Customers button (or C, on by default) shows
+   every Master Data customer in the region as a white point, placed by its latitude and longitude, else its
+   city, else the country centre (dashed outline). Customers on the same spot share one larger point; click
+   it for the list. Forecast placeholder customers stay off the layer.
 4. Order explorer: orders of the selection, every route option ranked by total cost with its status (signed or
    candidate) and data source (from RFQ, placeholder or entered rates). Click a bar to see its steps, who
    handles each one and whether it meets the target.
