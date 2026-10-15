@@ -284,6 +284,13 @@ Extract, Master Data Upload, Users (admin only) and Parameters, plus shortcuts t
   table order. Move rows by dragging the ⠿ handle in the # column, with Alt + ↑ / ↓ on the focused
   handle, or with Move To top, Up, Down, To bottom in the selection bar. Drag is off while a sort is on.
   A new order is a draft change: Save changes keeps it.
+  Country, city and port fields suggest values as you type (also in their column filters and in Set on the
+  selection bar). Names that start with the typed letters come first, then names with a word that starts
+  with them; accents are ignored, so "turk" finds Türkiye. Countries come from the basemap (every ISO
+  code) and go in as the code (Morocco becomes MA); serves_countries completes the part after the last ";"
+  and leaves out countries already in the list. Cities and ports come from the Master Data tables (the
+  row's country first) and the places on the map. Enter or click picks, arrow keys move, Escape closes.
+  A typed country name without a pick still becomes its code, and the region follows a new country.
   Sales history rebuilds the batch in the browser (one order per historical order, same rules as
   `batch.history_batch`). Header buttons give the whole master data as one Excel workbook and an
   Excel workbook of upload templates.

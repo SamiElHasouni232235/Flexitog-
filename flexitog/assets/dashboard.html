@@ -344,6 +344,11 @@ th[aria-sort=ascending] .sarr,th[aria-sort=descending] .sarr{opacity:1}
 .mdgrid tr.colf th{padding:3px 4px;text-transform:none;letter-spacing:0;font-weight:400}
 .mdgrid tr.colf input,.mdgrid tr.colf select{width:100%;min-width:72px;background:var(--surface);border:1px solid var(--rule);border-radius:4px;padding:3px 5px;font:12px var(--body);color:var(--ink)}
 .mdgrid tr.colf .on{border-color:var(--accent);background:var(--accent-soft)}
+.sugbox{position:fixed;z-index:1000;max-height:264px;overflow:auto;background:var(--surface);color:var(--ink);border:1px solid var(--rule);border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,.18);padding:3px;font:13px var(--body)}
+.sugbox [role=option]{display:flex;justify-content:space-between;align-items:baseline;gap:14px;padding:5px 8px;border-radius:4px;cursor:pointer;white-space:nowrap}
+.sugbox [role=option][aria-selected=true],.sugbox [role=option]:hover{background:var(--accent-soft)}
+.sugbox b{font-weight:700;color:var(--accent)}
+.sugbox .faint{font:11px var(--mono)}
 .mdview{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;font-size:12.5px;color:var(--muted)}
 .mdgrid td.rn{white-space:nowrap}
 .grip{display:inline-block;cursor:grab;color:var(--faint);padding:0 5px 0 0;font-size:13px;line-height:1;user-select:none;border-radius:3px}

@@ -36,9 +36,22 @@ function toIso2(v){
   if (PAYLOAD.names.countries[t.toUpperCase()]) return t.toUpperCase();
   const k = norm(t);
   if (PAYLOAD.country_aliases[k]) return PAYLOAD.country_aliases[k];
-  const hit = Object.entries(PAYLOAD.names.countries).find(([, n]) => norm(n) === k);
+  const hit = Object.entries(PAYLOAD.names.countries).find(([, n]) => norm(n) === k) || countryList().map(c => [c.value, c.label]).find(([, n]) => norm(n) === k);
   return hit ? hit[0] : t.toUpperCase();
 }
+// Every country on the basemap (ISO code and name), our own names first (Türkiye), with the importer's aliases.
+let COUNTRY_LIST = null;
+function countryList(){
+  if (COUNTRY_LIST) return COUNTRY_LIST;
+  const m = new Map(), alias = {};
+  ((PAYLOAD.geo && PAYLOAD.geo.basemap && PAYLOAD.geo.basemap.countries) || []).forEach(c => { if (/^[A-Z]{2}$/.test(c.iso || "")) m.set(c.iso, c.name); });
+  Object.entries(PAYLOAD.names.countries).forEach(([k, n]) => m.set(k, n));
+  Object.entries(PAYLOAD.country_aliases || {}).forEach(([a, k]) => { (alias[k] = alias[k] || []).push(a); });
+  COUNTRY_LIST = [...m].map(([code, name]) => ({value: code, label: name, hint: code, code: true, keys: [name, ...(alias[code] || [])]}))
+    .sort((a, b) => a.label.localeCompare(b.label, "en"));
+  return COUNTRY_LIST;
+}
+const countryName = c => { const k = String(c || "").trim().toUpperCase(); return PAYLOAD.names.countries[k] || (countryList().find(x => x.value === k) || {}).label || ""; };
 function cleanNum(v){ if (isBlank(v)) return null; return String(v).trim().replace(/ | /g, "").replace(/€|EUR|eur|\$|USD|%/g, ""); }
 function detectDecimal(values){
   let comma = 0, dot = 0;
@@ -440,10 +453,28 @@ function renderMD(){
     return `<button type="button" role="tab" data-tab="${k}" aria-selected="${MDUI.tab === k}">${esc(l)} <span class="cnt">${n}</span>${isDirty(k) ? '<span class="dot" title="Unsaved changes"></span>' : ""}${MD.saved[k] ? '<span class="sv" title="Changed from built-in data">●</span>' : ""}</button>`;
   }).join("");
   $("mdTabs").innerHTML = tabs;
-  $("mdTabs").querySelectorAll("button").forEach(b => b.addEventListener("click", () => { MDUI.tab = b.dataset.tab; MDUI.page = 0; MDUI.filter = ""; MDUI.upload = null; clearSel(); renderMD(); }));
   if (MDUI.tab === "custom") renderCustom(); else renderTable(MDUI.tab);
   renderStoreStatus();
 }
+// Fields that suggest values while you type (see the suggestion list below).
+const SUGGEST_KIND = {country: "country", country_of_origin: "country", serves_countries: "countries", city: "city", port_of_entry: "port", destination_port: "port"};
+const suggestAttr = name => (SUGGEST_KIND[name] ? ` data-suggest="${SUGGEST_KIND[name]}" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false"` : "");
+// Tab switching listens on the tab bar itself. Leaving an edited cell saves it and redraws the bar between your
+// press and release, and the browser then drops the click, so a release on the tab you pressed switches too.
+(() => {
+  const bar = $("mdTabs"); if (!bar) return; let down = null, done = null;
+  const go = tab => { MDUI.tab = tab; MDUI.page = 0; MDUI.filter = ""; MDUI.upload = null; clearSel(); renderMD(); };
+  bar.addEventListener("pointerdown", e => { const b = e.target.closest("button[data-tab]"); down = b ? b.dataset.tab : null; done = null; });
+  bar.addEventListener("pointerup", e => {
+    const b = e.target.closest("button[data-tab]");
+    if (b && down === b.dataset.tab) { done = down; down = null; go(done); }
+  });
+  bar.addEventListener("click", e => {
+    const b = e.target.closest("button[data-tab]"); if (!b) return;
+    if (done === b.dataset.tab) { done = null; return; }   // already switched on release
+    go(b.dataset.tab);
+  });
+})();
 function inputCell(f, v, ri){
   const bad = (f.required && isBlank(v)) || (f.allowed && !isBlank(v) && !f.allowed.includes(String(v)));
   const cls = bad ? ' class="bad"' : "";
@@ -452,7 +483,7 @@ function inputCell(f, v, ri){
   if (f.dtype === "bool") return `<input type="checkbox" ${a}${v === true ? " checked" : ""}>`;
   if (f.dtype === "float" || f.dtype === "int") return `<input type="number" step="any" ${a} value="${isBlank(v) ? "" : esc(v)}">`;
   if (f.dtype === "date") return `<input type="date" ${a} value="${isBlank(v) ? "" : esc(String(v).slice(0, 10))}">`;
-  return `<input type="text" ${a} value="${isBlank(v) ? "" : esc(v)}">`;
+  return `<input type="text" ${a}${suggestAttr(f.name)} value="${isBlank(v) ? "" : esc(v)}">`;
 }
 // ---- column sort, column filters and row order. Sort and filters change the view only (per table, this session);
 // moving rows changes the table's own order, which Save changes keeps. Blanks sort last in both directions.
@@ -477,7 +508,13 @@ function colMatch(f, v, want){
   if (f.allowed || f.dtype === "bool") return String(v ?? "") === want;
   const m = (f.dtype === "float" || f.dtype === "int") && String(want).trim().match(/^(>=|<=|>|<|=)\s*(-?\d+(?:[.,]\d+)?)$/);
   if (m) { if (isBlank(v)) return false; const n = Number(v), t = Number(m[2].replace(",", ".")); return {">": n > t, "<": n < t, ">=": n >= t, "<=": n <= t, "=": n === t}[m[1]]; }
-  return String(v ?? "").toLowerCase().includes(String(want).trim().toLowerCase());
+  const k = SUGGEST_KIND[f.name], w = String(want).trim();
+  if (k === "country" || k === "countries") {
+    const codes = String(v ?? "").split(";").map(x => x.trim().toUpperCase()).filter(Boolean);
+    if (/^[A-Z]{2}$/.test(w)) return codes.includes(w);   // a code (picked from the list or typed in capitals)
+    return codes.some(c => fold(c + " " + countryName(c)).includes(fold(w)));
+  }
+  return String(v ?? "").toLowerCase().includes(w.toLowerCase());
 }
 const sortWords = (f, dir) => (f.dtype === "float" || f.dtype === "int" ? (dir > 0 ? "low to high" : "high to low") : f.dtype === "date" ? (dir > 0 ? "oldest first" : "newest first") : (dir > 0 ? "A to Z" : "Z to A"));
 // New orders as lists of old row indexes: move the picked rows (top, up, down, bottom), or one row before or after another.
@@ -543,7 +580,7 @@ function renderTable(key){
   const cfIn = f => {
     const v = CF[f.name] ?? "", a = `data-cf="${esc(f.name)}" aria-label="Filter ${esc(f.name)}"${v !== "" ? ' class="on"' : ""}`;
     if (f.allowed || f.dtype === "bool") return `<select ${a}><option value="">All</option>${(f.allowed || ["true", "false"]).map(o => `<option${v === o ? " selected" : ""}>${esc(o)}</option>`).join("")}<option${v === EMPTY_F ? " selected" : ""}>${EMPTY_F}</option></select>`;
-    return `<input type="text" ${a} value="${esc(v)}" placeholder="${f.dtype === "float" || f.dtype === "int" ? "e.g. >10" : "Filter"}" title="Text that the cell contains${f.dtype === "float" || f.dtype === "int" ? ", or >, <, >=, <=, = and a number" : ""}. ${EMPTY_F} finds blank cells.">`;
+    return `<input type="text" ${a}${suggestAttr(f.name)} value="${esc(v)}" placeholder="${f.dtype === "float" || f.dtype === "int" ? "e.g. >10" : "Filter"}" title="Text that the cell contains${f.dtype === "float" || f.dtype === "int" ? ", or >, <, >=, <=, = and a number" : ""}. ${EMPTY_F} finds blank cells.">`;
   };
   const view = (SRT || nf) ? `<div class="mdview">${SRT ? `<span>Sorted by <b>${esc(SRT.f)}</b>, ${sortWords(sortF, SRT.dir)}. Drag to reorder is off while sorted.</span><button type="button" class="btn ghost sm" data-v="keep" title="Make this the table order (Save changes keeps it)">Keep this order</button><button type="button" class="btn ghost sm" data-v="unsort">Turn off sort</button>` : ""}${nf ? `<span>${nf} column filter${nf === 1 ? "" : "s"} on.</span><button type="button" class="btn ghost sm" data-v="unfilter">Clear column filters</button>` : ""}</div>` : "";
   const grip = i => (SRT ? "" : `<span class="grip" draggable="true" data-drag="${i}" tabindex="0" role="button" aria-label="Move row ${i + 1}. Drag it, or press Alt and the arrow keys" title="Drag to move this row (or Alt + ↑ / ↓)">⠿</span>`);
@@ -581,7 +618,8 @@ function renderTable(key){
     const d = draftOf(key), r = d[+el.dataset.r], f = sc.fields.find(x => x.name === el.dataset.f) || {name: el.dataset.f, dtype: "str"};
     let v = el.type === "checkbox" ? el.checked : el.value;
     v = f.dtype === "float" || f.dtype === "int" ? (v === "" ? null : Number(v)) : coerce(f, v);
-    r[f.name] = v; enrich(key, r); r.data_source = "manual";
+    r[f.name] = v; if (f.name === "country" && "region" in r) r.region = null;   // the region follows a new country
+    enrich(key, r); r.data_source = "manual";
     renderMD();
   }));
   P.querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", () => {
@@ -665,6 +703,111 @@ function wireOrder(key, rows, idx, CF){
   });
 }
 
+// ---- suggestion list for country, city and port fields. Names that start with what you typed come first, then
+// names with a word that starts with it (accents ignored: "turk" finds Türkiye). A country goes in as its ISO
+// code; in a list field (serves_countries) the part after the last ";" is completed. Cities and ports come from
+// the Master Data tables (same country as the row first) and the places on the map. Enter or click picks,
+// arrow keys move, Escape closes.
+const fold = s => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+const titleCase = s => String(s).replace(/(^|[\s\-(])([a-z\u00e0-\u024f])/g, (m, a, b) => a + b.toUpperCase());
+function placeList(kind, country){
+  const out = new Map();
+  const add = (name, c, hint) => {
+    const n = String(name ?? "").trim(); if (!n) return;
+    const k = fold(n), cur = out.get(k);
+    if (!cur || (!cur.country && c)) out.set(k, {value: n, label: n, hint: hint || (c ? countryName(c) || c : ""), country: c ? String(c).toUpperCase() : "", keys: [n]});
+  };
+  ["customers", "distribution_centers", "suppliers"].forEach(t => (rowsOf(t) || []).forEach(r => {
+    if (kind === "city") add(r.city, r.country); else { add(r.port_of_entry, r.country); add(r.destination_port, r.country); }
+  }));
+  if (kind === "port") Object.keys((PAYLOAD.geo && PAYLOAD.geo.lanes) || {}).forEach(p => add(titleCase(p), "", "port on the map"));
+  Object.keys((PAYLOAD.geo && PAYLOAD.geo.cities) || {}).forEach(c => add(titleCase(c), "", "on the map"));
+  const list = [...out.values()];
+  return country ? list.sort((a, b) => (b.country === country) - (a.country === country)) : list;
+}
+function rankSuggest(items, q, limit){
+  const f = fold(q).trim(); if (!f) return [];
+  const hits = [];
+  items.forEach(it => {
+    let best = 9;
+    if (it.code && f.length <= 3 && fold(it.value) === f) best = -1;
+    it.keys.forEach((k, n) => { const s = fold(k); if (s.startsWith(f)) best = Math.min(best, 0); else if (n === 0 && s.split(/[\s\-(),.'/]+/).some(w => w.startsWith(f))) best = Math.min(best, 1); });
+    if (best < 9) hits.push([best, it]);
+  });
+  return hits.sort((a, b) => a[0] - b[0]).slice(0, limit || 10).map(x => x[1]);
+}
+const SUG = {el: null, input: null, items: [], i: -1};
+function sugBox(){
+  if (SUG.el) return SUG.el;
+  const el = SUG.el = document.createElement("div");
+  el.id = "sugBox"; el.className = "sugbox"; el.setAttribute("role", "listbox"); el.hidden = true;
+  el.addEventListener("mousedown", e => { e.preventDefault(); const o = e.target.closest("[data-i]"); if (o) sugPick(+o.dataset.i); });
+  document.body.appendChild(el);
+  return el;
+}
+function sugClose(){
+  if (SUG.el) SUG.el.hidden = true;
+  if (SUG.input) { SUG.input.setAttribute("aria-expanded", "false"); SUG.input.removeAttribute("aria-activedescendant"); }
+  SUG.items = []; SUG.i = -1;
+}
+const sugTerm = inp => (inp.dataset.suggest === "countries" ? inp.value.split(";").pop() : inp.value);
+function sugHl(label, q){
+  const f = fold(q).trim(), s = fold(label);
+  let at = s.startsWith(f) ? 0 : -1;
+  if (at < 0) { const m = new RegExp("[\\s\\-(),.'/]" + f.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).exec(s); if (m) at = m.index + 1; }
+  if (at < 0 || s.length !== label.length) return esc(label);
+  return esc(label.slice(0, at)) + "<b>" + esc(label.slice(at, at + f.length)) + "</b>" + esc(label.slice(at + f.length));
+}
+function sugOpen(inp){
+  if (!inp.isConnected) inp = inp.dataset.cf ? document.querySelector(`[data-cf="${CSS.escape(inp.dataset.cf)}"]`) : null;
+  if (!inp) return sugClose();
+  const kind = inp.dataset.suggest, q = sugTerm(inp);
+  const tr = inp.closest("tr"), rowC = tr && tr.querySelector('[data-f="country"]');
+  let list = rankSuggest(kind === "country" || kind === "countries" ? countryList() : placeList(kind, rowC ? toIso2(rowC.value) || "" : ""), q);
+  if (kind === "countries") { const have = new Set(inp.value.split(";").slice(0, -1).map(x => x.trim().toUpperCase())); list = list.filter(x => !have.has(x.value)); }
+  if (SUG.input && SUG.input !== inp) sugClose();
+  SUG.input = inp; SUG.items = list; SUG.i = list.length ? 0 : -1;
+  if (!list.length) return sugClose();
+  const box = sugBox();
+  box.innerHTML = list.map((it, i) => `<div role="option" id="sug-${i}" data-i="${i}" aria-selected="${i === 0}"><span>${sugHl(it.label, q)}</span>${it.hint ? `<span class="faint">${esc(it.hint)}</span>` : ""}</div>`).join("");
+  box.hidden = false;
+  const r = inp.getBoundingClientRect(), h = box.offsetHeight;
+  box.style.minWidth = Math.max(r.width, 220) + "px";
+  box.style.left = Math.max(4, Math.min(r.left, innerWidth - box.offsetWidth - 4)) + "px";
+  box.style.top = (r.bottom + h + 4 > innerHeight && r.top > h + 4 ? r.top - h - 2 : r.bottom + 2) + "px";
+  inp.setAttribute("aria-expanded", "true"); inp.setAttribute("aria-controls", "sugBox"); inp.setAttribute("aria-activedescendant", "sug-0");
+}
+function sugMark(){
+  SUG.el.querySelectorAll("[data-i]").forEach(o => o.setAttribute("aria-selected", String(+o.dataset.i === SUG.i)));
+  const cur = SUG.el.querySelector(`[data-i="${SUG.i}"]`); if (cur) cur.scrollIntoView({block: "nearest"});
+  SUG.input.setAttribute("aria-activedescendant", "sug-" + SUG.i);
+}
+function sugPick(i){
+  const it = SUG.items[i], inp = SUG.input; if (!it || !inp) return;
+  const list = inp.dataset.suggest === "countries";
+  if (list) { const parts = inp.value.split(";").slice(0, -1).map(x => x.trim()).filter(Boolean); parts.push(it.value); inp.value = parts.join(";"); }
+  else inp.value = it.value;
+  sugClose();
+  const sel = inp.dataset.r != null ? `[data-r="${inp.dataset.r}"][data-f="${CSS.escape(inp.dataset.f)}"]` : inp.dataset.cf ? `[data-cf="${CSS.escape(inp.dataset.cf)}"]` : inp.id ? "#" + CSS.escape(inp.id) : null;
+  inp.dispatchEvent(new Event(inp.dataset.cf ? "input" : "change", {bubbles: true}));
+  const ne = (sel && document.querySelector(sel)) || inp; if (!ne.isConnected) return;
+  ne.focus({preventScroll: true});
+  if (list) ne.value = ne.value ? ne.value + ";" : "";   // ready for the next country; saved on the next change
+  const end = ne.value.length; try { ne.setSelectionRange(end, end); } catch (e) {}
+  if (inp.dataset.cf) sugClose();
+}
+document.addEventListener("input", e => { const t = e.target; if (t && t.matches && t.matches("input[data-suggest]")) sugOpen(t); });
+document.addEventListener("keydown", e => {
+  if (!SUG.el || SUG.el.hidden || !SUG.input || e.target !== SUG.input) return;
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); SUG.i = (SUG.i + (e.key === "ArrowDown" ? 1 : -1) + SUG.items.length) % SUG.items.length; sugMark(); }
+  else if (e.key === "Enter" && SUG.i >= 0) { e.preventDefault(); sugPick(SUG.i); }
+  else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); sugClose(); }
+  else if (e.key === "Tab") sugClose();
+}, true);
+document.addEventListener("focusout", e => { if (e.target === SUG.input) setTimeout(() => { if (document.activeElement !== SUG.input) sugClose(); }, 0); });
+window.addEventListener("scroll", e => { if (SUG.el && !SUG.el.hidden && !(SUG.el.contains(e.target))) sugClose(); }, true);
+window.addEventListener("resize", () => sugClose());
+
 // Selection: row checkboxes (Shift+click selects a range), page checkbox, and the bar with the bulk actions.
 // Updates in place so the table keeps its scroll position while you tick rows.
 function wireSelection(key, fields, idx, shown){
@@ -695,7 +838,7 @@ function bulkInput(f){
   if (f.dtype === "bool") return `<select ${a}><option value="true">true</option><option value="false">false</option><option value="">(empty)</option></select>`;
   if (f.dtype === "float" || f.dtype === "int") return `<input type="number" step="any" ${a} placeholder="empty clears">`;
   if (f.dtype === "date") return `<input type="date" ${a}>`;
-  return `<input type="text" ${a} placeholder="empty clears">`;
+  return `<input type="text" ${a}${suggestAttr(f.name)} placeholder="empty clears">`;
 }
 function renderSelBar(key, fields, idx){
   const bar = $("mdSelBar"), S = selOf(key), n = S.set.size; if (!bar) return;
