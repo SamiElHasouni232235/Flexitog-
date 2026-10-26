@@ -359,18 +359,22 @@ function renderStoreStatus(){
 
 // After master data is saved or loaded: rebuild the engine inputs and every view.
 function masterDataChanged(keys){
+  if (window.FlexiCalc) FlexiCalc.invalidate();
+  if (!keys || keys.includes("countries")) applyCountries();
   if (!keys || keys.includes("products")) { BASE.products = clone(MD.t.products); W.products = clone(MD.t.products); }
   if (!keys || keys.includes("distribution_centers")) { BASE.dcs = clone(MD.t.distribution_centers); W.dcs = clone(MD.t.distribution_centers); }
   compute(); renderView();
   if (VIEW.current === "md") renderMD();
   if (VIEW.current === "report") renderReport();
+  if (VIEW.current === "landed" && window.LandedUI) LandedUI.show();
+  if (VIEW.current === "bench" && window.BenchUI && keys && keys.some(k => ["quotes", "lanes", "settings", "countries"].includes(k))) BenchUI.show();
 }
 
 // ============================================================ views and menu
 // Each view keeps its DOM and state while hidden; switching back restores its scroll position.
 const VIEW = {current: "dash", scroll: {}};
 const VIEWS = {home: ["viewHome", "FlexiTog EU Supply Chain Simulator"], dash: ["viewDash", "FlexiTog Route Dashboard"], md: ["viewMD", "Master data"],
-  report: ["viewReport", "Report extract"], bench: ["viewBench", "Benchmarking"], forecast: ["viewForecast", "Sales Forecast"], users: ["viewUsers", "Users"]};
+  report: ["viewReport", "Report extract"], landed: ["viewLanded", "Landed Cost"], bench: ["viewBench", "Benchmarking"], forecast: ["viewForecast", "Sales Forecast"], users: ["viewUsers", "Users"]};
 // The login layer (auth.js) checks every switch: no user means no view, Users is for the admin only.
 function showView(v){
   if (!VIEWS[v]) v = "home";
@@ -387,6 +391,7 @@ function showView(v){
   if (v === "dash" && prev !== "dash") renderView();   // RFQ answers saved in Benchmarking price the order options
   if (v === "bench" && window.BenchUI) window.BenchUI.show();
   if (v === "forecast" && window.ForecastUI) window.ForecastUI.show();
+  if (v === "landed" && window.LandedUI) window.LandedUI.show();
   if (window.Auth) window.Auth.shown(v);
   if (prev !== v) window.scrollTo({top: VIEW.scroll[v] || 0});
 }
@@ -408,15 +413,18 @@ $("menu").addEventListener("click", e => {
 // ============================================================ master data view
 const MD_TABS = [
   ["products", "Products"], ["customers", "Customers"], ["suppliers", "Suppliers"], ["distribution_centers", "Logistics providers"],
-  ["lanes", "Lanes"], ["sales_history", "Sales history"], ["demand_forecast", "Demand forecast"], ["orders", "Test orders"],
-  ["order_lines", "Test order lines"], ["custom", "Other data"],
+  ["lanes", "Lanes"], ["quotes", "Quotes"], ["countries", "Countries"], ["settings", "Settings"], ["sales_history", "Sales history"],
+  ["demand_forecast", "Demand forecast"], ["orders", "Test orders"], ["order_lines", "Test order lines"], ["custom", "Other data"],
 ];
 const MD_HINT = {
   products: "SKU master. Country of origin decides duty; units per pallet drives pallet counts.",
   customers: "Customers with country, city and port. Latitude and longitude are optional and only place the customer on the map.",
   suppliers: "Suppliers with the brands and SKUs they make. Shown in blue on the map with their route to Helmond. Inbound mode (road or sea) picks the inbound freight rate when a test order starts at a supplier.",
   distribution_centers: "Every logistics provider and stock point: distributors, 3PLs, owned warehouses and the Helmond hub. Set the countries each serves, its status, minimum order value and its commercial terms.",
-  lanes: "Routes in use today. Proven lanes are preferred in the recommendation.",
+  lanes: "Routes in use today and the lanes quotes refer to. Proven lanes are preferred in the recommendation.",
+  quotes: "Freight quotes per provider and lane. Landed Cost and Benchmarking read them; expired quotes are left out.",
+  countries: "Import facts per country: duty, VAT, clearance, compliance and expected yearly units. The single source for duty in every view. Rows with target = true are the target countries.",
+  settings: "One row: the EUR/USD rate and its date, insurance rate, FlexiTog margin and the garments per shipment for Landed Cost.",
   sales_history: "Order lines from the ERP. When this table has rows, the batch is built from it: one test order per historical order.",
   demand_forecast: "Forecast quantity per SKU, country and month. Kept for reporting.",
   orders: "Test orders for the order explorer. Pallet count is required.",
@@ -454,7 +462,7 @@ function renderMD(){
   }).join("");
   $("mdTabs").innerHTML = tabs;
   if (MDUI.tab === "custom") renderCustom(); else renderTable(MDUI.tab);
-  renderStoreStatus();
+  renderStoreStatus(); renderUploads();
 }
 // Fields that suggest values while you type (see the suggestion list below).
 const SUGGEST_KIND = {country: "country", country_of_origin: "country", serves_countries: "countries", city: "city", port_of_entry: "port", destination_port: "port"};
@@ -620,6 +628,7 @@ function renderTable(key){
     v = f.dtype === "float" || f.dtype === "int" ? (v === "" ? null : Number(v)) : coerce(f, v);
     r[f.name] = v; if (f.name === "country" && "region" in r) r.region = null;   // the region follows a new country
     enrich(key, r); r.data_source = "manual";
+    if (!["source_ref", "source_date", "data_status"].includes(f.name)) { r.source_ref = "Entered in Master Data" + (window.Auth && Auth.user() ? " by " + Auth.user().username : ""); r.source_date = new Date().toISOString().slice(0, 10); }
     renderMD();
   }));
   P.querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", () => {
@@ -903,6 +912,109 @@ async function saveTable(key){
   masterDataChanged([key]);
 }
 
+// ============================================================ data upload: one fixed template per data type
+// Download the template (CSV or Excel, with a Fields sheet), upload a filled file: it is checked against the template
+// (columns, types, units, dates, allowed values, links to providers and lanes) and rejected as a whole with a list
+// of row and column when anything is wrong. A clean file shows its counts and saves on Confirm.
+const FD = window.FlexiData;
+const UPL = {log: null, busy: false, pending: null, result: null};
+const todayIso = () => new Date().toISOString().slice(0, 10);
+const isCountryCode = c => /^[A-Z]{2}$/.test(String(c || "")) && countryList().some(x => x.value === c);
+const targetCountries = () => FD.targets(MD.t.countries);
+async function uploadLog(){
+  if (UPL.log) return UPL.log;
+  try { UPL.log = (await DataStore.get("uploads")) || {}; } catch (e) { UPL.log = {}; }
+  return UPL.log;
+}
+function templateCsv(type){ return "\ufeff" + FD.TEMPLATES[type].columns.map(c => c.name).join(",") + "\r\n"; }
+function templateBook(type, rows){
+  const wb = XLSX.utils.book_new(), cols = FD.TEMPLATES[type].columns.map(c => c.name);
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([cols, ...(rows || []).map(r => cols.map(c => r[c] ?? ""))]), type.slice(0, 31));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(FD.fieldSheet(type)), "Fields");
+  return wbBytes(wb);
+}
+const typeRows = type => rowsOf(FD.TEMPLATES[type].table) || [];
+function statusChip(st){
+  if (!st.rows) return '<span class="dst missing">no data</span>';
+  if (st.confirmed === st.rows) return '<span class="dst done">confirmed</span>';
+  if (st.confirmed) return `<span class="dst partial">${Math.round(st.share * 100)}% confirmed</span>`;
+  return '<span class="dst est">estimate</span>';
+}
+async function renderUploads(){
+  const el = $("mdUploads"); if (!el) return;
+  const log = await uploadLog();
+  const tg = targetCountries(), cov = FD.coverage(Object.fromEntries(MD_KEYS.map(k => [k, rowsOf(k)])), tg);
+  const rows = FD.TYPES.map(t => {
+    const T = FD.TEMPLATES[t], st = FD.typeStatus(t, typeRows(t)), L = log[t];
+    return `<tr data-type="${t}"><td><b>${esc(T.label)}</b><br><span class="faint num">${esc(t)}</span></td>
+      <td><div class="iact"><button type="button" class="btn ghost sm" data-ut="csv">CSV</button><button type="button" class="btn ghost sm" data-ut="xlsx">Excel</button></div></td>
+      <td><div class="iact"><button type="button" class="btn ghost sm" data-ud="csv"${st.rows ? "" : " disabled"}>CSV</button><button type="button" class="btn ghost sm" data-ud="xlsx"${st.rows ? "" : " disabled"}>Excel</button></div></td>
+      <td><label class="btn sm filebtn">Upload file<input type="file" data-up="${t}" accept=".csv,.txt,.xlsx,.xlsm,.xls" aria-label="Upload ${esc(T.label)} file"></label></td>
+      <td class="num">${L ? `${esc(String(L.at).slice(0, 16).replace("T", " "))}<br><span class="faint">${esc(L.file)}</span>` : '<span class="faint">built-in data</span>'}</td>
+      <td class="n">${fmt(st.rows)}</td><td>${statusChip(st)}</td></tr>`;
+  }).join("");
+  const covRows = tg.map(c => { const o = cov[c] || {share: 0, fields: 0, confirmed: 0, rows: 0}, p = Math.round(o.share * 100);
+    return `<tr><td>${esc(CNAME(c))} <span class="faint num">${esc(c)}</span></td><td><div class="covbar" role="img" aria-label="${p}% confirmed"><i style="width:${p}%"></i></div></td>
+      <td class="n">${o.fields ? p + "%" : "n/a"}</td><td class="n">${fmt(o.confirmed)} of ${fmt(o.fields)}</td><td class="n">${fmt(o.rows)}</td></tr>`; }).join("");
+  el.innerHTML = `<div class="cardhead"><h2>Data upload</h2><span class="faint" style="font-size:12px">One fixed template per data type · rates in % (12 = 12%) · dates YYYY-MM-DD</span></div>
+    <p class="muted">Download a template, fill it and upload it. The file is checked against the template and rejected with a list of row and column when anything is wrong; nothing is saved until you confirm a clean file. Every row carries source, sourceDate and status (confirmed or estimate).</p>
+    <div class="tablewrap"><table class="uptable"><thead><tr><th>Data type</th><th>Template</th><th>Current data</th><th>Upload</th><th>Last upload</th><th>Rows</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div id="mdUpResult" aria-live="polite">${UPL.result || ""}</div>
+    <details class="covbox"${tg.length ? " open" : ""}><summary><b>Coverage per target country</b> <span class="faint">share of filled fields with status confirmed: the country row, its lanes and quotes, customers, sales and the providers serving it</span></summary>
+    ${tg.length ? `<div class="tablewrap"><table><thead><tr><th>Country</th><th>Confirmed</th><th>Share</th><th>Fields</th><th>Rows</th></tr></thead><tbody>${covRows}</tbody></table></div>` : '<p class="muted">No target countries: add rows to Countries with target = true.</p>'}
+    <p class="faint">Target countries come from the Countries table (target = true). Add a row there to onboard a country.</p></details>`;
+  el.querySelectorAll("[data-ut]").forEach(b => b.addEventListener("click", () => { const t = b.closest("tr").dataset.type;
+    if (b.dataset.ut === "csv") saveFile(`FlexiTog_template_${t}.csv`, templateCsv(t)); else saveFile(`FlexiTog_template_${t}.xlsx`, new Blob([templateBook(t)])); }));
+  el.querySelectorAll("[data-ud]").forEach(b => b.addEventListener("click", () => { const t = b.closest("tr").dataset.type, rs = FD.exportRows(t, typeRows(t));
+    if (b.dataset.ud === "csv") saveFile(`FlexiTog_${t}_${todayIso()}.csv`, "\ufeff" + toCsv(FD.TEMPLATES[t].columns.map(c => c.name), rs));
+    else saveFile(`FlexiTog_${t}_${todayIso()}.xlsx`, new Blob([templateBook(t, rs)])); }));
+  el.querySelectorAll("input[data-up]").forEach(inp => inp.addEventListener("change", () => { const f = inp.files[0]; inp.value = ""; if (f) checkUpload(inp.dataset.up, f); }));
+  const res = $("mdUpResult");
+  if (res) res.querySelectorAll("[data-uc]").forEach(b => b.addEventListener("click", () => (b.dataset.uc === "ok" ? applyUpload() : (UPL.pending = null, UPL.result = "", renderUploads()))));
+  if (res) { const dl = res.querySelector("[data-uerr]"); if (dl) dl.addEventListener("click", () => saveFile(`FlexiTog_upload_errors_${todayIso()}.csv`, "\ufeff" + toCsv(["row", "column", "message"], UPL.lastErrors || []))); }
+}
+async function checkUpload(type, file){
+  const T = FD.TEMPLATES[type];
+  let table;
+  try {
+    const f = await readFile(file), grid = f.sheets[f.names[0]] || [];
+    table = {headers: grid[0] || [], rows: grid.slice(1)};
+  } catch (e) { UPL.result = `<div class="uperr"><h3>${esc(file.name)} not read</h3><p>${esc(e.message || String(e))}</p></div>`; renderUploads(); return; }
+  const ctx = {toIso2, isCountry: isCountryCode, providers: rowsOf("distribution_centers"), lanes: rowsOf("lanes"), quotes: rowsOf("quotes"), today: todayIso(), fileName: file.name};
+  const v = FD.validateFile(type, table, ctx);
+  if (!v.ok) {
+    UPL.pending = null; UPL.lastErrors = v.errors;
+    UPL.result = `<div class="uperr" role="alert"><h3>${esc(file.name)} rejected: ${v.errors.length} problem${v.errors.length === 1 ? "" : "s"}. Nothing was saved.</h3>
+      <div class="tablewrap"><table><thead><tr><th>Row</th><th>Column</th><th>Problem</th></tr></thead><tbody>${v.errors.slice(0, 200).map(e => `<tr><td class="n">${e.row}</td><td>${esc(e.column)}</td><td>${esc(e.message)}</td></tr>`).join("")}</tbody></table></div>
+      ${v.errors.length > 200 ? `<p class="faint">First 200 of ${v.errors.length} shown.</p>` : ""}<div class="iact"><button type="button" class="btn ghost sm" data-uerr="1">Download the list (CSV)</button><button type="button" class="btn ghost sm" data-uc="no">Close</button></div></div>`;
+    renderUploads(); return;
+  }
+  const rows = FD.toTableRows(type, v.rows, ctx), merged = FD.mergeInto(type, rowsOf(T.table), rows, false);
+  UPL.pending = {type, file: file.name, rows};
+  UPL.result = `<div class="upok"><h3>${esc(file.name)}: ${rows.length} ${esc(T.label.toLowerCase())} row${rows.length === 1 ? "" : "s"} pass every check</h3>
+    <p>${merged.added} new, ${merged.updated} update existing rows. ${rows.filter(r => r.data_status === "confirmed").length} confirmed, ${rows.filter(r => r.data_status !== "confirmed").length} estimate.</p>
+    <label class="toggle"><input type="checkbox" id="upReplace"><span>Replace every ${esc(T.label.toLowerCase())} row<small>Rows of this type missing from the file are removed</small></span></label>
+    <div class="iact"><button type="button" class="btn" data-uc="ok">Confirm and save</button><button type="button" class="btn ghost" data-uc="no">Cancel</button></div></div>`;
+  renderUploads();
+}
+async function applyUpload(){
+  const P = UPL.pending; if (!P || UPL.busy) return;
+  const T = FD.TEMPLATES[P.type], replace = !!($("upReplace") && $("upReplace").checked);
+  UPL.busy = true;
+  const prev = MD.t[T.table], res = FD.mergeInto(P.type, MD.t[T.table], P.rows, replace);
+  MD.t[T.table] = res.rows.map(r => enrich(T.table, r));
+  if (MDUI.draft[T.table]) MDUI.draft[T.table] = FD.mergeInto(P.type, MDUI.draft[T.table], P.rows, replace).rows;
+  try { await persist(T.table); }
+  catch (e) { MD.t[T.table] = prev; UPL.busy = false; toast(storeErrorText(e), "bad"); return; }
+  const log = await uploadLog();
+  log[P.type] = {at: nowIso(), file: P.file, rows: P.rows.length, added: res.added, updated: res.updated, removed: res.removed, by: window.Auth && Auth.user() ? Auth.user().username : ""};
+  try { await DataStore.set("uploads", log); } catch (e) {}
+  UPL.busy = false; UPL.pending = null;
+  UPL.result = `<div class="upok"><h3>Saved: ${esc(P.file)}</h3><p>${res.added} added, ${res.updated} updated${replace ? `, ${res.removed} removed` : ""}. Every view now uses the new data.</p></div>`;
+  toast(`${T.label}: ${P.rows.length} row${P.rows.length === 1 ? "" : "s"} saved`);
+  clearSel(); masterDataChanged([T.table]);
+}
+
 // ---- upload wizard
 function renderUpload(){
   const U = MDUI.upload, el = $("mdUpload"); if (!el) return;
@@ -1035,12 +1147,85 @@ function masterWorkbook(){
 $("mdExportAll").addEventListener("click", () => saveFile("FlexiTog_master_data.xlsx", wbBytes(masterWorkbook())));
 $("mdTemplates").addEventListener("click", () => {
   const wb = XLSX.utils.book_new();
-  MD_TABS.filter(t => t[0] !== "custom").forEach(([k, label]) => {
-    const cols = SCHEMA[k].fields.map(f => f.name), ex = MD_BUILTIN[k][0] || {};
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([cols, cols.map(c => ex[c] ?? null)]), label.slice(0, 31));
-  });
+  FD.TYPES.forEach(t => XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([FD.TEMPLATES[t].columns.map(c => c.name)]), t.slice(0, 31)));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(FD.TYPES.flatMap(t => FD.fieldSheet(t).map(r => Object.assign({"data type": t}, r)))), "Fields");
   saveFile("FlexiTog_upload_templates.xlsx", wbBytes(wb));
 });
+
+// ============================================================ export view: the current tab as Excel or CSV
+// Every table on screen in the open view becomes a sheet (CSV: one block per table), headed by the view, the
+// active filters, who exported it and the data date. Landed Cost hands over its own unrounded numbers.
+function viewFilters(root){
+  const out = {}, label = el => {
+    const id = el.id && root.querySelector(`label[for="${CSS.escape(el.id)}"]`), wrap = el.closest("label");
+    const wrapText = wrap && wrap.querySelector("span") ? wrap.querySelector("span").firstChild && wrap.querySelector("span").firstChild.textContent : null;
+    const t = (id && id.textContent) || wrapText || (el.closest(".ctl") && el.closest(".ctl").querySelector("label") && el.closest(".ctl").querySelector("label").textContent) || el.getAttribute("aria-label") || el.id || "";
+    return t.replace(/\s+/g, " ").trim();
+  };
+  root.querySelectorAll(".controls select, .mdbar select, .controls input[type=number], .controls input[type=search], .mdbar input[type=search], .controls input[type=checkbox], .toggle input[type=checkbox]").forEach(el => {
+    if (el.closest("table") || el.offsetParent === null) return;
+    const k = label(el) || (el.closest("label") && el.closest("label").textContent.trim()); if (!k) return;
+    out[k] = el.type === "checkbox" ? (el.checked ? "on" : "off") : el.tagName === "SELECT" ? (el.selectedOptions[0] ? el.selectedOptions[0].textContent.trim() : "") : el.value;
+  });
+  root.querySelectorAll(".seg").forEach(sg => {
+    if (sg.offsetParent === null || sg.closest("table")) return;
+    const on = sg.querySelector('[aria-pressed="true"]'); if (!on) return;
+    const k = sg.getAttribute("aria-label") || (sg.closest(".ctl") && sg.closest(".ctl").querySelector("label") ? sg.closest(".ctl").querySelector("label").textContent.trim() : sg.id);
+    const c = on.cloneNode(true); c.querySelectorAll(".cnt").forEach(x => x.remove());
+    out[k || "view"] = c.textContent.replace(/\s+/g, " ").trim();
+  });
+  return out;
+}
+const cellValue = td => {
+  const inp = td.querySelector("input, select");
+  if (inp) return inp.type === "checkbox" ? (inp.checked ? "true" : "false") : inp.tagName === "SELECT" ? (inp.value || "") : inp.value;
+  const t = td.innerText.replace(/\s*\n\s*/g, " · ").trim();
+  if (/^[−-]?[\d,]+(\.\d+)?$/.test(t)) return Number(t.replace(/,/g, "").replace("−", "-"));
+  return t;
+};
+function viewTables(root){
+  const seen = new Set();
+  return [...root.querySelectorAll("table")].filter(t => t.offsetParent !== null && !t.closest(".mapinfo")).map((t, i) => {
+    const card = t.closest(".card, .upcard, details, section"), h = card && card.querySelector("h2, h3, summary b");
+    let name = ((h && (h.innerText || h.textContent)) || "Table " + (i + 1)).replace(/\s+/g, " ").trim();
+    let k = name, n = 2; while (seen.has(k)) k = name + " " + n++; seen.add(k);
+    const head = t.tHead ? [...t.tHead.rows].find(r => !r.classList.contains("colf")) : null;
+    const cols = head ? [...head.cells].map(c => c.innerText.replace(/\s+/g, " ").trim()) : [];
+    const rows = [...t.tBodies].flatMap(b => [...b.rows]).filter(r => r.offsetParent !== null).map(r => [...r.cells].map(cellValue));
+    return {name: k, cols, rows};
+  }).filter(t => t.rows.length);
+}
+function dataDate(){
+  const saved = Object.values(MD.saved).map(v => String(v.updated || "").slice(0, 10)).filter(Boolean).sort().pop();
+  const src = MD_KEYS.flatMap(k => (MD.t[k] || []).map(r => String(r.source_date || "").slice(0, 10))).filter(x => /^\d{4}-/.test(x)).sort().pop();
+  return [saved ? "Master Data saved " + saved : "built-in data of " + PAYLOAD.meta.generated, src ? "newest source date " + src : ""].filter(Boolean).join(" · ");
+}
+async function exportCurrentView(kind){
+  const v = VIEW.current, root = $(VIEWS[v][0]); if (!root) return;
+  const title = VIEWS[v][1], custom = v === "landed" && window.LandedUI ? LandedUI.exportView() : null;
+  const filters = custom ? custom.filters : Object.assign(v === "dash" ? viewFilters(document.querySelector(".top")) : {}, viewFilters(root));
+  const tables = custom ? custom.tables.map(t => ({name: t.name, cols: [...new Set(t.rows.flatMap(r => Object.keys(r)))], rows: null, objs: t.rows})).map(t => Object.assign(t, {rows: t.objs.map(o => t.cols.map(c => o[c] ?? ""))}))
+    .concat(viewTables(root).filter(t => t.name !== "Landed cost per garment" && t.name !== "Cost elements")) : viewTables(root);
+  if (!tables.length) { toast("This view has no table to export", "bad"); return; }
+  const user = window.Auth && Auth.user() ? Auth.user().username : "";
+  const head = [["FlexiTog EU · " + title], ["Exported", new Date().toLocaleString("en-GB") + (user ? " by " + user : "")], ["Data date", dataDate()],
+    ["Filters", Object.entries(filters).map(([k, x]) => `${k}: ${x}`).join("; ") || "none"]];
+  const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "");
+  const base = `FlexiTog_${title.replace(/[^\w]+/g, "_")}_${stamp}`;
+  if (kind === "csv") {
+    const lines = head.map(r => r.map(csvCell).join(","));
+    tables.forEach(t => { lines.push("", csvCell(t.name), t.cols.map(csvCell).join(",")); t.rows.forEach(r => lines.push(r.map(csvCell).join(","))); });
+    saveFile(base + ".csv", "\ufeff" + lines.join("\r\n"));
+  } else {
+    const wb = XLSX.utils.book_new(), used = new Set();
+    tables.forEach(t => {
+      let nm = t.name.replace(/[\\/?*[\]:]/g, " ").slice(0, 28) || "Table", k = nm, n = 2; while (used.has(k)) k = nm.slice(0, 25) + " " + n++; used.add(k);
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(head.concat([[], [t.name], t.cols], t.rows)), k);
+    });
+    saveFile(base + ".xlsx", new Blob([wbBytes(wb)], {type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}));
+  }
+}
+$("viewExp").addEventListener("click", e => { const b = e.target.closest("[data-exp]"); if (b) exportCurrentView(b.dataset.exp); });
 
 // ============================================================ report extract
 const REP = {region: "All", appendix: true, html: "", data: null};

@@ -260,6 +260,82 @@ account. It does not protect the data: the master data, sales orders and the use
 file and in browser storage, and anyone with the file and the browser developer tools can read them or
 set a session. Real access control needs a server that checks the login before it sends any data.
 
+### Data store, upload templates, Landed Cost and quote benchmark (Tier 1)
+
+One store, one engine. Every view reads the Master Data tables (artifact database when published, this
+browser otherwise). New tables: `countries` (import facts per country), `quotes` (freight quotes) and
+`settings` (one row). Every formula sits in `flexitog/assets/calc.js` (`window.FlexiCalc`): landed cost, the
+quote benchmark, the RFQ Rate Card shipment cost, the provider comparison against Helmond and the forecast
+scenario margins. Views only display what it returns. Results are cached per data version and filter set;
+any Master Data change clears the cache (`FlexiCalc.invalidate`).
+
+Single sources:
+- Duty, VAT, other levies and clearance per country come from Countries, for Landed Cost and for the route
+  engine (they replace the duties parameter row of that country). Cargo insurance comes from Settings.
+- USD conversion everywhere uses Settings `eur_usd_rate` (USD per 1 EUR) with its date.
+- Target countries are the Countries rows with target = true. Add a row to onboard a country: it shows in
+  Landed Cost, the coverage indicator, the quote filters and, with a region (Türkiye, North Africa,
+  Gulf/GCC), on the map and in the region cards. target = false takes a built-in study country out.
+
+Provenance: every row carries `source_ref`, `source_date` and `data_status` (confirmed or estimate). Built-in
+data is "estimate". A cell edited in Master Data records who and when; a template upload fills blanks with
+the file name and the upload date, and blank status means estimate.
+
+Master Data > Data upload: one fixed template per data type, as CSV or Excel (with a Fields sheet listing
+type, unit, range, allowed values and an example), a Download of the current rows in template columns, and
+an Upload per type. Data types and columns (every template ends with source, sourceDate, status):
+
+| Type | Columns |
+|---|---|
+| suppliers | supplierId, name, country |
+| products | category, brand, sku, weightKg, cartonLcm, cartonWcm, cartonHcm, unitsPerCarton, exwPriceEUR, hsCode |
+| customers | customerId, name, country, segment |
+| logisticsProviders | providerId (optional), name, type (forwarder / 3PL), country (optional), customsBrokerage, freeZone, warehousing, complianceSupport, handoffsPerShipment, documentsPerShipment |
+| lanes | laneId (optional), origin, destinationCountry, mode (road / sea / air / express) |
+| quotes | quoteId (optional), provider, laneId, quoteDate, validUntil, baseRate, rateUnit (per kg / per m3 / per shipment), fuelSurcharge, peakSurcharge, warRiskSurcharge, currency (EUR / USD), transitDaysDoorToDoor, optional minCharge, otherSurcharge, weightFromKg, weightToKg |
+| salesHistory | date, customerId, country, sku, units, revenueEUR, orderId (optional) |
+| countries | name, dutyRate, preferenceCert (EUR.1 / ATR / none), vatRate, clearanceFeeEUR, complianceCostEUR, expectedYearlyUnits, optional target, region, standardDutyRate, otherFeesPct |
+| settings | eurUsdRate, eurUsdDate, insuranceRate, marginPct, shipmentUnits |
+
+Rates are in % (12 = 12%). Dates YYYY-MM-DD (DD-MM-YYYY and Excel dates are read too). Numbers take a decimal
+comma or point and the column's unit ("2.1 kg"). The upload checks headers (unknown or missing columns),
+required values, types, units and ranges, dates, allowed values, countries, duplicates, and links (a quote's
+provider must be in Logistics providers, its lane in Lanes; validUntil not before quoteDate). Any problem
+rejects the whole file with a list of row (the header is row 1), column and message, downloadable as CSV;
+nothing is saved. A clean file shows new and updated rows and saves on Confirm (update and add, or replace
+every row of the type). The panel shows per type the last upload (date, file), the row count and the
+confirmed share, and per target country the coverage: confirmed fields over all filled fields of the rows
+tied to that country (its Countries row, lanes and quotes to it, customers, sales, providers serving it).
+
+Landed Cost (menu and home page): filters country, garment category, provider and mode (or the cheapest),
+garments per shipment (saved in Settings) and an EUR/USD toggle with the stored rate and its date. Per SKU it
+takes the cheapest valid quote (not expired, weight band matching). Formula (calc.js `landedCost`):
+1. Cartons = round up (units / unitsPerCarton), volume = cartons × carton L × W × H, actual kg = units × weightKg.
+   Chargeable weight = max(actual kg, m3 × factor); factors air 167, road 333, sea (LCL) 1000, express 200 kg per m3.
+   Rate unit per kg uses chargeable kg, per m3 uses max(m3, kg / factor), per shipment counts 1.
+2. Freight total = max(rate × chargeable units, minCharge) + fuel + peak + war risk + other surcharges
+   (amounts per shipment, quote currency, USD / eurUsdRate to EUR). Freight per garment = total / units.
+3. CIF = EXW + freight + insurance, insurance = insuranceRate × (EXW + freight).
+4. Duty = CIF × dutyRate.
+5. Landed cost = CIF + duty + clearanceFeeEUR / units + complianceCostEUR / expectedYearlyUnits.
+6. DAP price = landed cost × (1 + marginPct).
+The view shows a stacked bar per SKU (EXW, freight, insurance, duty, clearance, compliance; EXW can be left out
+to see the added cost), a table with every element in EUR or USD and its share, and for the chosen SKU every
+intermediate value, the surcharge split (base against each surcharge) and the status and source of each input.
+`tests/test_calc.py` holds a hand calculation the engine matches within 1%.
+
+Benchmarking > Quote Benchmark: the quotes in force (expired ones never count), filters provider type
+(forwarders, 3PLs), quote date (all, last 6 months, last 3 months), country and mode. Per lane (lane × rate
+unit × weight band, newest quote per provider): low, median and high base rate in EUR. Per provider: lanes
+quoted, lanes compared (2 or more providers), share above the median and average transit days. A confirmed
+RFQ answer writes its Rate Card into Quotes (ids QR-<provider>-<lane>-<band>, one per lane, mode and band, fuel
+included in rate and minimum, docs and other fees as the other surcharge) and adds the lanes it needs.
+Removing or switching the active upload rewrites them.
+
+Export view (top bar, every view but Home and Users): the tables on screen as an Excel workbook (one sheet per
+table) or one CSV, headed by the view, who exported it and when, the data date (last Master Data save and
+newest source date) and the active filters.
+
 ### Menu, master data and report extract
 
 The menu button (three lines, top left) opens Home, Route Dashboard, Forecast, Benchmarking, Report

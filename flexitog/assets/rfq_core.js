@@ -480,9 +480,10 @@
   }
   // Cost of one shipment of kg chargeable kg on a rate row, with the template's formula:
   // MAX(minimum, rate x kg) x (1 + fuel %) + export docs fee + other fees. Null when the row has no rate.
+  // The formula lives in the calculation engine (calc.js); this name stays for existing callers.
   function shipmentCost(row, kg) {
-    if (!row || (row.perKg == null && row.minCharge == null)) return null;
-    return Math.max(row.minCharge || 0, (row.perKg || 0) * (Number(kg) || 0)) * (1 + (row.fuel || 0)) + (row.docs || 0) + (row.other || 0);
+    const Calc = typeof FlexiCalc !== "undefined" ? FlexiCalc : typeof require === "function" ? require("./calc.js") : null;
+    return Calc.rfqShipmentCost(row, kg);
   }
 
   async function prefill(bytes, provider, JSZip, opts) {

@@ -214,31 +214,16 @@ function renderImpact(){
     return;
   }
   const cur = FS.set.reporting, eurPer = Number(FS.set.fx[cur]) || 1, rep = v => v / eurPer, prof = FS.set.classProfile;
-  const lines = {}; BATCH.lines.forEach(l => { (lines[l.order_id] = lines[l.order_id] || []).push(l); });
+  // Goods cost, freight per class and margin per scenario: the calculation engine (calc.js) does the sums.
   const sc = E.scorecard(R.rows, ui.method, () => "all");
-  const rowsOf = s => R.rows.filter(r => r.scenario === s && r.available);
-  const out = LOGISTIC.map(s => {
-    const rs = rowsOf(s), all = R.rows.filter(r => r.scenario === s);
-    const units = rs.reduce((a, r) => a + r.units, 0) || 1, value = rs.reduce((a, r) => a + r.order_value_eur, 0);
-    let cogs = 0; const freight = {}, fUnits = {};
-    rs.forEach(r => {
-      const ls = lines[r.order_id] || [], u = ls.reduce((a, l) => a + l.quantity, 0) || 1;
-      const fr = r.route.steps.filter(x => x.category === "freight" || x.category === "inbound").reduce((a, x) => a + x.cost_eur, 0);
-      ls.forEach(l => { cogs += l.quantity * l.unit_price_eur * (1 - (Number((prof[l.product_class] || {}).gross_margin_pct) || 0) / 100);
-        freight[l.product_class] = (freight[l.product_class] || 0) + fr * l.quantity / u; fUnits[l.product_class] = (fUnits[l.product_class] || 0) + l.quantity; });
-    });
-    const feas = rs.filter(r => r.lead_time_days <= (FS.set.feasibleDays[rc(r.region)] ?? 2)).length;
-    const card = sc.find(x => x.scenario === s) || {};
-    return {s, orders: all.length, covered: rs.length, units, value, cost: rs.reduce((a, r) => a + r.cost_to_serve_eur, 0), flex: rs.reduce((a, r) => a + r.flexitog_pays_eur, 0),
-      cust: rs.reduce((a, r) => a + r.customer_pays_eur, 0), cogs, freight, fUnits, feas, hassle: card.hassle, lead: card.lead_time_days};
-  });
+  const out = FlexiCalc.scenarioImpact({scenarios: LOGISTIC, rows: R.rows, lines: BATCH.lines, profile: prof, feasibleDays: FS.set.feasibleDays, regionKey: rc, scorecard: sc});
   const classes = FC.CLASSES.filter(k => out.some(o => o.fUnits[k]));
   el.innerHTML = `<div class="card"><div class="cardhead"><h2>Route scenarios on the forecast volume</h2><span class="faint" style="font-size:12px">${fmt(BATCH.orders.length)} forecast orders priced by the route engine · ${esc(cur)} · ${esc(FS.set.scenario)}</span></div>
     <p class="faint bnote">Per scenario, the best node per order. Shipments, refill loads and owned warehouse volume come from the forecast (refills ${esc(FS.set.refillsPerYear)} per node per year). Margin = revenue − goods cost (gross margin % per class, placeholder) − logistics FlexiTog pays. Feasible = lead time at most ${FS.set.feasibleDays.TR} day(s) for Türkiye and North Africa, ${FS.set.feasibleDays.GCC} for Gulf/GCC.</p>
     <div class="tablewrap"><table><thead><tr><th>Scenario</th><th>Orders priced</th><th>Units</th><th>Cost to serve per unit</th><th>FlexiTog logistics per unit</th><th>Landed cost per unit</th><th>Margin</th><th>Margin %</th><th>Next-day / 48 h feasible</th><th>Lead time days</th><th>Hassle</th></tr></thead><tbody>
     ${out.map(o => `<tr><td><i class="sw" style="background:var(--s-${o.s});margin-right:6px"></i>${esc(E.LABELS[o.s])}</td><td class="n">${o.covered} / ${o.orders}</td><td class="n">${fmt(o.units)}</td>
       <td class="n">${fmt(rep(o.cost / o.units), 2)}</td><td class="n">${fmt(rep(o.flex / o.units), 2)}</td><td class="n">${fmt(rep((o.cogs + o.cost) / o.units), 2)}</td>
-      <td class="n">${fmt(rep(o.value - o.cogs - o.flex))}</td><td class="n">${o.value ? pct((o.value - o.cogs - o.flex) / o.value) : "n/a"}</td>
+      <td class="n">${fmt(rep(o.margin))}</td><td class="n">${o.value ? pct(o.margin / o.value) : "n/a"}</td>
       <td class="n">${o.covered ? pct(o.feas / o.covered) : "n/a"}</td><td class="n">${o.lead == null ? "n/a" : fmt(o.lead, 1)}</td><td class="n">${o.hassle == null ? "n/a" : fmt(o.hassle, 1)}</td></tr>`).join("")}</tbody></table></div>
     <h3 style="margin:6px 0 4px">Freight per unit by product class (${esc(cur)})</h3>
     <div class="tablewrap"><table><thead><tr><th>Scenario</th>${classes.map(k => `<th>${esc(k)}</th>`).join("")}</tr></thead><tbody>

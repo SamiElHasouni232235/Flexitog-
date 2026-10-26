@@ -14,7 +14,11 @@ const uid = p => p + "-" + Date.now().toString(36) + Math.random().toString(36).
 const rc = r => C.regionCode(r);
 const catLabel = k => ({jackets: "Jackets", trousers: "Trousers", coveralls: "Coveralls", other: "Other items"})[k] || k;
 const slug = s => String(s || "").normalize("NFKD").replace(/[^\w]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 48) || "generic";
-const TARGETS = Object.keys(PAYLOAD.data.country_region).filter(c => REGIONS.includes(regionOf(c)));
+// Target countries: Master Data > Countries (target = true), read on every use so an added country shows at once.
+const TARGETS = () => targetCountries();
+// Exchange rates in EUR per unit. USD always follows Master Data > Settings (eurUsdRate = USD per EUR); the other
+// currencies are the editable table under Sales Data and Analysis.
+const fx = () => { const r = Number(settingsRow().eur_usd_rate); return Object.assign({}, B.settings.fx, r > 0 ? {USD: 1 / r} : {}); };
 const WORLD = (() => {
   const m = new Map();
   (PAYLOAD.geo.basemap.countries || []).forEach(c => { if (c.iso && /^[A-Z]{2}$/.test(c.iso) && !m.has(c.iso)) m.set(c.iso, PAYLOAD.names.countries[c.iso] || c.name); });
@@ -97,7 +101,7 @@ function activeSources(){
 function recompute(){
   const info = skuInfo(), loc = custLoc(), all = [], reports = [];
   activeSources().forEach(s => {
-    const res = C.cleanSales(s.raw, {source: s.id, defaultCurrency: s.currency, fx: B.settings.fx, skuInfo: info, regionOf,
+    const res = C.cleanSales(s.raw, {source: s.id, defaultCurrency: s.currency, fx: fx(), skuInfo: info, regionOf,
       countryOf: v => (isBlank(v) ? null : toIso2(v))});
     res.lines.forEach(l => { const p = loc[l.customer] || loc["n:" + norm(l.customer)]; if (p) { l.city = p.city; l.port = p.port; } });
     all.push(...res.lines); reports.push({id: s.id, name: s.name, report: res.report});
@@ -156,7 +160,7 @@ function currentTest(){
   const g = B.settings.gen, ys = years();
   const base = (g.baseYears || []).filter(y => ys.includes(y));
   const opts = {baseYears: base.length ? base : null, seed: Number(g.seed) || 1, skuInfo: skuInfo()};
-  if (g.mode === "target") opts.targetValueEur = Number(g.targetUsd) * (Number(B.settings.fx.USD) || 1); else opts.scale = Number(g.scale) > 0 ? Number(g.scale) : 1;
+  if (g.mode === "target") opts.targetValueEur = Number(g.targetUsd) * (Number(fx().USD) || 1); else opts.scale = Number(g.scale) > 0 ? Number(g.scale) : 1;
   const key = B.ver + "|" + JSON.stringify([opts.baseYears, opts.seed, opts.scale, opts.targetValueEur]);
   if (B.test && B.testKey === key) return B.test;
   B.test = C.generateTestOrders(B.clean.lines, opts); B.testKey = key;
@@ -169,9 +173,9 @@ const {PAL, sfmt, lineChart, barsV, barsH, legendHtml, svgToPng, svgSize} = wind
 const regionColor = (pal, r) => pal[rc(r)] || pal.OTH;
 
 // ============================================================ shell, tabs, chips
-const TABS = [["providers", "Logistics Providers"], ["sales", "Sales Data and Analysis"], ["goals", "Service Goals"], ["test", "Test Order and Report"]];
+const TABS = [["providers", "Logistics Providers"], ["quotes", "Quote Benchmark"], ["sales", "Sales Data and Analysis"], ["goals", "Service Goals"], ["test", "Test Order and Report"]];
 function renderTabs(){
-  const n = {providers: B.providers.length, sales: B.clean ? B.clean.lines.length : 0, goals: B.goals.length, test: B.test ? B.test.orders.length : null};
+  const n = {providers: B.providers.length, quotes: FlexiCalc.liveQuotes(MD.t.quotes, {today: today(), months: 0, typeOf: () => null}).length, sales: B.clean ? B.clean.lines.length : 0, goals: B.goals.length, test: B.test ? B.test.orders.length : null};
   $("benchTabs").innerHTML = TABS.map(([k, l]) => `<button type="button" data-t="${k}" aria-pressed="${B.tab === k}">${esc(l)}${n[k] != null ? `<span class="cnt">${fmt(n[k])}</span>` : ""}</button>`).join("");
 }
 function renderChips(){
@@ -191,7 +195,7 @@ function render(){
   TABS.forEach(([k]) => { $("bp-" + k).hidden = k !== B.tab; });
   if (B.tab === "test") currentTest();
   renderTabs(); renderChips();
-  ({providers: renderProviders, sales: renderSales, goals: renderGoals, test: renderTest})[B.tab]();
+  ({providers: renderProviders, quotes: renderQuotes, sales: renderSales, goals: renderGoals, test: renderTest})[B.tab]();
   B.stale[B.tab] = false;
 }
 $("benchTabs").addEventListener("click", e => {
@@ -218,7 +222,7 @@ function syncProviders(){
   B.providers = rows.map(r => {
     const id = String(r.dc_id), t = providerTypeOf(r), st = B.rfq[id] || {status: "not_sent", uploads: [], active: -1};
     const ups = st.uploads || [], act = ups.length ? Math.min(Math.max(st.active ?? ups.length - 1, 0), ups.length - 1) : -1;
-    const countries = [...new Set(listOf(r.serves_countries).concat(isBlank(r.country) ? [] : [String(r.country)]))].filter(c => TARGETS.includes(c));
+    const countries = [...new Set(listOf(r.serves_countries).concat(isBlank(r.country) ? [] : [String(r.country)]))].filter(c => TARGETS().includes(c));
     const a = act >= 0 ? ups[act] : null;
     return {id, name: String(r.name || id), type: t, baseline: t === "Own hub", dcType: r.dc_type, mdStatus: r.status || "",
       countriesCovered: countries, regionsCovered: [...new Set(countries.map(regionOf))].filter(x => REGIONS.includes(x)), providerTypes: [t], servicesOffered: [],
@@ -548,6 +552,7 @@ async function uploadRfq(rowId, file){
     .forEach(([k, src]) => { if (isBlank(md[k]) && !isBlank(v[src])) fill[k] = String(v[src]); });
   if (Object.keys(fill).length > 1) await mdUpsertRows("distribution_centers", [fill]);
   syncProviders();
+  await syncRfqQuotes(p.id);
   toast(`${p.name}: RFQ answer saved (upload ${st.uploads.length}, active)${Object.keys(fill).length > 1 ? ". Empty contact fields filled in Master Data" : ""}`);
   renderTabs(); renderChips(); renderProvTable();
 }
@@ -568,7 +573,89 @@ async function removeUpload(id){
   if (!st.uploads.length && st.status !== "sent") st.status = "sent";
   if (r.fileId) await DataStore.files.del("rfq-file:" + r.fileId);
   B.respDirty = true; await saveRfq(`Upload removed from ${p.name}`);
-  syncProviders(); renderTabs(); renderChips(); renderProvTable();
+  syncProviders(); await syncRfqQuotes(p.id); renderTabs(); renderChips(); renderProvTable();
+}
+
+// ---- RFQ answer -> quote rows. The active upload's Rate Card becomes quotes in Master Data > Quotes (one per lane,
+// mode and weight band, ids QR-<provider>-<lane>-<band>), so Landed Cost and the Quote Benchmark read one table.
+// The Rate Card formula MAX(min, rate x kg) x (1 + fuel) + docs + other maps to: rate and minimum with fuel
+// included, docs + other as the other surcharge per shipment. Older QR rows of the provider are replaced.
+const modeOf = t => (/express|courier/i.test(t) ? "express" : /air/i.test(t) ? "air" : /sea|lcl|ocean|ship/i.test(t) ? "sea" : "road");
+async function syncRfqQuotes(pid){
+  const p = B.providers.find(x => x.id === pid); if (!p) return;
+  const up = p.latestResponseIndex >= 0 ? p.rfqResponses[p.latestResponseIndex] : null;
+  const prefix = `QR-${pid}-`, keep = (MD.t.quotes || []).filter(q => !String(q.quote_id).startsWith(prefix));
+  const quotes = [], lanes = [];
+  if (up) {
+    const v = up.values || {}, cur = String((up.summary || {}).currency || v["provider.currency"] || "EUR").toUpperCase();
+    if (!["EUR", "USD"].includes(cur)) { toast(`${p.name}: quoted in ${cur}. Quotes take EUR or USD, so this answer feeds Benchmarking only.`, "bad"); }
+    else {
+      const date = String(v["provider.response_date"] || up.uploadedAt || today()).slice(0, 10), valid = v["provider.quote_valid_until"] ? String(v["provider.quote_valid_until"]).slice(0, 10) : null;
+      const limits = Object.fromEntries(FRT.BANDS.map(([b, max], i) => [b, [i ? FRT.BANDS[i - 1][1] : 0, Number.isFinite(max) ? max : null]]));
+      (up.rates || R.rateTable(v)).filter(r => r.served && (r.perKg != null || r.minCharge != null)).forEach(r => {
+        const mode = modeOf(r.mode || ""), lane = `L-HLM-${r.country}-${mode.toUpperCase()}`, f = 1 + (r.fuel || 0);
+        if (!lanes.some(l => l.lane_id === lane) && !(MD.t.lanes || []).some(l => l.lane_id === lane))
+          lanes.push({lane_id: lane, origin_id: "HLM", destination_id: r.country, mode, status: "unproven", source_ref: "RFQ answer " + up.fileName, source_date: date, data_status: "confirmed", data_source: "imported:" + up.fileName});
+        const [from, to] = limits[r.band] || [null, null];
+        quotes.push({quote_id: `${prefix}${r.lane}-${r.band}`, provider_id: pid, lane_id: lane, quote_date: date, valid_until: valid, base_rate: (r.perKg || 0) * f, rate_unit: "per kg",
+          min_charge: r.minCharge != null ? r.minCharge * f : null, weight_from_kg: from, weight_to_kg: to, fuel_surcharge: 0, peak_surcharge: 0, war_risk_surcharge: 0,
+          other_surcharge: (r.docs || 0) + (r.other || 0), currency: cur, transit_days: r.transit, notes: `From RFQ answer ${up.fileName}, ${r.lane} ${r.band}; fuel ${Math.round((r.fuel || 0) * 1000) / 10}% included in rate and minimum`,
+          source_ref: "RFQ answer " + up.fileName, source_date: date, data_status: "confirmed", data_source: "imported:" + up.fileName});
+      });
+    }
+  }
+  const had = (MD.t.quotes || []).length - keep.length;
+  if (!had && !quotes.length) return;
+  try {
+    if (lanes.length) { MD.t.lanes = (MD.t.lanes || []).concat(lanes); await persist("lanes"); }
+    MD.t.quotes = keep.concat(quotes); await persist("quotes");
+    if (MDUI.draft.quotes) delete MDUI.draft.quotes;
+    masterDataChanged(["quotes", "lanes"]);
+  } catch (e) { toast(storeErrorText(e), "bad"); }
+}
+
+// ---- Quote Benchmark: the quotes in force per lane (low, median, high) and per provider
+const QB = Object.assign({type: "all", months: 0, country: "all", mode: "all"}, DataStore.pref.get("bench-quotes") || {});
+const provTypeOf = id => { const r = (MD.t.distribution_centers || []).find(d => d.dc_id === id); return !r ? null : r.dc_type === "3pl" ? "3PL" : r.dc_type === "freight_forwarder" ? "forwarder" : r.provider_type === "3PL" ? "3PL" : r.provider_type ? "forwarder" : null; };
+const provNameOf = id => ((MD.t.distribution_centers || []).find(d => d.dc_id === id) || {}).name || id;
+function quoteStatsNow(){
+  return FlexiCalc.memo("quoteStats", JSON.stringify([QB, today()]), () => {
+    const st = FlexiCalc.quoteStats({quotes: MD.t.quotes, lanes: MD.t.lanes, today: today(), months: Number(QB.months) || 0, type: QB.type, typeOf: provTypeOf, settings: settingsRow()});
+    const lanes = st.lanes.filter(l => (QB.country === "all" || l.country === QB.country) && (QB.mode === "all" || l.mode === QB.mode));
+    return Object.assign({}, st, {lanes});
+  });
+}
+function renderQuotes(){
+  const P = $("bp-quotes"), st = quoteStatsNow(), all = MD.t.quotes || [];
+  const expired = all.filter(q => FlexiCalc.isExpired(q, today())).length;
+  const segQ = (id, list, v) => `<div class="seg" id="${id}" role="group">${list.map(([k, l]) => `<button type="button" data-v="${esc(k)}" aria-pressed="${String(v) === String(k)}">${esc(l)}</button>`).join("")}</div>`;
+  const sel = (id, label, opts, v) => `<div class="ctl"><label for="${id}">${label}</label><select id="${id}">${opts.map(([k, l]) => `<option value="${esc(k)}"${String(v) === String(k) ? " selected" : ""}>${esc(l)}</option>`).join("")}</select></div>`;
+  const unitTxt = u => (u === "per kg" ? "EUR/kg" : u === "per m3" ? "EUR/m3" : "EUR/shipment");
+  const laneRows = st.lanes.map(L => `<tr><td>${esc(CNAME(L.country))}<br><span class="faint num">${esc(L.laneId)}</span></td><td>${esc(L.origin)} → ${esc(L.country)}<br><span class="faint">${esc(L.mode)}</span></td>
+      <td>${esc(L.rateUnit)}${L.band ? `<br><span class="faint">${esc(L.band)}</span>` : ""}</td><td class="n">${L.quotes}</td>
+      <td class="n">${fmt(L.low, 2)}</td><td class="n"><b>${fmt(L.median, 2)}</b></td><td class="n">${fmt(L.high, 2)}</td>
+      <td><div class="tags">${L.entries.slice().sort((a, b) => a.eur - b.eur).map(e => `<span class="tag${L.quotes >= 2 && e.eur > L.median + 1e-9 ? " above" : ""}" title="${esc(e.quoteId)} · ${esc(String(e.date).slice(0, 10))}${e.transit != null ? " · " + e.transit + " days" : ""}">${esc(provNameOf(e.providerId))} ${fmt(e.eur, 2)}</span>`).join("")}</div></td></tr>`).join("");
+  const provRows = st.providers.map(p => `<tr><td><b>${esc(provNameOf(p.providerId))}</b><br><span class="faint num">${esc(p.providerId)}</span></td><td>${esc(provTypeOf(p.providerId) || "")}</td>
+      <td class="n">${p.lanes}</td><td class="n">${p.compared}</td><td class="n">${p.aboveMedian}</td><td class="n">${p.shareAbove == null ? "n/a" : Math.round(p.shareAbove * 100) + "%"}</td><td class="n">${p.avgTransit == null ? "n/a" : fmt(p.avgTransit, 1)}</td></tr>`).join("");
+  P.innerHTML = `<div class="card"><div class="cardhead"><h2>Quote benchmark</h2><span class="faint" style="font-size:12px">${st.quotes} quote${st.quotes === 1 ? "" : "s"} in force · ${expired} expired left out · rates in EUR (USD at Settings rate)</span></div>
+      <div class="controls">
+        <div class="ctl"><label>Provider type</label>${segQ("qbType", [["all", "All"], ["forwarder", "Forwarders"], ["3PL", "3PLs"]], QB.type)}</div>
+        <div class="ctl"><label>Quote date</label>${segQ("qbMonths", [[0, "All"], [6, "Last 6 months"], [3, "Last 3 months"]], QB.months)}</div>
+        ${sel("qbCountry", "Country", [["all", "All countries"]].concat(TARGETS().map(c => [c, CNAME(c)])), QB.country)}
+        ${sel("qbMode", "Mode", [["all", "All modes"], ["road", "road"], ["sea", "sea"], ["air", "air"], ["express", "express"]], QB.mode)}
+      </div>
+      <p class="faint bnote">Quotes from Master Data > Quotes, newest per provider per lane. A lane groups quotes with the same rate unit and weight band, so rates compare like with like. Expired quotes (validUntil before today) never count.</p></div>
+    <div class="card"><div class="cardhead"><h2>Per lane</h2><span class="faint" style="font-size:12px">low, median and high base rate</span></div>
+      <div class="tablewrap btable"><table><thead><tr><th>Country</th><th>Lane</th><th>Rate unit</th><th>Quotes</th><th>Low</th><th>Median</th><th>High</th><th>Providers (above the median marked)</th></tr></thead>
+      <tbody>${laneRows || `<tr><td colspan="8" class="empty">No quotes in force for these filters.</td></tr>`}</tbody></table></div></div>
+    <div class="card"><div class="cardhead"><h2>Per provider</h2><span class="faint" style="font-size:12px">lanes with 2 or more providers count for the median comparison</span></div>
+      <div class="tablewrap btable"><table><thead><tr><th>Provider</th><th>Type</th><th>Lanes quoted</th><th>Lanes compared</th><th>Above median</th><th>Share above median</th><th>Avg transit days</th></tr></thead>
+      <tbody>${provRows || `<tr><td colspan="7" class="empty">No quotes in force for these filters.</td></tr>`}</tbody></table></div></div>`;
+  const save = () => { DataStore.pref.set("bench-quotes", QB); renderQuotes(); };
+  P.querySelectorAll("#qbType [data-v]").forEach(b => b.addEventListener("click", () => { QB.type = b.dataset.v; save(); }));
+  P.querySelectorAll("#qbMonths [data-v]").forEach(b => b.addEventListener("click", () => { QB.months = Number(b.dataset.v); save(); }));
+  $("qbCountry").addEventListener("change", e => { QB.country = e.target.value; save(); });
+  $("qbMode").addEventListener("change", e => { QB.mode = e.target.value; save(); });
 }
 
 // ---- provider detail panel (parsed rates and the upload history)
@@ -625,7 +712,7 @@ function openDetail(id, tab, idx){
   const rsel = dlg.querySelector("#bxRespSel"); if (rsel) rsel.addEventListener("change", () => openDetail(id, T, Number(rsel.value)));
   const ob = dlg.querySelector('[data-a="orig"]'); if (ob) ob.addEventListener("click", () => downloadOriginal(id, ri));
   const ab = dlg.querySelector('[data-a="activate"]');
-  if (ab) ab.addEventListener("click", async () => { rfqOf(id).active = ri; await saveRfq(`Upload ${ri + 1} is now active for ${p.name}`); syncProviders(); openDetail(id, T); renderProvTable(); });
+  if (ab) ab.addEventListener("click", async () => { rfqOf(id).active = ri; await saveRfq(`Upload ${ri + 1} is now active for ${p.name}`); syncProviders(); await syncRfqQuotes(id); openDetail(id, T); renderProvTable(); });
   if (!dlg.open) dlg.showModal();
 }
 const seg2 = (id, list, v) => `<div class="seg" id="${id}" role="group">${list.map(([k, l]) => `<button type="button" data-v="${esc(k)}" aria-pressed="${v === k}">${esc(l)}</button>`).join("")}</div>`;
@@ -636,37 +723,19 @@ const seg2 = (id, list, v) => `<div class="seg" id="${id}" role="group">${list.m
 // Providers without an active RFQ answer get no figures: "No RFQ answer yet", never an estimate.
 function comparison(){
   const t = currentTest(); if (!t || !t.orders.length) return null;
-  const dash = window.FlexiDash, H = t.orders.map(o => (dash ? dash.helmond(o) : null));
-  const sum = (xs, f) => xs.reduce((a, x) => a + f(x), 0);
-  const helmIdx = t.orders.map((o, i) => i).filter(i => H[i]);
-  const agg = idx => { const units = sum(idx, i => t.orders[i].units); return {n: idx.length, total: sum(idx, i => H[i].cost), perOrder: idx.length ? sum(idx, i => H[i].cost) / idx.length : null, perUnit: units ? sum(idx, i => H[i].cost) / units : null, lead: idx.length ? sum(idx, i => H[i].leadWd) / idx.length : null}; };
-  const base = B.providers.find(p => p.baseline);
-  const rows = [Object.assign({p: base || {name: "Helmond EU hub", id: "HLM", type: "Own hub", baseline: true}, kind: "baseline"}, agg(helmIdx))];
-  B.providers.filter(p => !p.baseline).forEach(p => {
+  const dash = window.FlexiDash;
+  // The Helmond baseline runs the route engine per order: cached per data version and test set.
+  const H = FlexiCalc.memo("helmond", t.orders.map(o => o.id + ":" + o.units + ":" + o.country).join(","), () => t.orders.map(o => (dash ? dash.helmond(o) : null)));
+  const base = B.providers.find(p => p.baseline), f = fx();
+  const provs = B.providers.filter(p => !p.baseline).map(p => {
     const up = p.latestResponseIndex >= 0 ? p.rfqResponses[p.latestResponseIndex] : null;
-    if (!up) { rows.push({p, kind: "none"}); return; }
+    if (!up) return {p, none: true};
     const rates = up.rates || R.rateTable(up.values || {}), cur = String((up.summary || {}).currency || (up.values || {})["provider.currency"] || "EUR").toUpperCase();
-    const fx = cur === "EUR" ? 1 : Number(B.settings.fx[cur]);
-    if (!(fx > 0)) { rows.push({p, kind: "fx", cur}); return; }
-    const priced = [];
-    t.orders.forEach((o, i) => {
-      const lane = FRT.laneFor(o.country), band = FRT.bandFor(o.weight_kg), r = rates.find(x => x.lane === lane && x.band === band);
-      const c = r && r.served ? R.shipmentCost(r, o.weight_kg) : null;
-      if (c != null) priced.push({i, cost: c * fx, lead: r.transit});
-    });
-    const units = sum(priced, x => t.orders[x.i].units), total = sum(priced, x => x.cost);
-    const row = {p, kind: "rfq", cur, n: priced.length, total, perOrder: priced.length ? total / priced.length : null, perUnit: units ? total / units : null,
-      lead: priced.filter(x => x.lead != null).length ? sum(priced.filter(x => x.lead != null), x => x.lead) / priced.filter(x => x.lead != null).length : null};
-    // Difference against Helmond on the same orders (only orders both can price)
-    const both = priced.filter(x => H[x.i]), hb = agg(both.map(x => x.i)), bu = sum(both, x => t.orders[x.i].units), bt = sum(both, x => x.cost);
-    const bl = both.filter(x => x.lead != null);
-    row.dOrder = both.length && hb.perOrder != null ? bt / both.length - hb.perOrder : null;
-    row.dUnit = bu && hb.perUnit != null ? bt / bu - hb.perUnit : null;
-    row.dLead = bl.length && hb.lead != null ? sum(bl, x => x.lead) / bl.length - agg(bl.map(x => x.i)).lead : null;
-    rows.push(row);
+    const rate = cur === "EUR" ? 1 : Number(f[cur]);
+    return rate > 0 ? {p, rates, cur, fx: rate} : {p, cur, noFx: true};
   });
-  const order = {baseline: 0, rfq: 1, fx: 2, none: 3};
-  rows.sort((a, b) => order[a.kind] - order[b.kind] || (a.kind === "rfq" ? (a.perOrder ?? Infinity) - (b.perOrder ?? Infinity) : a.p.name.localeCompare(b.p.name, "en")));
+  const res = FlexiCalc.helmondComparison({orders: t.orders, helmond: H, providers: provs, laneFor: FRT.laneFor, bandFor: FRT.bandFor});
+  const rows = [Object.assign({p: base || {name: "Helmond EU hub", id: "HLM", type: "Own hub", baseline: true}, kind: "baseline"}, res.baseline)].concat(res.rows);
   return {t, rows, orders: t.orders.length};
 }
 const signed = (v, dp) => (v == null ? "n/a" : (v > 0 ? "+" : v < 0 ? "−" : "") + fmt(Math.abs(v), dp));
@@ -913,12 +982,12 @@ function renderSales(){
   const P = $("bp-sales"), cur = Object.keys(B.settings.fx);
   P.innerHTML = `<div class="card">
     <div class="cardhead"><h2>Sales data sources</h2><div class="ctl"><div class="seg" id="bxScope">${[["target", "Target countries only"], ["all", "All countries"]].map(([k, l]) => `<button type="button" data-v="${k}" aria-pressed="${B.settings.scope === k}">${l}</button>`).join("")}</div></div></div>
-    <p class="muted bcard-lead">The analysis and the test orders run on every ticked source. Add exports from each merged entity as CSV or Excel. You map the columns once per file. Target countries: ${TARGETS.map(CNAME).join(", ")}.</p>
+    <p class="muted bcard-lead">The analysis and the test orders run on every ticked source. Add exports from each merged entity as CSV or Excel. You map the columns once per file. Target countries: ${TARGETS().map(CNAME).join(", ")} (from Master Data > Countries).</p>
     ${srcList()}
     <label class="drop" id="bxDrop"><span><b>Add sales files</b><br><span class="muted">CSV or Excel, one or more files, several years. Drop them here or click to choose.</span></span><input type="file" id="bxFiles" multiple accept=".csv,.txt,.xlsx,.xlsm,.xls" aria-label="Choose sales files"></label>
     <div id="bxUpload"></div>
     <details class="custom"><summary><b>Exchange rates</b><span class="faint">EUR per unit of currency. Placeholder rates: replace them with the rates finance uses.</span></summary>
-      <div class="fx">${cur.map(c => `<label>${esc(c)}<input type="number" step="any" min="0" data-fx="${esc(c)}" value="${esc(B.settings.fx[c])}"${c === "EUR" ? " disabled" : ""}></label>`).join("")}</div>
+      <div class="fx">${cur.map(c => `<label>${esc(c)}<input type="number" step="any" min="0" data-fx="${esc(c)}" value="${esc(c === "USD" ? +fx().USD.toFixed(6) : B.settings.fx[c])}"${c === "EUR" || c === "USD" ? " disabled" : ""}${c === "USD" ? ' title="From Master Data > Settings (eurUsdRate)"' : ""}></label>`).join("")}</div>
       <div class="iact"><input type="text" id="bxFxNew" placeholder="Code, e.g. JOD" maxlength="3" style="width:110px;background:var(--surface);border:1px solid var(--rule);border-radius:6px;padding:5px 8px"><button type="button" class="btn ghost sm" id="bxFxAdd">Add currency</button><button type="button" class="btn ghost sm" id="bxFxReset">Reset rates</button></div>
     </details>
   </div>
@@ -990,7 +1059,7 @@ function renderUpload(){
     el.innerHTML = `<div class="upcard"><div class="uph"><h3>${esc(U.file ? U.file.name : "File")}${of}</h3><button type="button" class="iclose" data-u="cancel" aria-label="Close upload">×</button></div><p class="warnc">${esc(U.error || "Could not read this file.")}</p><div class="iact"><button type="button" class="btn ghost" data-u="skip">Skip this file</button></div></div>`;
   } else {
     const raw = uploadRaw();
-    const res = C.cleanSales(raw, {source: "preview", defaultCurrency: U.currency, fx: B.settings.fx, skuInfo: skuInfo(), regionOf, countryOf: v => (isBlank(v) ? null : toIso2(v))});
+    const res = C.cleanSales(raw, {source: "preview", defaultCurrency: U.currency, fx: fx(), skuInfo: skuInfo(), regionOf, countryOf: v => (isBlank(v) ? null : toIso2(v))});
     const missReq = C.SALES_FIELDS.filter(f => f.required && !(f.key in U.map));
     const inTarget = res.lines.filter(l => REGIONS.includes(l.region)).length;
     el.innerHTML = `<div class="upcard"><div class="uph"><h3>Map columns: ${esc(U.file.name)}${of}</h3><button type="button" class="iclose" data-u="cancel" aria-label="Close upload">×</button></div>
@@ -1122,7 +1191,7 @@ function renderTest(){
   if (B.settings.gen.source !== "forecast" && (!B.clean || !B.clean.lines.length)) { P.innerHTML = `<div class="empty-state">No sales lines to build test orders from. Add or tick a source on Sales Data and Analysis.</div>`; return; }
   const t = currentTest(), g = B.settings.gen, ys = years(), rep = B.settings.report, pal = PAL.screen;
   const baseSel = (g.baseYears || []).filter(y => ys.includes(y));
-  const usdEur = Number(g.targetUsd) * (Number(B.settings.fx.USD) || 1);
+  const usdEur = Number(g.targetUsd) * (Number(fx().USD) || 1);
   const vals = g.showValues;
   const monthly = C.MONTHS.map((_, i) => REGIONS.map(r => t.orders.filter(o => o.month === i + 1 && o.region === r).length));
   const chart = barsV({label: "Test orders per month by region", labels: C.MONTHS, stacked: true, series: REGIONS.map((r, k) => ({name: r, color: regionColor(pal, r), values: monthly.map(m => m[k])})), yLabel: "Test orders", h: 220});
@@ -1134,7 +1203,7 @@ function renderTest(){
       <div class="ctl"><label>Base years</label><div class="checks" style="flex-direction:row;flex-wrap:wrap;gap:4px 12px;margin:0">${ys.map(y => `<label class="toggle" style="align-items:center"><input type="checkbox" data-year="${y}"${!baseSel.length || baseSel.includes(y) ? " checked" : ""}>${y}</label>`).join("")}</div></div>
       <div class="ctl"><label>Volume</label>${segHtml("bxMode", [["factor", "Scale factor"], ["target", "Yearly revenue target"]], g.mode)}</div>
       ${g.mode === "factor" ? `<div class="ctl"><label for="bxScale">Scale factor</label><input type="number" id="bxScale" min="0.05" max="20" step="0.05" value="${esc(g.scale)}"></div>`
-        : `<div class="ctl"><label for="bxTarget">Revenue target USD per year</label><input type="number" id="bxTarget" min="10000" step="10000" value="${esc(g.targetUsd)}"></div><span class="faint bnote">= EUR ${fmt(usdEur)} at ${B.settings.fx.USD} EUR/USD · history EUR ${fmt(t.hist.value)} per year · factor ${t.scale.toFixed(2)}</span>`}
+        : `<div class="ctl"><label for="bxTarget">Revenue target USD per year</label><input type="number" id="bxTarget" min="10000" step="10000" value="${esc(g.targetUsd)}"></div><span class="faint bnote">= EUR ${fmt(usdEur)} at ${fmt(fx().USD, 4)} EUR per USD (Settings) · history EUR ${fmt(t.hist.value)} per year · factor ${t.scale.toFixed(2)}</span>`}
       <div class="ctl"><label for="bxSeed">Random seed</label><div style="display:flex;gap:6px"><input type="number" id="bxSeed" step="1" value="${esc(g.seed)}" style="width:110px"><button type="button" class="btn ghost sm" id="bxNewSeed">New seed</button></div></div>
       <div class="ctl"><label for="bxDetail">Order lines as</label><select id="bxDetail"><option value="sku"${g.lineDetail === "sku" ? " selected" : ""}>SKU and description</option><option value="category"${g.lineDetail === "category" ? " selected" : ""}>Garment category only</option></select></div>
       <label class="toggle"><input type="checkbox" id="bxVals"${vals ? " checked" : ""}><span>Include order values<small>Declared value per order, for customs and insurance</small></span></label>

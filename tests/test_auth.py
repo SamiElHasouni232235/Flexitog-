@@ -83,7 +83,7 @@ const out = {id: c.user.id, email: c.user.email, perms: c.user.permissions, stat
   dup: (await A.createUser({username: 'sami', email: 'n@example.com', role: 'editor'}, users, CFG)).errors, permitsMd: A.permits(c.user, 'md'), permitsDash: A.permits(c.user, 'dash')};
 """)
     assert out["id"] == "USR-0002" and out["email"] == "planner@example.com" and out["status"] == "active"
-    assert out["perms"] == {"dash": True, "forecast": False, "bench": False, "report": False, "md": False}
+    assert out["perms"] == {"dash": True, "forecast": False, "landed": False, "bench": False, "report": False, "md": False}
     assert "password" not in out["keys"] and not out["plain"]
     assert out["ok"] and not out["wrong"] and not out["oldAfterReset"] and out["newAfterReset"]
     assert "username" in out["dup"]

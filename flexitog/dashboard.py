@@ -105,6 +105,9 @@ def build_payload(ws, per_region_synthetic: int = 15, sales_orders: str | Path |
                         "direct": {str(k): int(v) for k, v in direct.items()}},
             "sales_history": _records(ws.load("sales_history")),
             "demand_forecast": _records(ws.load("demand_forecast")),
+            # Landed cost and quote benchmarking: import facts per country, freight quotes, shared settings.
+            "countries": _records(ws.load("countries")), "quotes": _records(ws.load("quotes")),
+            "settings": _records(ws.load("settings")),
             "params": {name: _records(ws.load_params(name)) for name in P.DEFAULT_TABLES},
             "country_region": COUNTRY_REGION, "eu27": sorted(EU27),
         },
@@ -183,6 +186,10 @@ def build_html(ws, sales_orders: str | Path | None = None) -> str:
         "/*ENGINE*/": engine,
         # Route Dashboard: best scenario rule, aggregation, coverage, issue split and the RFQ adapter.
         "/*ROUTECORE*/": (ASSETS / "route_core.js").read_text(encoding="utf-8"),
+        # Upload templates, strict validation and coverage; the cost formulas (landed cost, quotes, RFQ, forecast).
+        "/*DATACORE*/": (ASSETS / "data_core.js").read_text(encoding="utf-8"),
+        "/*CALC*/": (ASSETS / "calc.js").read_text(encoding="utf-8"),
+        "/*LANDED*/": (ASSETS / "landed.js").read_text(encoding="utf-8"),
         "/*WORKSPACE*/": (ASSETS / "workspace.js").read_text(encoding="utf-8"),
         "/*BENCHCORE*/": (ASSETS / "bench_core.js").read_text(encoding="utf-8"),
         "/*RFQCORE*/": (ASSETS / "rfq_core.js").read_text(encoding="utf-8"),

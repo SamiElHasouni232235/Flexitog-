@@ -8,6 +8,7 @@
   --sea:#e8eef3; --land:#dfe4e8; --land-edge:#ffffff; --land-study:#cfd6dc;
   --s-cif_baseline:#8a8984; --s-distributor:#b8329b; --s-3pl:#eb6834; --s-owned_warehouse:#1baf7a;
   --p-flexitog:#4a3aa7; --p-partner:#eda100; --p-customer:#e87ba4;
+  --lc1:#2a78d6; --lc2:#eb6834; --lc3:#1baf7a; --lc4:#eda100; --lc5:#e87ba4; --lc6:#008300;
   --supplier:#2a78d6; --supplier-land:#86b6ef; --supplier-mark:#0d366b;
   --q1:#8070d6; --q2:#6553c7; --q3:#4f3db0; --q4:#3b2c8f; --q5:#281d66;
   --st-critical:#d03b3b; --st-serious:#ec835a; --st-warning:#fab219; --st-info:#6f8193;
@@ -22,6 +23,7 @@
   --sea:#0f171e; --land:#1f2a33; --land-edge:#0d1318; --land-study:#2a3742;
   --s-cif_baseline:#8f8e89; --s-distributor:#c94fb0; --s-3pl:#d95926; --s-owned_warehouse:#199e70;
   --p-flexitog:#9085e9; --p-partner:#c98500; --p-customer:#d55181;
+  --lc1:#3987e5; --lc2:#d95926; --lc3:#199e70; --lc4:#c98500; --lc5:#d55181; --lc6:#008300;
   --supplier:#3987e5; --supplier-land:#104281; --supplier-mark:#cde2fb;
   --q1:#6e5fd0; --q2:#8d80e2; --q3:#aaa0ee; --q4:#c6bff5; --q5:#e2defb;
 }}
@@ -32,6 +34,7 @@
   --sea:#0f171e; --land:#1f2a33; --land-edge:#0d1318; --land-study:#2a3742;
   --s-cif_baseline:#8f8e89; --s-distributor:#c94fb0; --s-3pl:#d95926; --s-owned_warehouse:#199e70;
   --p-flexitog:#9085e9; --p-partner:#c98500; --p-customer:#d55181;
+  --lc1:#3987e5; --lc2:#d95926; --lc3:#199e70; --lc4:#c98500; --lc5:#d55181; --lc6:#008300;
   --supplier:#3987e5; --supplier-land:#104281; --supplier-mark:#cde2fb;
   --q1:#6e5fd0; --q2:#8d80e2; --q3:#aaa0ee; --q4:#c6bff5; --q5:#e2defb;
 }
@@ -299,7 +302,7 @@ details.grp .gbody{padding:0 12px 12px;display:flex;flex-direction:column;gap:8p
 .mquick button{border:1px solid var(--rule);background:var(--surface-2);border-radius:999px;padding:4px 10px;font-size:12.5px}
 .mquick button:hover{border-color:var(--accent)}
 .mstore{font-size:11.5px;padding:8px 8px 2px;border-top:1px solid var(--rule);margin-top:6px}
-body[data-view="md"] .top>.controls,body[data-view="report"] .top>.controls{display:none}
+body[data-view="md"] .top>.controls,body[data-view="report"] .top>.controls,body[data-view="landed"] .top>.controls,body[data-view="landed"] #chips{display:none}
 .view{display:flex;flex-direction:column;gap:18px;min-width:0}
 
 /* master data */
@@ -334,6 +337,40 @@ body[data-view="md"] .top>.controls,body[data-view="report"] .top>.controls{disp
 .mdgrid td input:focus,.mdgrid td select:focus{border-color:var(--accent);background:var(--surface);outline:0}
 .mdgrid td .bad{border-color:var(--st-critical);background:color-mix(in srgb,var(--st-critical) 8%,transparent)}
 .mdgrid .rn{color:var(--faint);font:11px var(--mono);text-align:right;width:1%}
+.viewexp{display:flex;align-items:center;gap:6px;margin-left:auto;margin-right:14px;font-size:12px}.viewexp .btn.sm{display:inline-flex}
+body[data-view="home"] .viewexp,body[data-view="users"] .viewexp{display:none}
+@media (max-width:600px){.viewexp>span{display:none}.viewexp{margin-right:4px;gap:4px}.viewexp .btn.sm{padding:3px 6px}}
+@media (max-width:440px){.sessbar #authRole{display:none}.sessbar{gap:6px}}
+/* data upload panel */
+#mdUploads{margin-bottom:14px}
+.uptable td{vertical-align:middle}
+.uptable .btn.sm,.uptable .filebtn{display:inline-flex;white-space:nowrap}
+.uptable .iact{flex-wrap:nowrap;gap:6px}
+.uptable td.num{white-space:nowrap}
+.dst.est{background:color-mix(in srgb,var(--p-partner) 18%,transparent);color:var(--ink)}
+.uperr{border:1px solid var(--st-critical);border-radius:8px;padding:10px 12px;margin:12px 0;background:color-mix(in srgb,var(--st-critical) 6%,transparent)}
+.uperr h3,.upok h3{margin:0 0 6px;font-size:14px}
+.uperr .tablewrap{max-height:300px;overflow:auto}
+.upok{border:1px solid var(--accent);border-radius:8px;padding:10px 12px;margin:12px 0;background:var(--accent-soft)}
+.covbox{margin-top:12px}.covbox summary{cursor:pointer;padding:4px 0}
+.covbar{width:160px;max-width:40vw;height:10px;border-radius:5px;background:var(--surface-2);border:1px solid var(--rule);overflow:hidden}
+.covbar i{display:block;height:100%;background:var(--lc3)}
+/* landed cost */
+.lcbar .controls{margin-bottom:6px}.lcrate{margin:4px 0;font-size:12.5px}
+.lcchart{overflow-x:auto}.lcsvg{display:block;max-width:none}
+.lchead{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px 16px;margin:4px 0 8px}
+.lcsvg .lcl{font:600 12px var(--mono);fill:var(--ink)}.lcsvg .lcs{font:11px var(--body);fill:var(--muted)}.lcsvg .lcv{font:600 12px var(--mono);fill:var(--ink)}
+.lcrow{cursor:pointer;outline:0}.lcrow.on rect:first-child,.lcrow:focus-visible rect:first-child{fill:var(--accent-soft)}
+.lcseg.c1,.lcsur.c1{fill:var(--lc1);background:var(--lc1)}.lcseg.c2,.lcsur.c2{fill:var(--lc2);background:var(--lc2)}.lcseg.c3,.lcsur.c3{fill:var(--lc3);background:var(--lc3)}
+.lcseg.c4,.lcsur.c4{fill:var(--lc4);background:var(--lc4)}.lcseg.c5,.lcsur.c5{fill:var(--lc5);background:var(--lc5)}.lcseg.c6,.lcsur.c6{fill:var(--lc6);background:var(--lc6)}
+.sw.lcc1{background:var(--lc1)}.sw.lcc2{background:var(--lc2)}.sw.lcc3{background:var(--lc3)}.sw.lcc4{background:var(--lc4)}.sw.lcc5{background:var(--lc5)}.sw.lcc6{background:var(--lc6)}
+.lclegend{margin:4px 0 8px}
+.lctable td{vertical-align:top}.lctable tr.sel td{background:var(--accent-soft)}.lctable tr.noans td{opacity:.7}
+.lcgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+.lcgrid h3{font-size:13px;margin:10px 0 6px}
+.kvtab td:first-child{white-space:nowrap}
+.lcsurbar{display:flex;gap:2px;height:14px;border-radius:4px;overflow:hidden;margin:4px 0 8px}.lcsurbar i{display:block;height:100%}
+@media (max-width:860px){.lcgrid{grid-template-columns:minmax(0,1fr)}}
 .mdgrid table.mdt th{position:static}
 .mdgrid table.mdt thead{position:sticky;top:0;z-index:2}
 .thsort{display:inline-flex;align-items:center;gap:4px;background:none;border:0;padding:0;margin:0;font:inherit;letter-spacing:inherit;text-transform:inherit;color:inherit;cursor:pointer;white-space:nowrap}
@@ -451,6 +488,7 @@ details.custom .iact{display:flex;gap:6px;margin-top:8px}
 <div class="app">
   <div class="sessbar">
     <a href="#home" class="homelink" data-home-go="home" aria-label="Home"><span class="homelogo-sm" data-logo="small"></span><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .71-1.53l7-6a2 2 0 0 1 2.58 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span>Home</span></a>
+    <div class="viewexp" id="viewExp" role="group" aria-label="Export this view"><span class="faint">Export view</span><button type="button" class="btn ghost sm" data-exp="xlsx" title="This view's tables, active filters and data date as an Excel workbook">Excel</button><button type="button" class="btn ghost sm" data-exp="csv" title="This view's tables, active filters and data date as CSV">CSV</button></div>
     <div class="who"><span class="whoname"><b id="authName"></b><span class="faint" id="authRole"></span></span><button type="button" class="btn ghost sm" id="authLogout">Log out</button></div>
   </div>
   <header class="top">
@@ -461,6 +499,7 @@ details.custom .iact{display:flex;gap:6px;margin-top:8px}
         <button type="button" data-go="home"><b>Home</b><small>Start page with every view</small></button>
         <button type="button" data-go="dash" aria-current="true"><b>Route Dashboard</b><small>Map, scorecard and order explorer</small></button>
         <button type="button" data-go="forecast"><b>Forecast</b><small>2027 sales forecast from the Odoo orders, the demand every route scenario prices</small></button>
+        <button type="button" data-go="landed"><b>Landed Cost</b><small>Cost per garment from EXW to DAP price, per country, provider and mode</small></button>
         <button type="button" data-go="bench"><b>Benchmarking</b><small>Logistics providers, sales analysis, service goals and the test order package</small></button>
         <button type="button" data-go="report"><b>Report Extract</b><small>Standard cross-border supply chain report as Excel, HTML or CSV</small></button>
         <button type="button" data-go="md"><b>Master Data Upload</b><small>Products, customers, suppliers, logistics providers, sales history and other data</small></button>
@@ -474,6 +513,9 @@ details.custom .iact{display:flex;gap:6px;margin-top:8px}
           <button type="button" data-act="md-tab" data-tab="suppliers">Suppliers</button>
           <button type="button" data-act="md-tab" data-tab="distribution_centers">Logistics providers</button>
           <button type="button" data-act="md-tab" data-tab="sales_history">Sales history</button>
+          <button type="button" data-act="md-tab" data-tab="quotes">Quotes</button>
+          <button type="button" data-act="md-tab" data-tab="countries">Countries</button>
+          <button type="button" data-act="md-tab" data-tab="settings">Settings</button>
         </div>
         <p class="faint mstore" id="menuStore"></p>
       </nav>
@@ -495,6 +537,7 @@ details.custom .iact{display:flex;gap:6px;margin-top:8px}
     <nav class="homegrid" aria-label="Views">
       <a href="#dash" class="hbtn" data-home-go="dash"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><path d="M9 19c0 2-3 4.5-3 4.5S3 21 3 19a3 3 0 0 1 6 0Z"/><circle cx="6" cy="19" r="1"/><path d="M21 5c0 2-3 4.5-3 4.5S15 7 15 5a3 3 0 0 1 6 0Z"/><circle cx="18" cy="5" r="1"/></svg><span>Route Dashboard</span></a>
       <a href="#forecast" class="hbtn" data-home-go="forecast"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="m7 16 4-4 3 3 6-6"/><path d="M15 9h5v5"/></svg><span>Forecast</span></a>
+      <a href="#landed" class="hbtn" data-home-go="landed"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="12" width="4" height="9" rx="1"/><rect x="10" y="7" width="4" height="14" rx="1"/><rect x="17" y="3" width="4" height="18" rx="1"/></svg><span>Landed Cost</span></a>
       <a href="#bench" class="hbtn" data-home-go="bench"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></svg><span>Benchmarking</span></a>
       <a href="#report" class="hbtn" data-home-go="report"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M12 11v7"/><path d="m9 15 3 3 3-3"/></svg><span>Report Extract</span></a>
       <a href="#md" class="hbtn" data-home-go="md"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="10" cy="6" rx="7" ry="3"/><path d="M3 6v12c0 1.66 3.13 3 7 3 .7 0 1.37-.04 2-.13"/><path d="M3 12c0 1.66 3.13 3 7 3 .7 0 1.37-.04 2-.13"/><path d="M17 6v4"/><path d="M19 22v-8"/><path d="m16 17 3-3 3 3"/></svg><span>Master Data Upload</span></a>
@@ -578,6 +621,7 @@ details.custom .iact{display:flex;gap:6px;margin-top:8px}
         <button type="button" class="btn ghost" id="mdTemplates">Upload templates (Excel)</button>
         <button type="button" class="btn ghost" id="mdExportAll">Export all master data (Excel)</button></div>
     </div>
+    <div class="card" id="mdUploads"></div>
     <div class="tabs" id="mdTabs" role="tablist" aria-label="Master data tables"></div>
     <div class="card" id="mdPanel" role="tabpanel"></div>
   </div>
@@ -600,12 +644,15 @@ details.custom .iact{display:flex;gap:6px;margin-top:8px}
 
   <div id="viewForecast" class="view" hidden></div>
 
+  <div id="viewLanded" class="view" hidden></div>
+
   <div id="viewBench" class="view" hidden>
     <div class="bhead">
       <div class="bsub"><div class="seg" id="benchTabs" role="group" aria-label="Benchmarking sections"></div></div>
       <div class="bchips" id="benchChips"></div>
     </div>
     <div id="bp-providers" class="bpanel"></div>
+    <div id="bp-quotes" class="bpanel" hidden></div>
     <div id="bp-sales" class="bpanel" hidden></div>
     <div id="bp-goals" class="bpanel" hidden></div>
     <div id="bp-test" class="bpanel" hidden></div>
@@ -639,6 +686,8 @@ details.custom .iact{display:flex;gap:6px;margin-top:8px}
 <script>/*JSZIP*/</script>
 <script>/*ENGINE*/</script>
 <script>/*ROUTECORE*/</script>
+<script>/*DATACORE*/</script>
+<script>/*CALC*/</script>
 <script>
 "use strict";
 const PAYLOAD = /*PAYLOAD*/null;
@@ -656,10 +705,12 @@ const GCC = ["SA", "AE", "QA", "KW", "BH", "OM"];
 const STORE_KEY = "flexitog-dashboard-v1";
 
 // ============================================================ master data (source of truth for the engine)
-const MD_KEYS = ["products", "customers", "suppliers", "distribution_centers", "lanes", "sales_history", "demand_forecast", "orders", "order_lines"];
+const MD_KEYS = ["products", "customers", "suppliers", "distribution_centers", "lanes", "sales_history", "demand_forecast", "orders", "order_lines",
+  "countries", "quotes", "settings"];
 const MD_BUILTIN = {products: PAYLOAD.data.products, customers: PAYLOAD.data.customers, suppliers: PAYLOAD.data.suppliers,
   distribution_centers: PAYLOAD.data.dcs, lanes: PAYLOAD.data.lanes, sales_history: PAYLOAD.data.sales_history || [],
-  demand_forecast: PAYLOAD.data.demand_forecast || [], orders: PAYLOAD.tests.orders, order_lines: PAYLOAD.tests.lines};
+  demand_forecast: PAYLOAD.data.demand_forecast || [], orders: PAYLOAD.tests.orders, order_lines: PAYLOAD.tests.lines,
+  countries: PAYLOAD.data.countries || [], quotes: PAYLOAD.data.quotes || [], settings: PAYLOAD.data.settings || []};
 const MD = {t: clone(MD_BUILTIN), custom: [], saved: {}};
 const MD_LOCAL = "flexitog-md-v1:";
 (function loadLocalMasterData(){
@@ -705,6 +756,24 @@ function load(){
 // ============================================================ compute
 let BATCH = {orders: PAYLOAD.batch.orders, lines: PAYLOAD.batch.lines, extra: [], notes: [], source: PAYLOAD.meta.source};
 const regionOf = c => PAYLOAD.data.country_region[c] || "Other";
+// Target countries come from Master Data > Countries: a row with target = true joins the study (with its region),
+// target = false takes a built-in study country out. Countries without a row keep the built-in region.
+const BUILTIN_REGION = clone(PAYLOAD.data.country_region);
+let STUDY = new Set();
+function applyCountries(){
+  const cr = Object.assign({}, BUILTIN_REGION), on = new Set(), off = new Set();
+  (MD.t.countries || []).forEach(r => {
+    const c = String(r.country || "").toUpperCase(); if (!c) return;
+    if (r.region && REGIONS.includes(r.region)) cr[c] = r.region;
+    (r.target === false || String(r.target).toLowerCase() === "false" ? off : on).add(c);
+  });
+  PAYLOAD.data.country_region = cr;
+  STUDY = new Set(Object.keys(BUILTIN_REGION).filter(c => REGIONS.includes(BUILTIN_REGION[c]) && !off.has(c)).concat([...on].filter(c => REGIONS.includes(cr[c]))));
+}
+applyCountries();
+// The one settings row (EUR/USD, insurance, margin, shipment size) and the country rows, for every view.
+const settingsRow = () => (MD.t.settings || [])[0] || {};
+const countryRow = c => (MD.t.countries || []).find(r => String(r.country).toUpperCase() === String(c).toUpperCase()) || null;
 // Demand source. The Forecast view sets window.DEMAND = {active, batch: {orders, lines, customers}, volume, label};
 // when active, every scenario prices the forecast orders and the engine reads its yearly volumes.
 function buildBatch(products){
@@ -725,6 +794,22 @@ function effectiveRaw(){
   raw.history = E.historyCounts(MD.t.sales_history);
   raw.volume = window.DEMAND && window.DEMAND.active ? window.DEMAND.volume : null;
   raw.params = clone(W.params);
+  // Single sources: duty, VAT, levies and clearance per country from Countries; cargo insurance from Settings.
+  (MD.t.countries || []).forEach(c => {
+    const code = String(c.country || "").toUpperCase(); if (!code) return;
+    const num = v => (v === null || v === undefined || v === "" ? null : Number(v));
+    let d = raw.params.duties.find(x => x.country === code);
+    if (!d) { d = {country: code}; raw.params.duties.push(d); }
+    const rate = num(c.duty_rate_pct);
+    if (rate !== null) { d.duty_pct_eu_origin = rate; d.duty_pct_standard = num(c.standard_duty_rate_pct) ?? rate; }
+    if (num(c.vat_rate_pct) !== null) d.vat_pct = num(c.vat_rate_pct);
+    if (num(c.other_fees_pct) !== null) d.other_fees_pct = num(c.other_fees_pct);
+    if (num(c.clearance_fee_eur) !== null) d.clearance_broker_eur = num(c.clearance_fee_eur);
+    if (c.preference_cert) d.preference_document = c.preference_cert === "ATR" ? "A.TR" : c.preference_cert;
+    d.source = String(c.data_status) === "confirmed" ? "real" : "placeholder";
+  });
+  const ins = settingsRow().insurance_rate_pct, gi = raw.params.general.find(x => x.parameter === "cargo_insurance_pct_of_value");
+  if (gi && ins !== null && ins !== undefined && ins !== "") { gi.value = Number(ins); gi.source = String(settingsRow().data_status) === "confirmed" ? "real" : "placeholder"; }
   raw.dcs = W.dcs.filter(d => !excluded.has(d.dc_id));
   raw.products = W.products.map(p => whatIf.euAll ? Object.assign({}, p, {country_of_origin: "NL"}) : p);
   if (whatIf.redSea) raw.params.freight.forEach(r => {
@@ -979,7 +1064,7 @@ function countryValues(){
   else Object.entries(countryCard(ui.mapScenario)).forEach(([c, a]) => { if (a && a[metric.key] != null) values[c] = a[metric.key]; });
   return {metric, values, cats};
 }
-const studyCountries = new Set(Object.keys(PAYLOAD.data.country_region).filter(c => REGIONS.includes(PAYLOAD.data.country_region[c])));
+const studyCountries = {has: c => STUDY.has(c)};   // from applyCountries()
 let legendRange = [0, 0];
 function drawCountries(){
   const {metric, values, cats} = countryValues();
@@ -1859,3 +1944,4 @@ load(); initControls(); compute(); renderView();
 <script>/*BENCHMARK*/</script>
 <script>/*FORECASTCORE*/</script>
 <script>/*FORECAST*/</script>
+<script>/*LANDED*/</script>

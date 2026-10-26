@@ -119,6 +119,26 @@ DC_TYPE_LABELS = {
 DC_STATUS = ["existing", "potential", "candidate"]
 LANE_STATUS = ["proven", "occasional", "unproven"]
 MODES = ["road", "sea", "air", "multimodal"]
+LANE_MODES = ["road", "sea", "air", "express", "multimodal"]
+GARMENT_CATEGORIES = ["Jackets", "Trousers", "Coveralls", "Other"]
+PREFERENCE_CERTS = ["EUR.1", "ATR", "none"]
+RATE_UNITS = ["per kg", "per m3", "per shipment"]
+QUOTE_CURRENCIES = ["EUR", "USD"]
+STUDY_REGIONS = ["Türkiye", "North Africa", "Gulf/GCC"]
+
+# Provenance: every row says where its values come from, when, and whether they are confirmed.
+# (data_source above stays the technical origin: placeholder, imported:<file>, manual, history.)
+DATA_STATUS = ["confirmed", "estimate"]
+
+
+def provenance_fields() -> list["Field"]:
+    return [
+        Field("source_ref", description="Where the values come from: a document, quote, person or file",
+              aliases=["source", "sourceref", "bron"]),
+        Field("source_date", dtype="date", description="Date of the source", aliases=["sourcedate", "asof"]),
+        Field("data_status", allowed=DATA_STATUS, description="confirmed or estimate. Blank = estimate",
+              aliases=["status", "datastatus", "confidence"]),
+    ]
 
 
 ENTITIES: dict[str, Entity] = {
@@ -135,10 +155,10 @@ ENTITIES: dict[str, Entity] = {
             Field("country", required=True, description="Supplier country (ISO2)",
                   aliases=["suppliercountry", "origin", "countrycode", "land"]),
             Field("city", aliases=["town", "location", "plaats"]),
-            Field("sku_ids", dtype="list", required=True,
+            Field("sku_ids", dtype="list",
                   description="SKUs this supplier delivers, separated by ; or ,",
                   aliases=["skus", "articles", "items", "products", "artikelen"]),
-            Field("lead_time_days", dtype="float", required=True,
+            Field("lead_time_days", dtype="float",
                   description="Production + transport lead time to Helmond, in days",
                   aliases=["leadtime", "leadtimedays", "lt", "levertijd"]),
             Field("incoterm", aliases=["incoterms", "deliveryterms"]),
@@ -206,6 +226,16 @@ ENTITIES: dict[str, Entity] = {
             Field("contact_email", description="Contact email for the RFQ", aliases=["email", "contactemail", "e-mail"]),
             Field("contact_phone", description="Contact phone, with country code", aliases=["phone", "telephone", "contactphone"]),
             Field("website", aliases=["web", "url", "site"]),
+            # Service profile of forwarders and 3PLs (the logisticsProviders template).
+            Field("customs_brokerage", dtype="bool", description="Handles import customs clearance", aliases=["customsbrokerage", "brokerage"]),
+            Field("free_zone", dtype="bool", description="Operates in a free zone (duty suspended stock)", aliases=["freezone"]),
+            Field("warehousing", dtype="bool", description="Offers warehousing", aliases=["warehouse", "storageservice"]),
+            Field("compliance_support", dtype="bool", description="Supports certificates and compliance (SABER, CoO)",
+                  aliases=["compliancesupport", "compliance"]),
+            Field("handoffs_per_shipment", dtype="int", description="Parties touching one shipment",
+                  aliases=["handoffspershipment", "handoffs"]),
+            Field("documents_per_shipment", dtype="int", description="Documents FlexiTog prepares per shipment",
+                  aliases=["documentspershipment", "documents"]),
             Field("latitude", dtype="float", description="Optional. For the dashboard map", aliases=["lat"]),
             Field("longitude", dtype="float", description="Optional. For the dashboard map",
                   aliases=["lon", "lng", "long"]),
@@ -227,7 +257,9 @@ ENTITIES: dict[str, Entity] = {
                   aliases=["countrycode", "land", "shiptocountry", "destinationcountry"]),
             Field("region", description="Derived from country when left empty",
                   aliases=["salesregion", "market", "area"]),
-            Field("city", required=True, aliases=["town", "shiptocity", "plaats", "stad"]),
+            Field("city", aliases=["town", "shiptocity", "plaats", "stad"]),
+            Field("segment", description="Customer segment, e.g. cold store, food processing, logistics",
+                  aliases=["segment", "sector", "industry", "branche"]),
             Field("postal_code", aliases=["zip", "zipcode", "postcode", "postalcode", "shiptozip"]),
             Field("address", aliases=["street", "address1", "addressline1", "adres"]),
             Field("current_incoterm", description="Incoterm the customer buys on today",
@@ -252,18 +284,26 @@ ENTITIES: dict[str, Entity] = {
             Field("sku", required=True,
                   aliases=["skuid", "item", "itemno", "itemnumber", "itemcode", "article", "articlenumber",
                            "artikelnummer", "artnr", "material", "materialnumber", "partnumber", "productcode"]),
-            Field("description", required=True,
+            Field("description",
                   aliases=["name", "productname", "itemname", "itemdescription", "omschrijving", "desc"]),
             Field("brand", description="Brand, e.g. FlexiTog, RefrigiWear, Gold Freeze",
                   aliases=["merk", "label", "brandname", "make"]),
-            Field("product_family", aliases=["category", "family", "productgroup", "group", "artikelgroep"]),
+            Field("category", allowed=GARMENT_CATEGORIES,
+                  description="Garment category for landed cost: Jackets, Trousers, Coveralls or Other",
+                  aliases=["garmentcategory", "category"]),
+            Field("product_family", aliases=["family", "productgroup", "group", "artikelgroep"]),
             Field("unit_weight_kg", dtype="float", required=True,
                   aliases=["weight", "weightkg", "grossweight", "grossweightkg", "netweight", "gewicht", "kg"]),
             Field("length_cm", dtype="float", aliases=["length", "lengte", "l"]),
             Field("width_cm", dtype="float", aliases=["width", "breedte", "w"]),
             Field("height_cm", dtype="float", aliases=["height", "hoogte", "h"]),
-            Field("unit_price_eur", dtype="float", required=True,
-                  aliases=["price", "unitprice", "listprice", "priceeur", "salesprice", "prijs", "exportprice"]),
+            Field("unit_price_eur", dtype="float", required=True, description="EXW price per unit, EUR",
+                  aliases=["price", "unitprice", "listprice", "priceeur", "salesprice", "prijs", "exportprice", "exwpriceeur"]),
+            Field("carton_l_cm", dtype="float", description="Export carton length, cm", aliases=["cartonlcm", "cartonlength"]),
+            Field("carton_w_cm", dtype="float", description="Export carton width, cm", aliases=["cartonwcm", "cartonwidth"]),
+            Field("carton_h_cm", dtype="float", description="Export carton height, cm", aliases=["cartonhcm", "cartonheight"]),
+            Field("units_per_carton", dtype="float", description="Garments per export carton",
+                  aliases=["unitspercarton", "qtypercarton", "percarton"]),
             Field("hs_code", description="Customs tariff code. Drives duty rate",
                   aliases=["hs", "hscode", "tariffcode", "taric", "cn8", "commoditycode", "goederencode"]),
             Field("country_of_origin", description="Manufacturing origin (ISO2). Decides EU-preferential duty",
@@ -287,8 +327,9 @@ ENTITIES: dict[str, Entity] = {
             Field("lane_id", required=True, aliases=["id", "route", "routeid"]),
             Field("origin_id", required=True, aliases=["origin", "from", "van"]),
             Field("destination_id", required=True, aliases=["destination", "to", "naar", "dest"]),
-            Field("mode", required=True, allowed=MODES, aliases=["transportmode", "modality"]),
-            Field("status", required=True, allowed=LANE_STATUS, aliases=["lanestatus", "maturity"]),
+            Field("mode", required=True, allowed=LANE_MODES, aliases=["transportmode", "modality"]),
+            Field("status", allowed=LANE_STATUS, description="proven, occasional or unproven. Blank = unproven",
+                  aliases=["lanestatus", "maturity"]),
             Field("shipments_last_12m", dtype="int", aliases=["shipments", "loads", "volume12m"]),
             Field("on_time_pct", dtype="float", aliases=["otd", "ontime", "otif"]),
             Field("transit_days", dtype="float", aliases=["transit", "transittime", "days"]),
@@ -366,7 +407,86 @@ ENTITIES: dict[str, Entity] = {
             Field("quantity", dtype="float", required=True, aliases=["qty", "units"]),
         ],
     ),
+    "countries": Entity(
+        key="countries",
+        label="Countries",
+        primary_key=["country"],
+        description=("Import cost facts per destination country. The single source for duty, VAT and clearance. "
+                     "Rows with target = true are the study's target countries."),
+        fields=[
+            Field("country", required=True, description="ISO2 code or country name", aliases=["name", "code", "iso2"]),
+            Field("target", dtype="bool", description="A target country of the study. Blank = yes", aliases=["targetcountry"]),
+            Field("region", allowed=STUDY_REGIONS, description="Türkiye, North Africa or Gulf/GCC. Blank = built-in region"),
+            Field("duty_rate_pct", dtype="float", required=True,
+                  description="Import duty you pay, % of CIF, with the preference certificate where one applies",
+                  aliases=["dutyrate", "duty"]),
+            Field("standard_duty_rate_pct", dtype="float",
+                  description="Duty without preference (non-EU origin goods), % of CIF. Blank = duty_rate_pct",
+                  aliases=["standarddutyrate", "mfn"]),
+            Field("preference_cert", allowed=PREFERENCE_CERTS, required=True, description="EUR.1, ATR or none",
+                  aliases=["preferencecert", "preference"]),
+            Field("vat_rate_pct", dtype="float", required=True, description="Import VAT, %", aliases=["vatrate", "vat"]),
+            Field("other_fees_pct", dtype="float", description="Other import levies, % of CIF", aliases=["otherfeespct"]),
+            Field("clearance_fee_eur", dtype="float", required=True, description="Customs clearance fee per shipment, EUR",
+                  aliases=["clearancefeeeur", "clearancefee"]),
+            Field("compliance_cost_eur", dtype="float", required=True,
+                  description="Yearly compliance cost (certificates, registrations), EUR", aliases=["compliancecosteur"]),
+            Field("expected_yearly_units", dtype="float", required=True,
+                  description="Garments expected per year, spreads the compliance cost", aliases=["expectedyearlyunits"]),
+        ],
+    ),
+    "quotes": Entity(
+        key="quotes",
+        label="Freight quotes",
+        primary_key=["quote_id"],
+        description="Freight quotes per provider and lane. Rates in the quote currency, surcharges per shipment.",
+        fields=[
+            Field("quote_id", required=True, description="Unique quote code", aliases=["id", "quoteid"]),
+            Field("provider_id", required=True, description="dc_id of the provider in Logistics providers",
+                  aliases=["provider", "providerid"]),
+            Field("lane_id", required=True, description="lane_id in Lanes", aliases=["laneid", "lane"]),
+            Field("quote_date", dtype="date", required=True, aliases=["quotedate", "date"]),
+            Field("valid_until", dtype="date", description="Blank = no end date", aliases=["validuntil", "expiry"]),
+            Field("base_rate", dtype="float", required=True, description="Rate per rate unit, quote currency",
+                  aliases=["baserate", "rate"]),
+            Field("rate_unit", required=True, allowed=RATE_UNITS, aliases=["rateunit", "unit"]),
+            Field("min_charge", dtype="float", description="Minimum freight charge per shipment", aliases=["mincharge", "minimum"]),
+            Field("weight_from_kg", dtype="float", description="Weight band start, chargeable kg. Blank = any",
+                  aliases=["weightfromkg"]),
+            Field("weight_to_kg", dtype="float", description="Weight band end, chargeable kg. Blank = any", aliases=["weighttokg"]),
+            Field("fuel_surcharge", dtype="float", description="Per shipment, quote currency", aliases=["fuelsurcharge", "fuel"]),
+            Field("peak_surcharge", dtype="float", description="Per shipment, quote currency", aliases=["peaksurcharge", "peak"]),
+            Field("war_risk_surcharge", dtype="float", description="Per shipment, quote currency",
+                  aliases=["warrisksurcharge", "warrisk"]),
+            Field("other_surcharge", dtype="float", description="Documents and other fees per shipment, quote currency",
+                  aliases=["othersurcharge", "otherfees"]),
+            Field("currency", required=True, allowed=QUOTE_CURRENCIES, aliases=["cur", "valuta"]),
+            Field("transit_days", dtype="float", description="Door to door, days", aliases=["transitdaysdoortodoor", "transit"]),
+            Field("notes", aliases=["comment", "remarks"]),
+        ],
+    ),
+    "settings": Entity(
+        key="settings",
+        label="Settings",
+        primary_key=["settings_id"],
+        description="One row with the rates every calculation shares.",
+        fields=[
+            Field("settings_id", required=True, description="Always 'main'"),
+            Field("eur_usd_rate", dtype="float", required=True, description="USD per 1 EUR", aliases=["eurusdrate"]),
+            Field("eur_usd_date", dtype="date", required=True, description="Date of the exchange rate", aliases=["eurusddate"]),
+            Field("insurance_rate_pct", dtype="float", required=True, description="Cargo insurance, % of EXW + freight",
+                  aliases=["insurancerate"]),
+            Field("margin_pct", dtype="float", required=True, description="FlexiTog margin on landed cost, %",
+                  aliases=["marginpct"]),
+            Field("shipment_units", dtype="float", required=True, description="Garments per shipment for landed cost",
+                  aliases=["shipmentunits"]),
+        ],
+    ),
 }
+
+# Every table carries the provenance columns.
+for _e in ENTITIES.values():
+    _e.fields.extend(provenance_fields())
 
 # Import targets the user asked for first, shown on top in the UI.
 PRIMARY_IMPORTS = ["customers", "products", "sales_history", "demand_forecast"]

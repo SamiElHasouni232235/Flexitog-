@@ -11,7 +11,7 @@
   const C = root.crypto || (typeof globalThis !== "undefined" ? globalThis.crypto : null);
   const ALGORITHM = "sha256-salted-v1";
   // Permission keys are the view ids in workspace.js (VIEWS), labels as on the home page.
-  const PERMISSIONS = [["dash", "Route Dashboard"], ["forecast", "Forecast"], ["bench", "Benchmarking"], ["report", "Report Extract"], ["md", "Master Data Upload"]];
+  const PERMISSIONS = [["dash", "Route Dashboard"], ["forecast", "Forecast"], ["landed", "Landed Cost"], ["bench", "Benchmarking"], ["report", "Report Extract"], ["md", "Master Data Upload"]];
   const ROLES = [["admin", "Admin"], ["editor", "Editor"], ["viewer", "Viewer"]];
   const STATUSES = [["active", "Active"], ["disabled", "Disabled"]];
   const allPermissions = () => Object.fromEntries(PERMISSIONS.map(([k]) => [k, true]));
