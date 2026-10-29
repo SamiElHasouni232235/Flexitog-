@@ -414,7 +414,9 @@ $("menu").addEventListener("click", e => {
 const MD_TABS = [
   ["products", "Products"], ["customers", "Customers"], ["suppliers", "Suppliers"], ["distribution_centers", "Logistics providers"],
   ["lanes", "Lanes"], ["quotes", "Quotes"], ["countries", "Countries"], ["settings", "Settings"], ["sales_history", "Sales history"],
-  ["demand_forecast", "Demand forecast"], ["orders", "Test orders"], ["order_lines", "Test order lines"], ["custom", "Other data"],
+  ["demand_forecast", "Demand forecast"], ["orders", "Test orders"], ["order_lines", "Test order lines"],
+  ["odoo_pickings", "Odoo transfers"], ["odoo_move_lines", "Odoo move lines"], ["odoo_quants", "Odoo stock"], ["odoo_location_counts", "Odoo counts"],
+  ["temperature_zones", "Temperature zones"], ["custom", "Other data"],
 ];
 const MD_HINT = {
   products: "SKU master. Country of origin decides duty; units per pallet drives pallet counts.",
@@ -424,6 +426,11 @@ const MD_HINT = {
   lanes: "Routes in use today and the lanes quotes refer to. Proven lanes are preferred in the recommendation.",
   quotes: "Freight quotes per provider and lane. Landed Cost and Benchmarking read them; expired quotes are left out.",
   countries: "Import facts per country: duty, VAT, clearance, compliance and expected yearly units. The single source for duty in every view. Rows with target = true are the target countries.",
+  odoo_pickings: "stock.picking export from Odoo: receipts, deliveries and quality slots with dock and time. The dock schedule reads it.",
+  odoo_move_lines: "stock.move.line export from Odoo: done outgoing lines are the units shipped per month and the daily use behind days of cover.",
+  odoo_quants: "stock.quant export from Odoo with the product category: units on hand per location, grouped into temperature zones.",
+  odoo_location_counts: "Physical inventory from Odoo: counted against system quantity per location. Location accuracy = locations counted without a difference / locations counted.",
+  temperature_zones: "Product category text to temperature zone: freezer -5 to -50°C, chiller +10 to -5°C, PPE and safety.",
   settings: "One row: the EUR/USD rate and its date, insurance rate, FlexiTog margin and the garments per shipment for Landed Cost.",
   sales_history: "Order lines from the ERP. When this table has rows, the batch is built from it: one test order per historical order.",
   demand_forecast: "Forecast quantity per SKU, country and month. Kept for reporting.",
@@ -1152,6 +1159,21 @@ $("mdTemplates").addEventListener("click", () => {
   saveFile("FlexiTog_upload_templates.xlsx", wbBytes(wb));
 });
 
+// ============================================================ colour theme: system, light or dark (per viewer)
+const THEMES = [["system", "System", "follows the system"], ["light", "Light", "light"], ["dark", "Dark", "dark"]];
+function applyTheme(t){
+  if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
+  const i = THEMES.findIndex(x => x[0] === (t || "system")), cur = THEMES[i < 0 ? 0 : i], next = THEMES[(Math.max(0, i) + 1) % THEMES.length];
+  const b = $("themeBtn"); if (!b) return;
+  b.querySelector(".thlbl").textContent = cur[1];
+  b.setAttribute("aria-label", `Colour theme: ${cur[2]}. Switch to ${next[1].toLowerCase()}`);
+}
+applyTheme(DataStore.pref.get("theme"));
+$("themeBtn").addEventListener("click", () => {
+  const cur = DataStore.pref.get("theme") || "system", next = THEMES[(THEMES.findIndex(x => x[0] === cur) + 1) % THEMES.length][0];
+  DataStore.pref.set("theme", next === "system" ? null : next); applyTheme(next);
+});
+
 // ============================================================ export view: the current tab as Excel or CSV
 // Every table on screen in the open view becomes a sheet (CSV: one block per table), headed by the view, the
 // active filters, who exported it and the data date. Landed Cost hands over its own unrounded numbers.
@@ -1406,15 +1428,19 @@ function reportHtml(D){
     + (D.orders.length > 150 ? `<p class="faint">First 150 of ${D.orders.length} orders. The Excel export has all of them.</p>` : ""));
   return h;
 }
-const REPORT_CSS = `body{font:13px/1.5 Arial,sans-serif;color:#14212c;margin:24px auto;max-width:1100px;padding:0 16px}
-.rh h1{font-size:24px;margin:4px 0 12px}.ey{font:600 11px Arial;letter-spacing:.08em;text-transform:uppercase;color:#56636f;margin:0}
-.meta{display:flex;flex-wrap:wrap;gap:6px 24px;margin:0 0 12px}.meta dt{font-size:11px;color:#56636f}.meta dd{margin:0;font-weight:600}
-.warnbox{background:#fff4d6;border-left:4px solid #d9a400;padding:8px 12px}
-.rs{margin:22px 0}.rs h2{font-size:17px;border-bottom:2px solid #14212c;padding-bottom:4px;display:flex;gap:10px;align-items:baseline}.rs h2 span{font:600 12px Arial;color:#56636f}
-.lead{color:#56636f}table{border-collapse:collapse;width:100%;margin:8px 0;font-size:12px}th,td{border-bottom:1px solid #d9dfe4;padding:5px 7px;text-align:left;vertical-align:top}
-th{background:#f2f4f6;font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:#56636f}td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
-.sev{font-size:10px;font-weight:700;text-transform:uppercase;padding:2px 5px;border-radius:3px;background:#6f8193;color:#fff}.sev.critical{background:#d03b3b}.sev.serious{background:#ec835a;color:#14212c}.sev.warning{background:#fab219;color:#14212c}
-.faint{color:#8a95a0}`;
+// The exported HTML report is a document: it takes the light --print-* tokens of theme.css.
+function reportCss(){
+  const t = n => tok("--print-" + n);
+  return `body{font:13px/1.5 Arial,sans-serif;color:${t("ink")};margin:24px auto;max-width:1100px;padding:0 16px}
+.rh h1{font-size:24px;margin:4px 0 12px}.ey{font:600 12px Arial;color:${t("muted")};margin:0}
+.meta{display:flex;flex-wrap:wrap;gap:6px 24px;margin:0 0 12px}.meta dt{font-size:11px;color:${t("muted")}}.meta dd{margin:0;font-weight:600}
+.warnbox{background:${t("warn-bg")};border-left:4px solid ${t("warn")};padding:8px 12px}
+.rs{margin:22px 0}.rs h2{font-size:17px;border-bottom:2px solid ${t("accent")};padding-bottom:4px;display:flex;gap:10px;align-items:baseline}.rs h2 span{font:600 12px Arial;color:${t("muted")}}
+.lead{color:${t("muted")}}table{border-collapse:collapse;width:100%;margin:8px 0;font-size:12px}th,td{border-bottom:1px solid ${t("rule")};padding:5px 7px;text-align:left;vertical-align:top}
+th{background:${t("head")};font-size:11px;color:${t("muted")}}td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.sev{font-size:10px;font-weight:700;padding:2px 5px;border-radius:3px;background:${t("info")};color:${t("bg")}}.sev.critical{background:${t("critical")}}.sev.serious{background:${t("serious")};color:${t("ink")}}.sev.warning{background:${t("warning")};color:${t("ink")}}
+.faint{color:${t("muted")}}`;
+}
 function renderReport(){
   if (!R) return;
   $("repRegion").innerHTML = ["All", ...REGIONS].map(r => `<option${r === REP.region ? " selected" : ""}>${esc(r)}</option>`).join("");
@@ -1426,7 +1452,7 @@ function renderReport(){
 $("repRegion").addEventListener("change", e => { REP.region = e.target.value; renderReport(); });
 $("repAppendix").addEventListener("change", e => { REP.appendix = e.target.checked; renderReport(); });
 const repName = ext => `FlexiTog_cross_border_report_${(REP.region === "All" ? "all_regions" : REP.region).replace(/[^\w]+/g, "_")}_${new Date().toISOString().slice(0, 10)}.${ext}`;
-$("repHtml").addEventListener("click", () => saveFile(repName("html"), `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FlexiTog cross-border report</title><style>${REPORT_CSS}</style></head><body>${REP.html}</body></html>`));
+$("repHtml").addEventListener("click", () => saveFile(repName("html"), `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FlexiTog cross-border report</title><style>${reportCss()}</style></head><body>${REP.html}</body></html>`));
 $("repCsv").addEventListener("click", () => {
   const cols = ["order_id", "customer_id", "country", "region", "scenario", "node", "available", "units", "pallets", "order_value_eur", "cost_to_serve_eur", "customer_pays_eur", "flexitog_pays_eur", "partner_pays_eur", "lead_time_days", "lane_status", "customs_touchpoints", "doc_steps", "customer_paperwork_steps", "flexitog_paperwork", "placeholder_cost_share", "reason"];
   const regs = REP.data.regs; saveFile(repName("csv"), "﻿" + toCsv(cols, R.rows.filter(r => regs.includes(r.region))));

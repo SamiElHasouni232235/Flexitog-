@@ -302,6 +302,8 @@ SEED = {
     "sales_history": _demo_sales_history(),
     "demand_forecast": [],
     "countries": COUNTRIES,
+    "temperature_zones": [{"category_match": "Freezer", "zone": "freezer"}, {"category_match": "Chiller", "zone": "chiller"},
+                          {"category_match": "PPE", "zone": "ppe"}, {"category_match": "Safety", "zone": "ppe"}],
     "quotes": QUOTES,
     "settings": SETTINGS,
 }

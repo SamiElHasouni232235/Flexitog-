@@ -108,6 +108,8 @@ def build_payload(ws, per_region_synthetic: int = 15, sales_orders: str | Path |
             # Landed cost and quote benchmarking: import facts per country, freight quotes, shared settings.
             "countries": _records(ws.load("countries")), "quotes": _records(ws.load("quotes")),
             "settings": _records(ws.load("settings")),
+            # Odoo exports for the operations overview (empty until uploaded; the overview then shows the sample).
+            **{k: _records(ws.load(k)) for k in ("odoo_pickings", "odoo_move_lines", "odoo_quants", "odoo_location_counts", "temperature_zones")},
             "params": {name: _records(ws.load_params(name)) for name in P.DEFAULT_TABLES},
             "country_region": COUNTRY_REGION, "eu27": sorted(EU27),
         },
@@ -123,6 +125,9 @@ def build_payload(ws, per_region_synthetic: int = 15, sales_orders: str | Path |
         "datasets": [{"sheet": d[0], "kind": d[1], "key": d[2], "priority": d[3], "why": d[4], "where": d[5], "target": d[6]} for d in DATASETS],
         # Odoo sales order lines for the Forecast view (the anonymized sample unless a path is given).
         "sales_orders": sales_orders_table(sales_orders),
+        # Sample data of the operations overview (tools/build_ops_sample.py), shown and labelled sample until the
+        # Odoo exports are uploaded, and the facts Odoo has no field for yet.
+        "ops_sample": json.loads((ASSETS / "data" / "ops_sample.json").read_text(encoding="utf-8")),
         # The bundled RFQ template, served by Download latest RFQ until a newer one replaces it.
         "rfq_template": {"name": RFQ_TEMPLATE.name, "base64": base64.b64encode(RFQ_TEMPLATE.read_bytes()).decode("ascii"),
                          "sources": rfq_sources(RFQ_TEMPLATE)},
@@ -206,6 +211,8 @@ def build_html(ws, sales_orders: str | Path | None = None) -> str:
     for key, js in parts.items():
         if "</script" in js.lower():
             raise ValueError(f"{key} contains a closing script tag")
+    # Every colour, font, shape and motion token (light, dark, print) lives in theme.css only.
+    parts["/*THEMECSS*/"] = (ASSETS / "theme.css").read_text(encoding="utf-8")
     parts["/*BENCHCSS*/"] = (ASSETS / "benchmark.css").read_text(encoding="utf-8")
     parts["/*FORECASTCSS*/"] = (ASSETS / "forecast.css").read_text(encoding="utf-8")
     parts["/*AUTHCSS*/"] = (ASSETS / "auth.css").read_text(encoding="utf-8")

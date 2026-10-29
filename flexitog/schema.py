@@ -482,6 +482,62 @@ ENTITIES: dict[str, Entity] = {
                   aliases=["shipmentunits"]),
         ],
     ),
+    # ---- Odoo exports for the operations overview (Helmond DC). Times as YYYY-MM-DDTHH:MM, local time.
+    "odoo_pickings": Entity(
+        key="odoo_pickings", label="Odoo transfers", primary_key=["name"],
+        description="stock.picking export: receipts, deliveries and quality slots with their dock and time. Feeds the dock schedule.",
+        fields=[
+            Field("name", required=True, description="Transfer reference, e.g. HLM/OUT/01234"),
+            Field("picking_type_code", required=True, allowed=["incoming", "outgoing", "internal"], description="incoming, outgoing or internal"),
+            Field("scheduled_date", required=True, description="Scheduled date and time"),
+            Field("date_done", description="Date and time done"),
+            Field("state", required=True, allowed=["draft", "waiting", "confirmed", "assigned", "done", "cancel"]),
+            Field("origin", description="Source document, e.g. the sales order"),
+            Field("partner_country", description="Contact country (ISO2)"),
+            Field("dock", description="Dock door (custom field x_dock in Odoo)"),
+            Field("slot_type", allowed=["inbound", "outbound", "quality"], description="Blank = from picking_type_code"),
+            Field("slot_minutes", dtype="int", description="Slot length in minutes. Blank = 60"),
+        ],
+    ),
+    "odoo_move_lines": Entity(
+        key="odoo_move_lines", label="Odoo move lines", primary_key=["line_id"],
+        description="stock.move.line export: units moved per product. Done outgoing lines are units shipped.",
+        fields=[
+            Field("line_id", required=True, description="Generated: transfer, product, date and position"),
+            Field("picking", description="Transfer reference"),
+            Field("sku", required=True, description="Product internal reference"),
+            Field("quantity", dtype="float", required=True, description="Quantity done"),
+            Field("date", required=True, description="Date and time"),
+            Field("picking_code", required=True, allowed=["incoming", "outgoing", "internal"]),
+            Field("state", description="Blank = done"),
+            Field("location_from"), Field("location_to"),
+        ],
+    ),
+    "odoo_quants": Entity(
+        key="odoo_quants", label="Odoo stock", primary_key=["sku", "location"],
+        description="stock.quant export: units on hand per product and location, with the product category.",
+        fields=[
+            Field("sku", required=True), Field("category", required=True, description="Product category, e.g. All / Freezer wear"),
+            Field("location", required=True), Field("quantity", dtype="float", required=True),
+            Field("reserved_quantity", dtype="float"),
+        ],
+    ),
+    "odoo_location_counts": Entity(
+        key="odoo_location_counts", label="Odoo location counts", primary_key=["location", "sku", "count_date"],
+        description="Counted against system quantity per location (physical inventory). Feeds location accuracy.",
+        fields=[
+            Field("location", required=True), Field("sku", required=True), Field("count_date", dtype="date", required=True),
+            Field("system_quantity", dtype="float", required=True), Field("counted_quantity", dtype="float", required=True),
+        ],
+    ),
+    "temperature_zones": Entity(
+        key="temperature_zones", label="Temperature zones", primary_key=["category_match"],
+        description="Which Odoo product categories belong to which zone: a category containing the text joins the zone.",
+        fields=[
+            Field("category_match", required=True, description="Text in the product category, e.g. Freezer"),
+            Field("zone", required=True, allowed=["freezer", "chiller", "ppe"], description="freezer, chiller or ppe"),
+        ],
+    ),
 }
 
 # Every table carries the provenance columns.

@@ -226,6 +226,151 @@
     });
   }
 
-  return {FACTORS, SURCHARGES, memo, invalidate, version: () => VERSION, toEUR, fromEUR, shipmentOf, chargeable, freight, landedCost, isExpired, liveQuotes,
+  // ================================================================== operations overview (Helmond DC)
+  // Inputs are Master Data rows from the Odoo exports, or the sample fixture resolved against today. Periods are
+  // month to date: this month up to the as-of day against the same days of last month. A source that ends before
+  // today is measured at its last day (asOf), and the view says so.
+  const OPS = (() => {
+    const DAY = 86400000;
+    const iso = d => d.toISOString().slice(0, 10);
+    const addDays = (day, k) => iso(new Date(Date.parse(day + "T00:00:00Z") + k * DAY));
+    const month = d => String(d).slice(0, 7);
+    const prevMonth = m => { const [y, mo] = m.split("-").map(Number); return mo === 1 ? `${y - 1}-12` : `${y}-${String(mo - 1).padStart(2, "0")}`; };
+    const monthsBack = (m, k) => { let x = m; for (let i = 0; i < k; i++) x = prevMonth(x); return x; };
+    const daysIn = m => { const [y, mo] = m.split("-").map(Number); return new Date(Date.UTC(y, mo, 0)).getUTCDate(); };
+    const monthLabel = m => new Date(m + "-01T00:00:00Z").toLocaleDateString("en-GB", {month: "long", year: "numeric", timeZone: "UTC"});
+    const isDone = r => !r.state || r.state === "done";
+
+    /* The sample file with day offsets turned into dates from today. */
+    function resolveSample(fx, today){
+      const at = (o, t) => addDays(today, o) + (t ? "T" + t : "");
+      return {
+        moveLines: (fx.moveLines || []).map((r, i) => Object.assign({}, r, {date: at(r.dayOffset, r.time || "12:00"), state: "done", line_id: "S" + i})),
+        quants: fx.quants || [],
+        counts: (fx.counts || []).map(r => Object.assign({}, r, {count_date: at(r.dayOffset)})),
+        pickings: (fx.pickings || []).map(r => Object.assign({}, r, {scheduled_date: at(r.dayOffset, r.start)}))
+          .filter(r => ![0, 6].includes(new Date(r.scheduled_date.slice(0, 10) + "T12:00:00Z").getUTCDay())),   // no weekend slots
+        certificates: (fx.certificates || []).map(r => Object.assign({}, r, {expires: at(r.expiresInDays)})),
+        pickTime: fx.pickTime || null, relabeling: fx.relabeling || null,
+      };
+    }
+    // The day a source is measured at: today, unless its last record falls in an earlier month (an export that
+    // ends before this month), then that last day.
+    const asOfOf = (dates, today) => { const last = dates.filter(Boolean).map(d => String(d).slice(0, 10)).sort().pop(); return !last || month(last) >= month(today) ? today : last; };
+    /* Month to date against the same days of last month. items: [{date, value}] (value 1 for a count). */
+    function mtd(items, asOf){
+      const m = month(asOf), pm = prevMonth(m), day = Number(asOf.slice(8, 10)), pday = Math.min(day, daysIn(pm));
+      let cur = 0, prev = 0;
+      items.forEach(x => { const d = String(x.date).slice(0, 10), mm = month(d), dd = Number(d.slice(8, 10));
+        if (mm === m && dd <= day) cur += x.value; else if (mm === pm && dd <= pday) prev += x.value; });
+      return {value: cur, prev, delta: cur - prev, deltaPct: prev ? (cur - prev) / prev : null, month: m, label: monthLabel(m), asOf, window: `1 to ${day} ${monthLabel(m)} against 1 to ${pday} ${monthLabel(pm)}`};
+    }
+    /* Orders this month: distinct orders by order date (the Forecast's cleaned Odoo sales order lines). */
+    function ordersKpi(lines, today){
+      const first = {}; (lines || []).forEach(l => { const d = l.date || String(l.order_date || "").slice(0, 10); if (l.order && d && (!first[l.order] || d < first[l.order])) first[l.order] = d; });
+      const asOf = asOfOf(Object.values(first), today);
+      return mtd(Object.values(first).map(d => ({date: d, value: 1})), asOf);
+    }
+    /* Units shipped: done outgoing move lines. */
+    const shipped = lines => (lines || []).filter(r => r.picking_code === "outgoing" && isDone(r));
+    function unitsKpi(lines, today){
+      const out = shipped(lines), asOf = asOfOf(out.map(r => r.date), today);
+      return mtd(out.map(r => ({date: r.date, value: z(r.quantity)})), asOf);
+    }
+    /* Location accuracy: a location counted on a day is accurate when every product counted there matches the
+       system quantity. Share of accurate location counts this month (to date) against all of last month. */
+    function accuracyKpi(counts, today){
+      const by = {};
+      (counts || []).forEach(r => { const d = String(r.count_date).slice(0, 10), k = r.location + "|" + d; const o = by[k] = by[k] || {date: d, ok: true}; if (z(r.counted_quantity) !== z(r.system_quantity)) o.ok = false; });
+      const all = Object.values(by), asOf = asOfOf(all.map(x => x.date), today), m = month(asOf), pm = prevMonth(m), day = asOf.slice(8, 10);
+      const share = xs => (xs.length ? xs.filter(x => x.ok).length / xs.length : null);
+      const cur = all.filter(x => month(x.date) === m && x.date.slice(8, 10) <= day), prev = all.filter(x => month(x.date) === pm);
+      const v = share(cur), p = share(prev);
+      return {value: v, prev: p, delta: v != null && p != null ? v - p : null, counted: cur.length, accurate: cur.filter(x => x.ok).length, prevCounted: prev.length,
+        month: m, label: monthLabel(m), asOf, window: `counts 1 to ${Number(day)} ${monthLabel(m)} against all of ${monthLabel(pm)}`};
+    }
+    /* Orders by market, last 12 months to the as-of day: distinct orders per country, largest first. */
+    function ordersByMarket(lines, today){
+      const first = {}, country = {};
+      (lines || []).forEach(l => { const d = l.date || String(l.order_date || "").slice(0, 10); if (!l.order || !d) return; if (!first[l.order] || d < first[l.order]) first[l.order] = d; country[l.order] = country[l.order] || l.country || "??"; });
+      const asOf = asOfOf(Object.values(first), today), from = addDays(asOf, -365), n = {};
+      Object.entries(first).forEach(([o, d]) => { if (d > from && d <= asOf) n[country[o]] = (n[country[o]] || 0) + 1; });
+      const rows = Object.entries(n).map(([c, k]) => ({country: c, orders: k})).sort((a, b) => b.orders - a.orders || a.country.localeCompare(b.country));
+      return {rows, total: rows.reduce((a, r) => a + r.orders, 0), from: addDays(from, 1), asOf};
+    }
+    /* Units shipped per month for the last 12 months, all brands or one (brand from Master Data products). */
+    function unitsByMonth(lines, products, brand, today){
+      const brandOf = Object.fromEntries((products || []).map(p => [p.sku, p.brand || "Other"]));
+      const out = shipped(lines), asOf = asOfOf(out.map(r => r.date), today), last = month(asOf);
+      const months = []; for (let i = 11; i >= 0; i--) months.push(monthsBack(last, i));
+      const units = Object.fromEntries(months.map(m => [m, 0]));
+      out.forEach(r => { const m = month(r.date); if (m in units && (!brand || brand === "all" || brandOf[r.sku] === brand)) units[m] += z(r.quantity); });
+      const brands = [...new Set(out.map(r => brandOf[r.sku]).filter(Boolean))].sort();
+      return {months: months.map(m => ({month: m, label: new Date(m + "-01T00:00:00Z").toLocaleDateString("en-GB", {month: "short", timeZone: "UTC"}), units: units[m]})), brands, asOf};
+    }
+    /* Stock by temperature zone: units on hand (quants whose category matches a zone rule), daily use = done
+       outgoing units of those SKUs over the last 90 days / 90, days of cover = on hand / daily use. */
+    const ZONES = [["freezer", "Freezer", "-5 to -50°C"], ["chiller", "Chiller", "+10 to -5°C"], ["ppe", "PPE and safety", "Safety footwear, gloves and eye protection"]];
+    function stockByZone(quants, zones, lines, today, warnDays){
+      const rules = (zones || []).map(r => [String(r.category_match || "").toLowerCase(), r.zone]).filter(([m]) => m);
+      const zoneOf = cat => { const c = String(cat || "").toLowerCase(); const hit = rules.find(([m]) => c.includes(m)); return hit ? hit[1] : null; };
+      const skuZone = {}, onHand = {}, unmatched = new Set();
+      (quants || []).forEach(q => { const zn = zoneOf(q.category); if (!zn) { unmatched.add(q.category); return; } skuZone[q.sku] = zn; onHand[zn] = (onHand[zn] || 0) + z(q.quantity); });
+      const out = shipped(lines), asOf = asOfOf(out.map(r => r.date), today), from = addDays(asOf, -90), use = {};
+      out.forEach(r => { const d = String(r.date).slice(0, 10), zn = skuZone[r.sku]; if (zn && d > from && d <= asOf) use[zn] = (use[zn] || 0) + z(r.quantity); });
+      const warn = warnDays || 21;
+      return {zones: ZONES.map(([key, label, range]) => { const daily = (use[key] || 0) / 90, oh = onHand[key] || 0, cover = daily > 0 ? oh / daily : null;
+        return {key, label, range, onHand: oh, dailyUse: daily, daysCover: cover, warn: cover != null && cover < warn}; }), warnDays: warn, unmatched: [...unmatched], asOf};
+    }
+    /* Dock schedule of one day: slots per dock with start and end in minutes after midnight. */
+    function dockDay(pickings, day){
+      const slots = (pickings || []).filter(p => String(p.scheduled_date).slice(0, 10) === day && p.state !== "cancel").map(p => {
+        const t = String(p.scheduled_date).slice(11, 16) || "00:00", start = Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+        const type = p.slot_type || (p.picking_type_code === "incoming" ? "inbound" : p.picking_type_code === "outgoing" ? "outbound" : "quality");
+        return {name: p.name, dock: p.dock || "Unassigned", type, start, end: start + (z(p.slot_minutes) || 60), state: p.state, origin: p.origin || "", country: p.partner_country || ""};
+      }).sort((a, b) => a.dock.localeCompare(b.dock, "en", {numeric: true}) || a.start - b.start);
+      const docks = [...new Set(slots.map(s => s.dock))];
+      return {day, slots, docks, from: slots.length ? Math.min(6 * 60, ...slots.map(s => s.start)) : 6 * 60, to: slots.length ? Math.max(18 * 60, ...slots.map(s => s.end)) : 18 * 60,
+        counts: ["inbound", "outbound", "quality"].map(k => [k, slots.filter(s => s.type === k).length])};
+    }
+    const dockDays = pickings => [...new Set((pickings || []).map(p => String(p.scheduled_date).slice(0, 10)).filter(Boolean))].sort();
+    /* Data sheets to update: certificates expiring within the horizon (days), the next one first. */
+    function certificatesDue(certs, today, horizon){
+      const h = addDays(today, horizon || 90), list = (certs || []).filter(c => c.expires).slice().sort((a, b) => String(a.expires).localeCompare(String(b.expires)));
+      const due = list.filter(c => c.expires <= h);
+      return {next: list.find(c => c.expires >= today) || null, due: due.length, overdue: list.filter(c => c.expires < today).length, horizon: horizon || 90,
+        daysToNext: list.find(c => c.expires >= today) ? Math.round((Date.parse(list.find(c => c.expires >= today).expires) - Date.parse(today)) / DAY) : null, list};
+    }
+    /* Pick time gauge and relabeling progress from their figures. */
+    const pickGauge = p => (p ? {value: z(p.minutesPerLine), prev: n(p.lastMonth), target: n(p.targetMinutes), max: z(p.scaleMaxMinutes) || 4,
+      share: Math.min(1, z(p.minutesPerLine) / (z(p.scaleMaxMinutes) || 4)), onTarget: p.targetMinutes != null ? z(p.minutesPerLine) <= z(p.targetMinutes) : null} : null);
+    const progress = r => (r && z(r.total) > 0 ? {done: z(r.done), total: z(r.total), share: Math.min(1, z(r.done) / z(r.total)), left: Math.max(0, z(r.total) - z(r.done)), what: r.what} : null);
+    /* Search: SKUs, orders and locations that contain the text. */
+    function search(q, {products, orders, pickings, quants}){
+      const t = String(q || "").trim().toLowerCase(); if (t.length < 2) return [];
+      const hit = s => String(s || "").toLowerCase().includes(t), out = [];
+      (products || []).forEach(p => { if (hit(p.sku) || hit(p.description)) out.push({kind: "SKU", id: p.sku, label: p.description || p.sku}); });
+      [...new Set(orders || [])].forEach(o => { if (hit(o)) out.push({kind: "Order", id: o, label: "Sales order"}); });
+      (pickings || []).forEach(p => { if (hit(p.name) || hit(p.origin)) out.push({kind: "Transfer", id: p.name, label: [p.slot_type, String(p.scheduled_date).slice(0, 16).replace("T", " ")].filter(Boolean).join(" · ")}); });
+      [...new Set((quants || []).map(x => x.location))].forEach(l => { if (hit(l)) out.push({kind: "Location", id: l, label: "Stock location"}); });
+      return out.slice(0, 12);
+    }
+    /* Per card source: the Odoo export in Master Data when it has rows, else the sample (flagged sample).
+       md: {odoo_move_lines, odoo_quants, odoo_location_counts, odoo_pickings, temperature_zones, products};
+       orderLines: the Forecast's cleaned Odoo sales order lines (orderSample: they are the bundled sample). */
+    function sources({md, orderLines, orderSample, fixture, today}){
+      const S = resolveSample(fixture || {}, today), pick = (rows, sample) => (rows && rows.length ? {rows, sample: false} : {rows: sample, sample: true});
+      return {
+        orders: {rows: orderLines || [], sample: !!orderSample},
+        moveLines: pick(md.odoo_move_lines, S.moveLines), quants: pick(md.odoo_quants, S.quants), counts: pick(md.odoo_location_counts, S.counts),
+        pickings: pick(md.odoo_pickings, S.pickings), zones: {rows: md.temperature_zones || [], sample: false},
+        certificates: {rows: S.certificates, sample: true}, pickTime: {value: S.pickTime, sample: true}, relabeling: {value: S.relabeling, sample: true},
+      };
+    }
+    return {resolveSample, sources, mtd, ordersKpi, unitsKpi, accuracyKpi, ordersByMarket, unitsByMonth, stockByZone, ZONES, dockDay, dockDays, certificatesDue,
+      pickGauge, progress, search, addDays, monthLabel};
+  })();
+
+  return {FACTORS, SURCHARGES, memo, invalidate, ops: OPS, version: () => VERSION, toEUR, fromEUR, shipmentOf, chargeable, freight, landedCost, isExpired, liveQuotes,
     candidateQuotes, bestLanded, quoteStats, median, rfqShipmentCost, helmondComparison, scenarioImpact};
 });

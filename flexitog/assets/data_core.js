@@ -18,6 +18,7 @@
     {name: "status", field: "data_status", type: "enum", allowed: ["confirmed", "estimate"], desc: "confirmed or estimate. Blank = estimate"},
   ];
   const PCT = {type: "number", min: 0, max: 100, unit: "%"};
+  const headKey = h => String(h ?? "").replace(/\(.*?\)|\[.*?\]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
 
   // The ten data types. table = Master Data table, rows = which rows of that table belong to the type.
   const TEMPLATES = {
@@ -110,12 +111,61 @@
       {name: "shipmentUnits", field: "shipment_units", type: "int", min: 1, max: 1e7, desc: "Garments per shipment in Landed Cost. Blank = keep current", example: 500},
     ]},
   };
-  Object.values(TEMPLATES).forEach(t => { t.columns = t.columns.concat(PROVENANCE); });
+  // Odoo exports. Headers: the technical field name (import-compatible export) or the English label of a normal
+  // export; codes or labels for the selections ("Receipt" = incoming, "Done" = done).
+  const CODE = {incoming: ["incoming", "receipt", "receipts"], outgoing: ["outgoing", "delivery", "deliveries", "delivery orders"], internal: ["internal", "internal transfer", "internal transfers"]};
+  const STATE = {draft: ["draft"], waiting: ["waiting", "waiting another operation"], confirmed: ["confirmed", "waiting availability"], assigned: ["assigned", "ready"], done: ["done"], cancel: ["cancel", "cancelled"]};
+  Object.assign(TEMPLATES, {
+    odooPickings: {label: "Odoo transfers (stock.picking)", table: "odoo_pickings", columns: [
+      {name: "name", field: "name", type: "text", required: true, aliases: ["Reference"], example: "HLM/OUT/01234"},
+      {name: "picking_type_code", field: "picking_type_code", type: "enum", required: true, allowed: ["incoming", "outgoing", "internal"], values: CODE, aliases: ["Type of Operation"], example: "outgoing"},
+      {name: "scheduled_date", field: "scheduled_date", type: "datetime", required: true, aliases: ["Scheduled Date"], example: "2026-11-03 09:30"},
+      {name: "date_done", field: "date_done", type: "datetime", aliases: ["Date of Transfer", "Effective Date", "Date Done"]},
+      {name: "state", field: "state", type: "enum", required: true, allowed: Object.keys(STATE), values: STATE, aliases: ["Status"], example: "assigned"},
+      {name: "origin", field: "origin", type: "text", aliases: ["Source Document"], example: "S01234"},
+      {name: "partner_id/country_id", field: "partner_country", type: "country", aliases: ["Contact/Country", "Partner/Country"], example: "Netherlands"},
+      {name: "x_dock", field: "dock", type: "text", aliases: ["Dock"], desc: "Custom field. Blank = unassigned", example: "Dock 2"},
+      {name: "x_slot_type", field: "slot_type", type: "enum", allowed: ["inbound", "outbound", "quality"], aliases: ["Slot type"], desc: "Blank = from the operation type"},
+      {name: "x_slot_minutes", field: "slot_minutes", type: "int", min: 5, max: 1440, aliases: ["Slot minutes"], desc: "Blank = 60"},
+    ]},
+    odooMoveLines: {label: "Odoo move lines (stock.move.line)", table: "odoo_move_lines", columns: [
+      {name: "picking_id", field: "picking", type: "text", aliases: ["Transfer", "Reference"], example: "HLM/OUT/01234"},
+      {name: "product_id/default_code", field: "sku", type: "text", required: true, aliases: ["Product/Internal Reference", "Internal Reference"], example: "FT-JKT-100"},
+      {name: "quantity", field: "quantity", type: "number", required: true, min: 0, max: 1e7, aliases: ["Quantity", "qty_done", "Quantity Done", "Done"], example: 24},
+      {name: "date", field: "date", type: "datetime", required: true, aliases: ["Date"], example: "2026-10-14 11:05"},
+      {name: "picking_code", field: "picking_code", type: "enum", required: true, allowed: ["incoming", "outgoing", "internal"], values: CODE, aliases: ["Type of Operation", "picking_type_id/code"], example: "outgoing"},
+      {name: "state", field: "state", type: "enum", allowed: Object.keys(STATE), values: STATE, aliases: ["Status"], desc: "Blank = done"},
+      {name: "location_id", field: "location_from", type: "text", aliases: ["From", "Source Location"]},
+      {name: "location_dest_id", field: "location_to", type: "text", aliases: ["To", "Destination Location"]},
+    ]},
+    odooQuants: {label: "Odoo stock (stock.quant)", table: "odoo_quants", columns: [
+      {name: "product_id/default_code", field: "sku", type: "text", required: true, aliases: ["Product/Internal Reference", "Internal Reference"], example: "FT-JKT-100"},
+      {name: "product_categ_id", field: "category", type: "text", required: true, aliases: ["Product Category", "Product/Product Category"], example: "All / Freezer wear"},
+      {name: "location_id", field: "location", type: "text", required: true, aliases: ["Location"], example: "HLM/Stock/F-01-02"},
+      {name: "quantity", field: "quantity", type: "number", required: true, min: -1e7, max: 1e7, aliases: ["Quantity", "On Hand Quantity", "inventory_quantity_auto_apply"], example: 120},
+      {name: "reserved_quantity", field: "reserved_quantity", type: "number", min: 0, max: 1e7, aliases: ["Reserved Quantity"]},
+    ]},
+    odooCounts: {label: "Odoo location counts (physical inventory)", table: "odoo_location_counts", columns: [
+      {name: "location_id", field: "location", type: "text", required: true, aliases: ["Location"], example: "HLM/Stock/F-01-02"},
+      {name: "product_id/default_code", field: "sku", type: "text", required: true, aliases: ["Product/Internal Reference", "Internal Reference"], example: "FT-JKT-100"},
+      {name: "last_count_date", field: "count_date", type: "date", required: true, aliases: ["Last Count Date", "inventory_date", "Scheduled Date", "Count date"], example: "2026-10-12"},
+      {name: "quantity", field: "system_quantity", type: "number", required: true, min: -1e7, max: 1e7, aliases: ["On Hand Quantity", "Quantity", "System quantity"], example: 120},
+      {name: "inventory_quantity", field: "counted_quantity", type: "number", required: true, min: 0, max: 1e7, aliases: ["Counted Quantity", "Counted quantity"], example: 118},
+    ]},
+    zones: {label: "Temperature zones", table: "temperature_zones", columns: [
+      {name: "categoryMatch", field: "category_match", type: "text", required: true, desc: "Text in the Odoo product category", example: "Freezer"},
+      {name: "zone", field: "zone", type: "enum", required: true, allowed: ["freezer", "chiller", "ppe"], example: "freezer"},
+    ]},
+  });
+  // Odoo exports carry their own "Status" (the state): there the provenance column is called dataStatus.
+  Object.values(TEMPLATES).forEach(t => {
+    const clash = t.columns.some(c => [c.name].concat(c.aliases || []).some(h => headKey(h) === "status"));
+    t.columns = t.columns.concat(PROVENANCE.map(c => (clash && c.field === "data_status" ? Object.assign({}, c, {name: "dataStatus"}) : c)));
+  });
   const TYPES = Object.keys(TEMPLATES);
 
   // ---- parsing
   const blank = v => v === null || v === undefined || (typeof v === "number" && Number.isNaN(v)) || String(v).trim() === "";
-  const headKey = h => String(h ?? "").replace(/\(.*?\)|\[.*?\]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
   const UNIT_WORDS = {"kg": ["kg", "kgs"], "cm": ["cm"], "%": ["%", "pct", "percent"], "EUR": ["eur", "€"], "days": ["days", "day", "d"],
     "currency": ["eur", "usd", "€", "$"], "USD per EUR": []};
   function parseNumber(v, unit){
@@ -143,6 +193,15 @@
     if (+y < 1990 || +y > 2100) return null;
     return dt.toISOString().slice(0, 10);
   }
+  // Date and time, local: YYYY-MM-DD HH:MM[:SS], DD-MM-YYYY HH:MM, ISO with T, Excel serial, or a date alone (00:00).
+  function parseDateTimeStrict(v){
+    if (typeof v === "number" && v > 20000 && v < 80000) { const ms = Math.round((v - 25569) * 86400000); return new Date(ms).toISOString().slice(0, 16); }
+    const s = String(v).trim(), m = s.match(/^(.+?)[ T](\d{1,2}):(\d{2})(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?$/);
+    const d = parseDateStrict(m ? m[1] : s); if (!d) return null;
+    if (!m) return d + "T00:00";
+    if (+m[2] > 23 || +m[3] > 59) return null;
+    return `${d}T${m[2].padStart(2, "0")}:${m[3]}`;
+  }
   function parseBoolStrict(v){
     if (typeof v === "boolean") return v;
     const s = String(v).trim().toLowerCase();
@@ -159,7 +218,7 @@
     const T = TEMPLATES[type], errors = [], out = [];
     if (!T) return {ok: false, errors: [{row: 0, column: "", message: `Unknown data type ${type}`}], rows: []};
     const heads = (table.headers || []).map(h => String(h ?? "").trim());
-    const byKey = new Map(T.columns.map(c => [headKey(c.name), c]));
+    const byKey = new Map(T.columns.flatMap(c => [c.name].concat(c.aliases || []).map(h => [headKey(h), c])));
     const colIdx = {};
     heads.forEach((h, i) => {
       if (!h) return;
@@ -189,10 +248,13 @@
           if (c.max != null && v > c.max) return err(`${v} is above the maximum ${c.max}${c.unit === "%" ? "%" : ""}${c.unit === "%" ? " (rates are in %, e.g. 12 for 12%)" : ""}`);
         } else if (c.type === "date") {
           v = parseDateStrict(raw); if (!v) return err(`"${raw}" is not a valid date. Use YYYY-MM-DD`);
+        } else if (c.type === "datetime") {
+          v = parseDateTimeStrict(raw); if (!v) return err(`"${raw}" is not a valid date and time. Use YYYY-MM-DD HH:MM`);
         } else if (c.type === "bool") {
           v = parseBoolStrict(raw); if (v === null) return err(`"${raw}" is not true or false`);
         } else if (c.type === "enum") {
-          const hit = c.allowed.find(a => a.toLowerCase() === String(raw).trim().toLowerCase());
+          const low = String(raw).trim().toLowerCase();
+          const hit = c.allowed.find(a => a.toLowerCase() === low || (c.values && (c.values[a] || []).includes(low)));
           if (!hit) return err(`"${raw}" is not one of ${c.allowed.join(", ")}`);
           v = hit;
         } else if (c.type === "country") {
@@ -216,8 +278,10 @@
     return {ok: !errors.length, errors, rows: errors.length ? [] : out};
   }
   const KEYS = {suppliers: o => o.supplier_id, products: o => o.sku, customers: o => o.customer_id, logisticsProviders: o => (o.dc_id || "").toUpperCase() || "name:" + String(o.name).toLowerCase(),
-    lanes: o => o.lane_id, quotes: o => o.quote_id, countries: o => o.country, settings: () => "main", salesHistory: o => o.order_id && o.sku ? o.order_id + "|" + o.sku : null};
-  const KEY_COL = {suppliers: "supplierId", products: "sku", customers: "customerId", logisticsProviders: "name", lanes: "laneId", quotes: "quoteId", countries: "name", settings: "eurUsdRate", salesHistory: "orderId"};
+    lanes: o => o.lane_id, quotes: o => o.quote_id, countries: o => o.country, settings: () => "main", salesHistory: o => o.order_id && o.sku ? o.order_id + "|" + o.sku : null,
+    odooPickings: o => o.name, odooQuants: o => o.sku + "|" + o.location, odooCounts: o => o.location + "|" + o.sku + "|" + o.count_date, zones: o => String(o.category_match).toLowerCase()};
+  const KEY_COL = {suppliers: "supplierId", products: "sku", customers: "customerId", logisticsProviders: "name", lanes: "laneId", quotes: "quoteId", countries: "name", settings: "eurUsdRate", salesHistory: "orderId",
+    odooPickings: "name", odooQuants: "location_id", odooCounts: "last_count_date", zones: "categoryMatch"};
   const slug = s => String(s || "").toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-|-$/g, "");
 
   // Checks across columns and against Master Data; fills generated ids.
@@ -256,6 +320,12 @@
       return errs;
     },
     countries(rows){ rows.forEach(r => { if (r.target == null) r.target = true; }); return []; },
+    odooPickings(rows){ rows.forEach(r => { if (!r.slot_type) r.slot_type = r.picking_type_code === "incoming" ? "inbound" : r.picking_type_code === "outgoing" ? "outbound" : "quality"; if (r.slot_minutes == null) r.slot_minutes = 60; }); return []; },
+    odooMoveLines(rows){   // no id in the export: transfer, product, time, locations, quantity and the position among equal lines
+      const seen = {};
+      rows.forEach(r => { const k = [r.picking || "", r.sku, r.date, r.location_from || "", r.location_to || "", r.quantity].join("|"); seen[k] = (seen[k] || 0) + 1; r.line_id = k + "|" + seen[k]; if (!r.state) r.state = "done"; });
+      return [];
+    },
   };
 
   /* Rows ready for the Master Data table: provenance defaults, ids for new providers. */
@@ -282,7 +352,9 @@
 
   /* Merge into the table: update by key, add new; replace = drop the type's other rows first. */
   const TABLE_KEY = {suppliers: r => r.supplier_id, products: r => r.sku, customers: r => r.customer_id, distribution_centers: r => r.dc_id,
-    lanes: r => r.lane_id, quotes: r => r.quote_id, countries: r => r.country, settings: r => r.settings_id || "main", sales_history: r => r.order_id + "|" + r.sku};
+    lanes: r => r.lane_id, quotes: r => r.quote_id, countries: r => r.country, settings: r => r.settings_id || "main", sales_history: r => r.order_id + "|" + r.sku,
+    odoo_pickings: r => r.name, odoo_move_lines: r => r.line_id, odoo_quants: r => r.sku + "|" + r.location, odoo_location_counts: r => r.location + "|" + r.sku + "|" + String(r.count_date).slice(0, 10),
+    temperature_zones: r => String(r.category_match).toLowerCase()};
   function mergeInto(type, tableRows, incoming, replace){
     const T = TEMPLATES[type], key = TABLE_KEY[T.table];
     const mine = T.rows || (() => true);
@@ -309,7 +381,7 @@
   }
   function fieldSheet(type){
     return TEMPLATES[type].columns.map(c => ({column: c.name, required: c.required ? "yes" : "no", type: c.type === "enum" ? "one of: " + c.allowed.join(" / ") : c.type === "country" ? "country (ISO2 or name)" : c.type,
-      unit: c.unit || "", range: c.min != null || c.max != null ? `${c.min ?? ""} to ${c.max ?? ""}` : "", description: c.desc || "", example: c.example ?? ""}));
+      unit: c.unit || "", "also accepted": (c.aliases || []).join(" / "), range: c.min != null || c.max != null ? `${c.min ?? ""} to ${c.max ?? ""}` : "", description: c.desc || "", example: c.example ?? ""}));
   }
 
   // ---- provenance and coverage
@@ -349,5 +421,5 @@
   const targets = countryRows => (countryRows || []).filter(r => r.target !== false && String(r.target).toLowerCase() !== "false").map(r => String(r.country).toUpperCase());
 
   return {TEMPLATES, TYPES, PROVENANCE, validateFile, toTableRows, mergeInto, exportRows, fieldSheet, typeStatus, coverage, targets, statusOf,
-    parseNumber, parseDateStrict, headKey};
+    parseNumber, parseDateStrict, parseDateTimeStrict, headKey};
 });

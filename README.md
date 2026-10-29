@@ -336,6 +336,40 @@ Export view (top bar, every view but Home and Users): the tables on screen as an
 table) or one CSV, headed by the view, who exported it and when, the data date (last Master Data save and
 newest source date) and the active filters.
 
+### Theme and the Odoo data for the operations overview
+
+Theme: `flexitog/assets/theme.css` holds every colour, font, shape and motion token (light, dark and the
+light-only `--print-*` set for PDF, Word and the HTML report). No component holds a hex value: CSS uses
+`var(--...)`, canvases and exported documents read tokens with `tok("--name")`. Brand tokens: bg, wash,
+surface, surface-2, text, muted, line, navy, navy-2, ice, ice-soft, warn, warn-soft, green, green-soft, bar;
+the older names (ground, ink, rule, accent ...) map onto them. Font Manrope (400 to 800) when the device has
+it, else system-ui; no font file is bundled. Cards 24 px radius, 20 px padding, soft shadow, lift 5 px on
+hover; pills fully rounded; labels in sentence case; prefers-reduced-motion switches motion off. The theme
+follows the system; the theme button in the top bar cycles system, light and dark (kept per viewer).
+
+Odoo data (Master Data > Data upload, export from Odoo as CSV or Excel; headers may be the technical field
+names of an import-compatible export or the English labels of a normal export):
+- Odoo transfers, `stock.picking`: name, picking_type_code, scheduled_date, date_done, state, origin,
+  partner_id/country_id, and the custom fields x_dock, x_slot_type, x_slot_minutes. Dock schedule.
+- Odoo move lines, `stock.move.line`: picking_id, product_id/default_code, quantity (qty_done), date,
+  picking_code, state, location_id, location_dest_id. Done outgoing lines = units shipped.
+- Odoo stock, `stock.quant`: product_id/default_code, product_categ_id, location_id, quantity,
+  reserved_quantity. Stock by temperature zone.
+- Odoo location counts (physical inventory): location_id, product_id/default_code, last_count_date, quantity,
+  inventory_quantity. Location accuracy.
+- Temperature zones: categoryMatch, zone (freezer -5 to -50°C, chiller +10 to -5°C, ppe). A product category
+  containing the text joins the zone.
+Orders and markets read the Odoo sales order lines the Forecast already loads (one source).
+
+The figures live in `calc.js` (`FlexiCalc.ops`): month to date against the same days of last month; a source
+whose last record is in an earlier month is measured at that day. Location accuracy = location counts with no
+difference / location counts. Days of cover = units on hand in the zone / average daily units shipped of those
+SKUs over the last 90 days; under 21 days is a warning. Until an export is uploaded, each figure uses
+`flexitog/assets/data/ops_sample.json` (written by `tools/build_ops_sample.py`, dates as day offsets from
+today) and is marked sample. The same file holds the facts Odoo has no field for yet: pick time per line,
+relabeling progress and certificate expiry dates. The overview screen itself waits for the reference design
+(`design/flexitog-reference.html`).
+
 ### Menu, master data and report extract
 
 The menu button (three lines, top left) opens Home, Route Dashboard, Forecast, Benchmarking, Report

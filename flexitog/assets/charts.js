@@ -1,6 +1,6 @@
 /* FlexiTog dashboard: SVG chart helpers shared by the Benchmarking and Forecast views.
  * Plain SVG strings, no library. Screen charts use the page's CSS tokens (light and dark); print charts
- * (PDF, Word) use fixed hex colours and render to PNG through a canvas.
+ * (PDF, Word) use the --print-* tokens of theme.css and render to PNG through a canvas.
  * Uses the main script's esc() and fmt().
  */
 (function (root) {
@@ -8,8 +8,9 @@
 const PAL = {
   screen: {ink: "var(--ink)", muted: "var(--muted)", rule: "var(--rule)", TR: "var(--r-TR)", NAF: "var(--r-NAF)", GCC: "var(--r-GCC)", OTH: "var(--r-OTH)",
            q: ["var(--q1)", "var(--q2)", "var(--q3)", "var(--q4)", "var(--q5)"], accent: "var(--accent)", font: "var(--mono)", bg: null, band: "color-mix(in srgb,var(--accent) 22%,transparent)"},
-  print: {ink: "#14212c", muted: "#56636f", rule: "#d9dfe4", TR: "#2a78d6", NAF: "#eb6834", GCC: "#1baf7a", OTH: "#8a8984",
-          q: ["#b9b0ea", "#8070d6", "#6553c7", "#4f3db0", "#281d66"], accent: "#1f3a55", font: "Arial, Helvetica, sans-serif", bg: "#ffffff", band: "#e2e9f0"},
+  // Print charts render to PNG for PDF and Word: the --print-* tokens of theme.css, always light.
+  get print(){ const t = n => tok("--print-" + n); return {ink: t("ink"), muted: t("muted"), rule: t("rule"), TR: t("r-TR"), NAF: t("r-NAF"), GCC: t("r-GCC"), OTH: t("r-OTH"),
+    q: [1, 2, 3, 4, 5].map(i => t("q" + i)), accent: t("accent"), font: "Arial, Helvetica, sans-serif", bg: t("bg"), band: t("band")}; },
 };
 function sfmt(v){ const a = Math.abs(v); return a >= 1e6 ? (v / 1e6).toFixed(a >= 1e7 ? 0 : 1) + "M" : a >= 1e4 ? Math.round(v / 1e3) + "k" : a >= 1e3 ? (v / 1e3).toFixed(1) + "k" : String(Math.round(v * 10) / 10); }
 // Nice axis from min (0 or below) to max: about n steps of 1, 2, 2.5 or 5 x 10^k.
@@ -118,7 +119,7 @@ function svgToPng(svg, w, h, scale){
     img.onload = () => {
       try {
         const c = document.createElement("canvas"); c.width = w * scale; c.height = h * scale;
-        const g = c.getContext("2d"); g.fillStyle = "#ffffff"; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
+        const g = c.getContext("2d"); g.fillStyle = tok("--print-bg"); g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
         const url = c.toDataURL("image/png"), bin = atob(url.split(",")[1]), bytes = new Uint8Array(bin.length);
         for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
         res({url, bytes, w, h});
