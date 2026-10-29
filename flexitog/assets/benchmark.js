@@ -56,7 +56,7 @@ const optLabel = (f, v) => { const o = optsOf(f).find(x => x[0] === v); return o
 
 // ============================================================ storage: the shared layer in workspace.js (DataStore)
 async function save(name, value, okMsg){
-  try { const where = await DataStore.set(name, value); if (okMsg) toast(okMsg + (where === "artifact" ? " (saved with the dashboard)" : " (saved in this browser)")); return true; }
+  try { const where = await DataStore.set(name, value); if (okMsg) toast(where === "pending" ? `${okMsg}. ${PENDING_NOTE}` : okMsg + (where === "artifact" ? " (saved with the dashboard)" : " (saved in this browser)")); return true; }
   catch (e) { toast(storeErrorText(e), "bad"); return false; }
 }
 let settingsTimer = null;
@@ -1501,7 +1501,7 @@ async function init(){
     Object.values(B.rfq).forEach(st => (st.uploads || []).forEach(u => { const x = byRef[u.ref]; if (x) { u.values = x.values || {}; u.rates = x.rates || R.rateTable(u.values); } else u.values = u.values || {}; }));
     // Before Master Data held the providers, Benchmarking kept its own list ("providers"). Move it over once.
     if (rfqstate === undefined && Array.isArray(oldProv) && oldProv.length) {
-      try { const n = await migrateOldProviders(oldProv, oldResp); if (n) toast(`${n} provider${n === 1 ? "" : "s"} moved from Benchmarking into Master Data`); }
+      try { const n = await migrateOldProviders(oldProv, oldResp); await Saver.save(); if (n) toast(`${n} provider${n === 1 ? "" : "s"} moved from Benchmarking into Master Data`); }
       catch (e) { console.error(e); toast("Moving the old provider list into Master Data failed: " + (e.message || e), "bad"); }
     }
     B.goals = goals === undefined ? clone(DEFAULT_GOALS) : goals;

@@ -236,7 +236,52 @@ function metaDoc(){
   Object.entries(MD.saved).forEach(([k, v]) => { if (v.where === "artifact") ents[k] = {chunks: v.chunks, updated: v.updated, rows: MD.t[k].length}; });
   return {version: 1, entities: ents, custom: MD.custom.map(c => ({id: c.id, name: c.name, columns: c.columns, chunks: c.chunks, updated: c.updated}))};
 }
-async function persist(key){
+// ============================================================ manual save: every change waits for the Save button
+// Master Data drafts, uploads, table resets, other datasets, Benchmarking, Forecast settings and Route Dashboard
+// edits are held: the views run on them at once, and the Save button at the top left (or Ctrl+S, Cmd+S) writes them
+// all to the artifact database or this browser. Leaving the page with unsaved changes asks first. View preferences
+// (tabs, filters, theme), login accounts and original files kept in IndexedDB save at once, as before.
+const Saver = {
+  jobs: new Map(),                                  // id -> write function; a later change to the same id replaces it
+  busy: false,
+  later(id, fn){ Saver.jobs.set(id, fn); Saver.paint(); return "pending"; },
+  count(){ return Saver.jobs.size + Object.keys(MDUI.draft).length; },
+  // write the given jobs now; a failed one stays pending and the first error is thrown after the rest ran
+  async run(ids){
+    let err = null;
+    while (!STORE.ready) await new Promise(r => setTimeout(r, 60));   // the artifact database answers first, or writes would land in the browser
+    for (const id of ids) {
+      const fn = Saver.jobs.get(id); if (!fn) continue;
+      Saver.jobs.delete(id);
+      try { await fn(); } catch (e) { if (!Saver.jobs.has(id)) Saver.jobs.set(id, fn); err = err || e; }
+    }
+    Saver.paint();
+    if (err) throw err;
+    return STORE.where;
+  },
+  async save(){
+    if (Saver.busy) return;
+    const drafts = Object.keys(MDUI.draft);
+    if (!drafts.length && !Saver.jobs.size) { toast("Everything is saved"); return; }
+    Saver.busy = true; Saver.paint();
+    drafts.forEach(k => { MD.t[k] = MDUI.draft[k]; delete MDUI.draft[k]; persist(k); });
+    if (drafts.length) { clearSel(); masterDataChanged(drafts); }
+    try { const where = await Saver.run([...Saver.jobs.keys()]); toast(where === "artifact" ? "All changes saved with the dashboard" : "All changes saved in this browser"); }
+    catch (e) { toast(storeErrorText(e), "bad"); }
+    Saver.busy = false; Saver.paint(); renderStoreStatus();
+  },
+  paint(){
+    const b = $("saveBtn"); if (!b) return;
+    const n = Saver.count(), c = b.querySelector(".savecnt");
+    b.classList.toggle("dirty", n > 0); b.disabled = Saver.busy;
+    c.textContent = n > 99 ? "99+" : String(n); c.hidden = !n;
+    const what = Saver.busy ? "Saving" : n ? `Save ${n} unsaved change${n === 1 ? "" : "s"}` : "All changes saved";
+    b.setAttribute("aria-label", what + (Saver.busy || !n ? "" : " (Ctrl+S)")); b.title = b.getAttribute("aria-label");
+  },
+};
+const PENDING_NOTE = "Press Save at the top left to keep it.";
+async function persist(key){ return Saver.later("md:" + key, () => writeTable(key)); }
+async function writeTable(key){
   const updated = nowIso();
   if (STORE.db) {
     const db = STORE.db, parts = chunks(MD.t[key]), old = (MD.saved[key] && MD.saved[key].chunks) || 0;
@@ -250,15 +295,19 @@ async function persist(key){
   MD.saved[key] = {updated, where: "browser"};
   return "browser";
 }
-async function unpersist(key){
+async function unpersist(key){ return Saver.later("md:" + key, () => removeTable(key)); }
+async function removeTable(key){
   if (STORE.db) {
     const old = (MD.saved[key] && MD.saved[key].chunks) || 0;
     for (let i = 0; i < old; i++) await STORE.db.doc(`md/${key}__${i}`).delete();
     delete MD.saved[key]; await STORE.db.doc("mdmeta/state").set(metaDoc());
   } else { try { localStorage.removeItem(MD_LOCAL + key); } catch (e) {} delete MD.saved[key]; }
 }
-async function persistCustom(){
+const CUSTOM_GONE = [];                             // deleted datasets whose saved rows go on the next Save
+async function persistCustom(){ return Saver.later("custom", writeCustom); }
+async function writeCustom(){
   if (STORE.db) {
+    while (CUSTOM_GONE.length) { const c = CUSTOM_GONE[0]; for (let i = 0; i < (c.chunks || 0); i++) await STORE.db.doc(`mdc/${c.id}__${i}`).delete(); CUSTOM_GONE.shift(); }
     for (const c of MD.custom) {
       if (c._saved) continue;
       const parts = chunks(c.rows), old = c.chunks || 0;
@@ -277,7 +326,9 @@ async function persistCustom(){
 const DS_LOCAL = "flexitog-bench-v1:";
 const DataStore = {
   chunks: {},
+  pending: new Map(),                               // name -> {value} held until Save (value undefined: deleted)
   async get(name){
+    if (DataStore.pending.has(name)) return DataStore.pending.get(name).value;
     if (STORE.db) {
       const m = await STORE.db.doc("bench/" + name).get();
       if (!m.exists) return undefined;
@@ -291,6 +342,14 @@ const DataStore = {
     try { const v = localStorage.getItem(DS_LOCAL + name); return v == null ? undefined : JSON.parse(v); } catch (e) { return undefined; }
   },
   async set(name, value){
+    const held = {value}; DataStore.pending.set(name, held);
+    return Saver.later("ds:" + name, async () => { await DataStore.write(name, value); if (DataStore.pending.get(name) === held) DataStore.pending.delete(name); });
+  },
+  async del(name){
+    const held = {value: undefined}; DataStore.pending.set(name, held);
+    return Saver.later("ds:" + name, async () => { await DataStore.remove(name); if (DataStore.pending.get(name) === held) DataStore.pending.delete(name); });
+  },
+  async write(name, value){
     const updated = new Date().toISOString();
     if (STORE.db) {
       if (Array.isArray(value)) {
@@ -305,7 +364,7 @@ const DataStore = {
     localStorage.setItem(DS_LOCAL + name, JSON.stringify(value));
     return "browser";
   },
-  async del(name){
+  async remove(name){
     if (STORE.db) {
       for (let i = 0; i < (DataStore.chunks[name] || 0); i++) await STORE.db.doc(`benchrows/${name}__${i}`).delete();
       delete DataStore.chunks[name]; await STORE.db.doc("bench/" + name).delete();
@@ -443,7 +502,7 @@ const MDUI = {tab: "products", draft: {}, page: 0, filter: "", typeFilter: "all"
 const PAGE = 50;
 const rowsOf = key => MDUI.draft[key] || MD.t[key];
 const isDirty = key => !!MDUI.draft[key];
-function draftOf(key){ if (!MDUI.draft[key]) MDUI.draft[key] = clone(MD.t[key]); return MDUI.draft[key]; }
+function draftOf(key){ if (!MDUI.draft[key]) { MDUI.draft[key] = clone(MD.t[key]); Saver.paint(); } return MDUI.draft[key]; }
 function fieldsOf(key){
   const base = SCHEMA[key].fields.map(f => f.name);
   const extra = new Set(); rowsOf(key).forEach(r => Object.keys(r).forEach(k => { if (!base.includes(k) && k !== "data_source" && !k.startsWith("_")) extra.add(k); }));
@@ -657,7 +716,7 @@ function renderTable(key){
   P.querySelector('[data-a="reset"]').addEventListener("click", async () => {
     if (!confirmInline(P.querySelector('[data-a="reset"]'), "Click again to reset this table to the built-in data")) return;
     delete MDUI.draft[key]; MD.t[key] = clone(MD_BUILTIN[key]); clearSel();
-    try { await unpersist(key); toast("Reset to built-in data"); } catch (e) { toast(storeErrorText(e), "bad"); }
+    await unpersist(key); toast("Reset to built-in data. " + PENDING_NOTE);
     masterDataChanged([key]);
   });
   const disc = P.querySelector('[data-a="discard"]'); if (disc) disc.addEventListener("click", () => { delete MDUI.draft[key]; clearSel(); renderMD(); });
@@ -914,7 +973,7 @@ async function saveTable(key){
   const btn = $("mdPanel").querySelector('[data-a="save"]'); if (btn) { btn.disabled = true; btn.textContent = "Saving…"; }
   const prev = MD.t[key];
   MD.t[key] = MDUI.draft[key]; delete MDUI.draft[key];
-  try { const where = await persist(key); toast(where === "artifact" ? "Saved with the dashboard" : "Saved in this browser"); }
+  try { persist(key); const where = await Saver.run(["md:" + key]); toast(where === "artifact" ? "Saved with the dashboard" : "Saved in this browser"); }
   catch (e) { MD.t[key] = prev; MDUI.draft[key] = clone(MD.t[key]); toast(storeErrorText(e), "bad"); renderMD(); return; }
   masterDataChanged([key]);
 }
@@ -1017,8 +1076,8 @@ async function applyUpload(){
   log[P.type] = {at: nowIso(), file: P.file, rows: P.rows.length, added: res.added, updated: res.updated, removed: res.removed, by: window.Auth && Auth.user() ? Auth.user().username : ""};
   try { await DataStore.set("uploads", log); } catch (e) {}
   UPL.busy = false; UPL.pending = null;
-  UPL.result = `<div class="upok"><h3>Saved: ${esc(P.file)}</h3><p>${res.added} added, ${res.updated} updated${replace ? `, ${res.removed} removed` : ""}. Every view now uses the new data.</p></div>`;
-  toast(`${T.label}: ${P.rows.length} row${P.rows.length === 1 ? "" : "s"} saved`);
+  UPL.result = `<div class="upok"><h3>Loaded: ${esc(P.file)}</h3><p>${res.added} added, ${res.updated} updated${replace ? `, ${res.removed} removed` : ""}. Every view now uses the new data. ${PENDING_NOTE}</p></div>`;
+  toast(`${T.label}: ${P.rows.length} row${P.rows.length === 1 ? "" : "s"} loaded. ${PENDING_NOTE}`);
   clearSel(); masterDataChanged([T.table]);
 }
 
@@ -1129,13 +1188,13 @@ function renderCustom(){
         const name = book.names.length > 1 ? `${file.name} · ${n}` : file.name;
         MD.custom.unshift({id: "c" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name, columns, rows, updated: nowIso()});
       }
-      await persistCustom(); toast("Dataset saved"); renderMD(); renderStoreStatus();
+      await persistCustom(); toast("Dataset added. " + PENDING_NOTE); renderMD(); renderStoreStatus();
     } catch (err) { toast(err.message || storeErrorText(err), "bad"); }
   });
   $("mdPanel").querySelectorAll("[data-cx]").forEach(b => b.addEventListener("click", () => { const c = MD.custom[+b.dataset.cx]; saveFile(c.name.replace(/[^\w.-]+/g, "_").replace(/\.(xlsx?|csv|txt)$/i, "") + ".csv", "﻿" + toCsv(c.columns, c.rows)); }));
   $("mdPanel").querySelectorAll("[data-cd]").forEach(b => b.addEventListener("click", async () => {
     const c = MD.custom.splice(+b.dataset.cd, 1)[0];
-    try { if (STORE.db) for (let i = 0; i < (c.chunks || 0); i++) await STORE.db.doc(`mdc/${c.id}__${i}`).delete(); await persistCustom(); toast("Dataset deleted"); } catch (e) { toast(storeErrorText(e), "bad"); }
+    CUSTOM_GONE.push(c); await persistCustom(); toast("Dataset deleted. " + PENDING_NOTE);
     renderMD();
   }));
 }
@@ -1207,6 +1266,14 @@ new MutationObserver(list => {
   if (nodes.size) requestAnimationFrame(() => nodes.forEach(n => { if (n.isConnected) rollIn(n); }));
 }).observe(document.body, {childList: true, subtree: true});
 requestAnimationFrame(() => rollIn(document.body));
+
+// ============================================================ the Save button, Ctrl+S / Cmd+S, and the leave warning
+$("saveBtn").addEventListener("click", () => Saver.save());
+document.addEventListener("keydown", e => {
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "s") { e.preventDefault(); Saver.save(); }
+});
+window.addEventListener("beforeunload", e => { if (Saver.count()) { e.preventDefault(); e.returnValue = ""; } });
+Saver.paint();
 
 // ============================================================ colour theme: system, light or dark (per viewer)
 const THEMES = [["system", "System", "follows the system"], ["light", "Light", "light"], ["dark", "Dark", "dark"]];

@@ -407,6 +407,13 @@ Extract, Master Data Upload, Users (admin only) and Parameters, plus shortcuts t
 - Saving: in the published artifact, saved tables are stored with the dashboard and everyone who opens
   it sees them. Opened as a local file, they stay in that browser. Export the master data workbook to
   move data into the Python tool (Import data accepts it sheet by sheet).
+- Save button (disk icon next to Home, top left): every change waits for it. Master Data drafts, uploads,
+  table resets, other datasets, Benchmarking (RFQ status, goals, settings, sales sources), Forecast settings
+  and Route Dashboard edits apply to the views at once and are written only on Save, or Ctrl+S (Cmd+S on a
+  Mac). The button turns navy with a count of unsaved changes and reads "All changes saved" when nothing is
+  held. Leaving or reloading the page with unsaved changes asks first. A table's own Save changes button
+  still saves that one table. View preferences (tabs, filters, theme), login accounts and original RFQ
+  files save at once. The code is `Saver` in `workspace.js`.
 - Report extract: a standard cross-border supply chain report for all regions or one. Sections:
   executive summary, scope and method, scenario scorecard, landed cost breakdown, lead time breakdown,
   demand profile, network (logistics providers and lanes), supply base (suppliers and brand mix),

@@ -309,6 +309,12 @@ body[data-view="md"] .top>.controls,body[data-view="report"] .top>.controls,body
 [data-roll]{font-variant-numeric:tabular-nums}
 .iconbtn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--rule);background:var(--surface);color:var(--ink);border-radius:var(--radius-pill);padding:5px 10px;font:600 12px var(--body);cursor:pointer}
 .iconbtn:hover{background:var(--surface-2)}.iconbtn:focus-visible{outline:2px solid var(--ice);outline-offset:2px}
+.sessl{display:flex;align-items:center;gap:6px}
+.savebtn{position:relative;display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;padding:0;border:1px solid var(--rule);border-radius:var(--radius-pill);background:var(--surface);color:var(--faint);cursor:pointer;transition:background var(--dur) var(--ease),color var(--dur) var(--ease)}
+.savebtn:hover{background:var(--surface-2);color:var(--ink)}.savebtn:focus-visible{outline:2px solid var(--ice);outline-offset:2px}
+.savebtn.dirty{background:var(--navy);border-color:var(--navy);color:var(--on-navy)}.savebtn.dirty:hover{background:var(--navy-2)}
+.savebtn:disabled{cursor:progress;opacity:.7}
+.savecnt{position:absolute;top:-5px;right:-6px;min-width:18px;height:18px;padding:0 5px;border-radius:var(--radius-pill);background:var(--warn);color:var(--on-light);font:700 11px/18px var(--body);text-align:center;font-variant-numeric:tabular-nums}
 @media (max-width:600px){.iconbtn .thlbl{display:none}}
 .viewexp{display:flex;align-items:center;gap:6px;margin-left:auto;margin-right:14px;font-size:12px}.viewexp .btn.sm{display:inline-flex}
 body[data-view="home"] .viewexp,body[data-view="users"] .viewexp{display:none}
@@ -460,7 +466,10 @@ details.custom .iact{display:flex;gap:6px;margin-top:8px}
 
 <div class="app">
   <div class="sessbar">
+    <div class="sessl">
     <a href="#home" class="homelink" data-home-go="home" aria-label="Home"><span class="homelogo-sm" data-logo="small"></span><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .71-1.53l7-6a2 2 0 0 1 2.58 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span>Home</span></a>
+    <button type="button" class="savebtn" id="saveBtn" aria-label="All changes saved" title="All changes saved"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></svg><span class="savecnt" aria-hidden="true" hidden>0</span></button>
+    </div>
     <button type="button" class="iconbtn" id="themeBtn" aria-label="Colour theme: follows the system. Switch to light" title="Colour theme"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 3v1M12 20v1M3 12h1M20 12h1M5.6 5.6l.7.7M17.7 17.7l.7.7M5.6 18.4l.7-.7M17.7 6.3l.7-.7"/></svg><span class="thlbl">System</span></button>
     <div class="viewexp" id="viewExp" role="group" aria-label="Export this view"><span class="faint">Export view</span><button type="button" class="btn ghost sm" data-exp="xlsx" title="This view's tables, active filters and data date as an Excel workbook">Excel</button><button type="button" class="btn ghost sm" data-exp="csv" title="This view's tables, active filters and data date as CSV">CSV</button></div>
     <div class="who"><span class="whoname"><b id="authName"></b><span class="faint" id="authRole"></span></span><button type="button" class="btn ghost sm" id="authLogout">Log out</button></div>
@@ -718,7 +727,9 @@ function diff(){
   });
   return out;
 }
-function save(){
+// Route Dashboard edits are held until the Save button (workspace.js Saver) writes them.
+function save(){ if (typeof Saver !== "undefined") Saver.later("route", saveRoute); else saveRoute(); }
+function saveRoute(){
   try { localStorage.setItem(STORE_KEY, JSON.stringify({gen: PAYLOAD.meta.generated, edits: diff().map(({t,i,f,v}) => ({t,i,f,v})), whatIf, excluded: [...excluded]})); } catch (e) {}
 }
 function load(){

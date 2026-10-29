@@ -46,7 +46,7 @@ try {
   const s = JSON.parse(localStorage.getItem(KEY) || "null");
   if (s) { const d = DEFAULT_SET(); FS.set = Object.assign(d, s, {fx: Object.assign(d.fx, s.fx || {}), classProfile: Object.assign(d.classProfile, s.classProfile || {}), feasibleDays: Object.assign(d.feasibleDays, s.feasibleDays || {})}); }
 } catch (e) {}
-const saveSet = () => { try { localStorage.setItem(KEY, JSON.stringify(FS.set)); } catch (e) {} };
+const saveSet = () => Saver.later("forecast", () => { try { localStorage.setItem(KEY, JSON.stringify(FS.set)); } catch (e) {} });   // written on Save
 
 function loadTable(t, name, anonymized){
   FS.source = {name, anonymized, rows: t.rows.length};
