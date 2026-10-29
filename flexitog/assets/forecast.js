@@ -141,12 +141,12 @@ function statsHtml(){
   const sel = t[FS.set.scenario].net, gap = F.target.mid - t.Base.net;
   return `<div class="card"><div class="cardhead"><h2>2027 at a glance</h2><span class="faint" style="font-size:12px">${esc(FC.METHODS.find(m => m[0] === FS.set.method)[1])} · net revenue incl. freight billed · ${esc(cur)}</span></div>
     <div class="bstat">
-      <div><b>${smoney(t.Low.net, cur)}</b><span>Low</span></div><div><b>${smoney(t.Base.net, cur)}</b><span>Base</span></div><div><b>${smoney(t.High.net, cur)}</b><span>High</span></div>
+      <div><b data-roll="fc-low">${smoney(t.Low.net, cur)}</b><span>Low</span></div><div><b data-roll="fc-base">${smoney(t.Base.net, cur)}</b><span>Base</span></div><div><b data-roll="fc-high">${smoney(t.High.net, cur)}</b><span>High</span></div>
       <div><b>${smoney(F.target.low, cur)}–${smoney(F.target.high, cur)}</b><span>Target range</span></div>
-      <div><b>${gap > 0 ? smoney(gap, cur) : "none"}</b><span>Gap Base to target midpoint</span></div>
-      <div><b>${w == null ? "n/a" : pct(w)}</b><span>Back-test WAPE (country x month)</span></div>
-      <div><b>${smoney(F.projects.ttm, cur)}</b><span>Project orders, last 12 months (${F.projects.count} orders above cap)</span></div>
-      <div><b>${fmt(FS.rows.reduce((a, r) => a + r.units, 0))}</b><span>Units, ${esc(FS.set.scenario)}</span></div>
+      <div><b data-roll="fc-gap">${gap > 0 ? smoney(gap, cur) : "none"}</b><span>Gap Base to target midpoint</span></div>
+      <div><b data-roll="fc-wape">${w == null ? "n/a" : pct(w)}</b><span>Back-test WAPE (country x month)</span></div>
+      <div><b data-roll="fc-proj">${smoney(F.projects.ttm, cur)}</b><span>Project orders, last 12 months (${F.projects.count} orders above cap)</span></div>
+      <div><b data-roll="fc-units">${fmt(FS.rows.reduce((a, r) => a + r.units, 0))}</b><span>Units, ${esc(FS.set.scenario)}</span></div>
     </div>
     ${F.indicative ? `<p class="warnc" style="font-size:13px">Indicative: the back-test error is ${w == null ? "unknown" : pct(w)} (above ${pct(FC.DEFAULTS.indicativeWape)}). Sixteen months of lumpy orders do not support a precise forecast; read the range, not the point.</p>` : ""}
   </div>`;

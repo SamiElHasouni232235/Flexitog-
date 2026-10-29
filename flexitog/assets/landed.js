@@ -64,7 +64,7 @@ function table(rows){
   return `<div class="tablewrap"><table class="lctable"><thead><tr><th>SKU</th><th>Provider · mode</th>${PARTS.map(([, l]) => `<th>${l}</th>`).join("")}<th>Landed</th><th>DAP price</th></tr></thead><tbody>
     ${ok.map(r => `<tr data-sku="${esc(r.sku)}" class="${LC.sku === r.sku ? "sel" : ""}"><td><button type="button" class="lnk" data-pick="${esc(r.sku)}">${esc(r.sku)}</button></td>
       <td>${esc(provName(r.providerId))}<br><span class="faint">${esc(r.mode)} · ${esc(r.quoteId)}</span></td>${PARTS.map(([k]) => cell(r, k)).join("")}
-      <td class="n"><b>${money(r.perGarment.landed)}</b><br><span class="faint">100%</span></td><td class="n"><b>${money(r.perGarment.dap)}</b></td></tr>`).join("")}
+      <td class="n"><b data-roll="lc-landed-${esc(r.sku)}">${money(r.perGarment.landed)}</b><br><span class="faint">100%</span></td><td class="n"><b data-roll="lc-dap-${esc(r.sku)}">${money(r.perGarment.dap)}</b></td></tr>`).join("")}
     ${bad.map(r => `<tr class="noans"><td>${esc(r.sku)}</td><td colspan="${PARTS.length + 3}" class="faint">Not priced: ${esc(r.error)}</td></tr>`).join("")}
     </tbody></table></div><p class="faint bnote">Values in ${cur()} per garment, share of the landed cost under each value. Click a SKU for every intermediate value.</p>`;
 }
@@ -104,8 +104,8 @@ function detail(r){
         ${line("Duty", money(g.duty), `${fmt(r.rates.dutyPct, 2)}% × CIF${c.preference_cert && c.preference_cert !== "none" ? ", with " + esc(c.preference_cert) : ""}${r.rates.standardDutyPct != null && r.rates.standardDutyPct !== r.rates.dutyPct ? ` (without preference ${fmt(r.rates.standardDutyPct, 1)}%)` : ""}`)}
         ${line("Clearance", money(g.clearance), `${fmt(Number(c.clearance_fee_eur))} EUR per shipment / ${fmt(r.units)}`)}
         ${line("Compliance", money(g.compliance), `${fmt(Number(c.compliance_cost_eur))} EUR per year / ${fmt(Number(c.expected_yearly_units))} garments`)}
-        ${line("<b>Landed cost</b>", "<b>" + money(g.landed) + "</b>", "CIF + duty + clearance + compliance")}
-        ${line("<b>DAP price</b>", "<b>" + money(g.dap) + "</b>", `landed × (1 + ${fmt(r.rates.marginPct, 1)}% margin)`)}
+        ${line("<b>Landed cost</b>", `<b data-roll="lc-d-landed">${money(g.landed)}</b>`, "CIF + duty + clearance + compliance")}
+        ${line("<b>DAP price</b>", `<b data-roll="lc-d-dap">${money(g.dap)}</b>`, `landed × (1 + ${fmt(r.rates.marginPct, 1)}% margin)`)}
         ${line("Transit", r.transitDays == null ? "n/a" : fmt(r.transitDays) + " days", "door to door, from the quote")}
       </tbody></table></div>
       <h3>Inputs</h3><div class="tablewrap"><table><thead><tr><th>Input</th><th>Status</th><th>Source</th><th>Date</th></tr></thead><tbody>

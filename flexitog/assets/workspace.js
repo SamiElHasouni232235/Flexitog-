@@ -958,11 +958,11 @@ async function renderUploads(){
       <td><div class="iact"><button type="button" class="btn ghost sm" data-ud="csv"${st.rows ? "" : " disabled"}>CSV</button><button type="button" class="btn ghost sm" data-ud="xlsx"${st.rows ? "" : " disabled"}>Excel</button></div></td>
       <td><label class="btn sm filebtn">Upload file<input type="file" data-up="${t}" accept=".csv,.txt,.xlsx,.xlsm,.xls" aria-label="Upload ${esc(T.label)} file"></label></td>
       <td class="num">${L ? `${esc(String(L.at).slice(0, 16).replace("T", " "))}<br><span class="faint">${esc(L.file)}</span>` : '<span class="faint">built-in data</span>'}</td>
-      <td class="n">${fmt(st.rows)}</td><td>${statusChip(st)}</td></tr>`;
+      <td class="n"><span data-roll="up-rows-${t}">${fmt(st.rows)}</span></td><td>${statusChip(st)}</td></tr>`;
   }).join("");
   const covRows = tg.map(c => { const o = cov[c] || {share: 0, fields: 0, confirmed: 0, rows: 0}, p = Math.round(o.share * 100);
     return `<tr><td>${esc(CNAME(c))} <span class="faint num">${esc(c)}</span></td><td><div class="covbar" role="img" aria-label="${p}% confirmed"><i style="width:${p}%"></i></div></td>
-      <td class="n">${o.fields ? p + "%" : "n/a"}</td><td class="n">${fmt(o.confirmed)} of ${fmt(o.fields)}</td><td class="n">${fmt(o.rows)}</td></tr>`; }).join("");
+      <td class="n"><span data-roll="cov-${c}">${o.fields ? p + "%" : "n/a"}</span></td><td class="n">${fmt(o.confirmed)} of ${fmt(o.fields)}</td><td class="n">${fmt(o.rows)}</td></tr>`; }).join("");
   el.innerHTML = `<div class="cardhead"><h2>Data upload</h2><span class="faint" style="font-size:12px">One fixed template per data type · rates in % (12 = 12%) · dates YYYY-MM-DD</span></div>
     <p class="muted">Download a template, fill it and upload it. The file is checked against the template and rejected with a list of row and column when anything is wrong; nothing is saved until you confirm a clean file. Every row carries source, sourceDate and status (confirmed or estimate).</p>
     <div class="tablewrap"><table class="uptable"><thead><tr><th>Data type</th><th>Template</th><th>Current data</th><th>Upload</th><th>Last upload</th><th>Rows</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div>
@@ -1159,6 +1159,55 @@ $("mdTemplates").addEventListener("click", () => {
   saveFile("FlexiTog_upload_templates.xlsx", wbBytes(wb));
 });
 
+// ============================================================ rolling numbers
+// A number marked data-roll="<key>" counts up to its value, like a counter settling: from the value last shown
+// under that key (0 the first time), easing out over 0.9 s. The number is read from the element's own text, so
+// prefixes, units and decimals stay as rendered ("€17.59", "2.4 working days", "$333k", "95%"); the final text is
+// put back exactly. A re-render with the same value does not roll again. A number rolls when it first comes on
+// screen (a view opened later, a card scrolled into view). Reduced motion shows the value at once. Works on leaf
+// elements (text only) and needs no call: new elements are picked up.
+const ROLL = {last: new Map(), dur: 900, reduce: window.matchMedia ? matchMedia("(prefers-reduced-motion: reduce)") : {matches: false}};
+const NUM_RE = /-?\d{1,3}(?:,\d{3})+(?:\.\d+)?|-?\d+(?:\.\d+)?/;
+ROLL.seen = window.IntersectionObserver ? new IntersectionObserver(list => list.forEach(x => {
+  if (x.isIntersecting) { ROLL.seen.unobserve(x.target); rollEl(x.target); }
+})) : null;
+function rollEl(el){
+  if (el.children.length || !el.isConnected) return;                  // leaf elements only
+  const text = el.textContent, m = text.match(NUM_RE); if (!m) return;
+  const raw = m[0], to = Number(raw.replace(/,/g, "")), key = el.dataset.roll || text;
+  if (!Number.isFinite(to)) return;
+  const from = ROLL.last.has(key) ? ROLL.last.get(key) : 0;
+  ROLL.last.set(key, to);
+  if (from === to || ROLL.reduce.matches) return;
+  const dp = (raw.split(".")[1] || "").length, grouped = raw.includes(","), pre = text.slice(0, m.index), suf = text.slice(m.index + raw.length);
+  const show = v => (grouped ? v.toLocaleString("en-GB", {minimumFractionDigits: dp, maximumFractionDigits: dp}) : v.toFixed(dp));
+  const t0 = performance.now();
+  cancelAnimationFrame(el._roll);
+  el.dataset.final = text;
+  el.textContent = pre + show(from) + suf;                             // start value before the first paint
+  const step = t => {
+    const p = Math.min(1, (t - t0) / ROLL.dur), e = 1 - Math.pow(1 - p, 3);
+    if (p < 1) { el.textContent = pre + show(from + (to - from) * e) + suf; el._roll = requestAnimationFrame(step); }
+    else { el.textContent = text; delete el.dataset.final; }
+  };
+  el._roll = requestAnimationFrame(step);
+}
+function rollIn(node){
+  if (node.nodeType !== 1) return;
+  const vh = window.innerHeight;
+  const watch = el => {                                               // on screen now: roll before it paints
+    const r = el.getBoundingClientRect();
+    if (!ROLL.seen || (el.offsetParent !== null && r.bottom > 0 && r.top < vh)) rollEl(el); else ROLL.seen.observe(el);
+  };
+  if (node.matches("[data-roll]")) watch(node);
+  node.querySelectorAll("[data-roll]").forEach(watch);
+}
+new MutationObserver(list => {
+  const nodes = new Set(); list.forEach(m => m.addedNodes.forEach(n => nodes.add(n)));
+  if (nodes.size) requestAnimationFrame(() => nodes.forEach(n => { if (n.isConnected) rollIn(n); }));
+}).observe(document.body, {childList: true, subtree: true});
+requestAnimationFrame(() => rollIn(document.body));
+
 // ============================================================ colour theme: system, light or dark (per viewer)
 const THEMES = [["system", "System", "follows the system"], ["light", "Light", "light"], ["dark", "Dark", "dark"]];
 function applyTheme(t){
@@ -1201,7 +1250,11 @@ function viewFilters(root){
 const cellValue = td => {
   const inp = td.querySelector("input, select");
   if (inp) return inp.type === "checkbox" ? (inp.checked ? "true" : "false") : inp.tagName === "SELECT" ? (inp.value || "") : inp.value;
+  // a number still rolling exports its final value: swap it in for the read and put the frame back (no paint between)
+  const rolling = [...td.querySelectorAll("[data-final]")].map(x => [x, x.textContent]);
+  rolling.forEach(([x]) => { x.textContent = x.dataset.final; });
   const t = td.innerText.replace(/\s*\n\s*/g, " · ").trim();
+  rolling.forEach(([x, v]) => { x.textContent = v; });
   if (/^[−-]?[\d,]+(\.\d+)?$/.test(t)) return Number(t.replace(/,/g, "").replace("−", "-"));
   return t;
 };

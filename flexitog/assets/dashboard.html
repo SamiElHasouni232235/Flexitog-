@@ -306,6 +306,7 @@ body[data-view="md"] .top>.controls,body[data-view="report"] .top>.controls,body
 .mdgrid td input:focus,.mdgrid td select:focus{border-color:var(--accent-text);background:var(--surface);outline:0}
 .mdgrid td .bad{border-color:var(--st-critical);background:color-mix(in srgb,var(--st-critical) 8%,transparent)}
 .mdgrid .rn{color:var(--faint);font:11px var(--mono);text-align:right;width:1%}
+[data-roll]{font-variant-numeric:tabular-nums}
 .iconbtn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--rule);background:var(--surface);color:var(--ink);border-radius:var(--radius-pill);padding:5px 10px;font:600 12px var(--body);cursor:pointer}
 .iconbtn:hover{background:var(--surface-2)}.iconbtn:focus-visible{outline:2px solid var(--ice);outline-offset:2px}
 @media (max-width:600px){.iconbtn .thlbl{display:none}}
@@ -1519,14 +1520,14 @@ function renderRegions(){
     else {
       const st = b.stats[b.scenario];
       body = `<div class="rbest">${scName(b.scenario)}${b.missesTarget ? ' <span class="miss">misses target</span>' : ""}</div><ul>` +
-        `<li><span class="k">Cost to serve per unit</span><span class="v num">€${fmt(st.costPerUnit, 2)}</span></li>` +
-        `<li><span class="k">Lead time</span><span class="v num${b.missesTarget ? " miss" : ""}">${wdTxt(st.leadWd)}</span></li>` +
+        `<li><span class="k">Cost to serve per unit</span><span class="v num" data-roll="rc-cost-${esc(rg)}">€${fmt(st.costPerUnit, 2)}</span></li>` +
+        `<li><span class="k">Lead time</span><span class="v num${b.missesTarget ? " miss" : ""}" data-roll="rc-lead-${esc(rg)}">${wdTxt(st.leadWd)}</span></li>` +
         `<li><span class="k">Target</span><span class="v num">${targetTxt(cs)}</span></li>`;
     }
     body += (orders && b.scenario ? "" : "<ul>") +
       `<li><span class="k">Risks</span><span class="v">${sev}</span></li>` +
-      `<li><span class="k">Cost on real data</span><span class="v num">${real == null ? "n/a" : pct(real)}</span></li></ul>`;
-    return `<button type="button" class="rcard" data-region="${esc(rg)}" aria-pressed="${ui.region === rg}"><div class="rh"><h3>${esc(rg)}</h3><span class="faint num">${orders} orders</span></div>${body}</button>`;
+      `<li><span class="k">Cost on real data</span><span class="v num" data-roll="rc-real-${esc(rg)}">${real == null ? "n/a" : pct(real)}</span></li></ul>`;
+    return `<button type="button" class="rcard" data-region="${esc(rg)}" aria-pressed="${ui.region === rg}"><div class="rh"><h3>${esc(rg)}</h3><span class="faint num" data-roll="rc-orders-${esc(rg)}">${orders} orders</span></div>${body}</button>`;
   }).join("");
   $("regions").querySelectorAll(".rcard").forEach(b => b.addEventListener("click", () => setRegion(ui.region === b.dataset.region ? "All" : b.dataset.region)));
 }
