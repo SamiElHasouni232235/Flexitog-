@@ -296,15 +296,20 @@ function provSorted(rows){
   const rest = rows.filter(p => !p.baseline), get = PSORT[s.f][1];
   return rows.filter(p => p.baseline).concat(sortIdx(rest.map((p, i) => i), i => get(rest[i]), s.dir).map(i => rest[i]));
 }
+// After an RFQ status change the rows stay where they were (B.ui.keep), so a sorted or filtered table does not move
+// the changed row away; the next sort, filter or search applies again.
 function provFiltered(){
-  const q = norm(B.ui.q);
-  return provSorted(B.providers.filter(p => (B.ui.status === "all" || p.status === B.ui.status) && (B.ui.type === "all" || p.type === B.ui.type) &&
+  const q = norm(B.ui.q), keep = B.ui.keep;
+  const rows = B.providers.filter(p => (keep && keep.includes(p.id)) || ((B.ui.status === "all" || p.status === B.ui.status) && (B.ui.type === "all" || p.type === B.ui.type) &&
     (B.ui.region === "all" || p.regionsCovered.includes(B.ui.region)) &&
     (!q || [p.name, p.id, p.type, p.contactName, p.contactEmail, p.notes, p.countriesCovered.map(CNAME).join(" ")].some(x => norm(x).includes(q)))));
+  if (!keep) return provSorted(rows);
+  const at = p => { const i = keep.indexOf(p.id); return i < 0 ? keep.length : i; };
+  return rows.sort((a, b) => at(a) - at(b));
 }
 const safeUrl = u => { const s = String(u || "").trim(); return /^https?:\/\//i.test(s) ? s : "https://" + s; };
 const badge = p => (p.baseline ? ' <span class="st baseline">Baseline</span>' : "") + (p.dummy ? ' <span class="srcb ph" title="Placeholder or dummy data from Master Data">dummy</span>' : "");
-function provRow(p){
+function provRow(p, flash){
   const a = p.latestResponseIndex >= 0 ? p.rfqResponses[p.latestResponseIndex] : null, n = p.rfqResponses.length;
   const status = p.baseline ? `<span class="faint">Costs from Master Data, no RFQ</span>`
     : p.status === "answered" ? `<span class="st response_received">Answered</span><br><span class="faint num">${esc(p.dateResponseReceived)}</span>`
@@ -318,7 +323,7 @@ function provRow(p){
       <button type="button" class="btn ghost sm" data-a="rm"${dis}>Remove upload</button>
       <button type="button" class="btn ghost sm" data-a="prefill"${tmpl() ? "" : " disabled"} title="RFQ with this provider's details and the metadata sheet; sets status Sent">Prefilled RFQ</button>
       <button type="button" class="btn ghost sm" data-a="md">Edit in Master Data</button>`;
-  return `<tr data-id="${esc(p.id)}" data-row="${esc(p.id)}" class="${p.baseline ? "baserow" : ""}">
+  return `<tr data-id="${esc(p.id)}" data-row="${esc(p.id)}" class="${p.baseline ? "baserow" : ""}${flash === p.id ? " justset" : ""}">
     <td><div class="pcell">${p.baseline || B.ui.psort ? "" : `<span class="grip" draggable="true" data-drag="${esc(p.id)}" tabindex="0" role="button" aria-label="Move ${esc(p.name)}. Drag it, or press Alt and the arrow keys" title="Drag to change the order (saved in Master Data)">⠿</span>`}<div><div class="pname"><button type="button" class="lnk" data-a="detail" title="Open the provider detail">${esc(p.name)}</button>${badge(p)}</div><span class="faint num">${esc(p.id)}</span></div></div></td>
     <td>${esc(p.type)}</td>
     <td class="wrap"><div class="tags">${p.countriesCovered.map(c => `<span class="tag r-${rc(regionOf(c))}">${esc(laneTag(c))}</span>`).join("") || '<span class="faint">none set</span>'}</div></td>
@@ -329,18 +334,19 @@ function renderProvHead(){
   const words = (f, d) => (f === "name" || f === "type" ? (d > 0 ? "A to Z" : "Z to A") : f === "upload" ? (d > 0 ? "oldest first" : "newest first") : f === "status" ? (d > 0 ? "Not sent first" : "Answered first") : (d > 0 ? "fewest first" : "most first"));
   const th = k => { const on = s && s.f === k; return `<th aria-sort="${on ? (s.dir > 0 ? "ascending" : "descending") : "none"}"><button type="button" class="thsort" data-psort="${k}" title="Click to sort: ${words(k, 1)}, again ${words(k, -1)}, a third time back to the Master Data order">${PSORT[k][0]}<span class="sarr" aria-hidden="true">${on ? (s.dir > 0 ? "▲" : "▼") : "↕"}</span></button></th>`; };
   h.innerHTML = `<tr>${th("name")}${th("type")}${th("countries")}${th("status")}${th("upload")}<th><span class="faint">Actions</span></th></tr>`;
-  $("bxProvNote").innerHTML = s ? `Sorted by ${esc(PSORT[s.f][0].toLowerCase())}, ${words(s.f, s.dir)}. Helmond stays first. <button type="button" class="btn ghost sm" data-a="unsort">Back to Master Data order</button>` : "Drag ⠿ to change the order. It is saved in Master Data, so both lists match. Click a column header to sort.";
+  $("bxProvNote").innerHTML = s ? `Sorted by ${esc(PSORT[s.f][0].replace(/^[A-Z](?=[a-z])/, c => c.toLowerCase()))}, ${words(s.f, s.dir)}. Helmond stays first. <button type="button" class="btn ghost sm" data-a="unsort">Back to Master Data order</button>` : "Drag ⠿ to change the order. It is saved in Master Data, so both lists match. Click a column header to sort.";
 }
 function renderProvTable(){
   renderProvHead();
   const rows = provFiltered(), el = $("bxProvBody"); if (!el) return;
-  el.innerHTML = rows.map(provRow).join("") ||
+  const flash = B.ui.flash; B.ui.flash = null;
+  el.innerHTML = rows.map(p => provRow(p, flash)).join("") ||
     `<tr><td colspan="6" class="empty">${B.providers.length ? "No provider matches the search or filters." : "No logistics providers in Master Data. Add rows with a provider type in Master Data > Logistics providers."}</td></tr>`;
   $("bxProvCount").textContent = `${rows.length} of ${B.providers.length} shown`;
   renderCompare();
 }
 function renderProviders(){
-  const P = $("bp-providers");
+  const P = $("bp-providers"); B.ui.keep = null;
   const sel = (id, label, all, opts, v) => `<select id="${id}" aria-label="${esc(label)}"><option value="all">${esc(all)}</option>${opts.map(([k, l]) => `<option value="${esc(k)}"${v === k ? " selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
   const t = tmpl();
   P.innerHTML = `<div class="card">
@@ -366,15 +372,15 @@ function renderProviders(){
   </div>
   <div id="bxCompare"></div>`;
   renderProvTable();
-  $("bxQ").addEventListener("input", e => { B.ui.q = e.target.value; renderProvTable(); });
+  $("bxQ").addEventListener("input", e => { B.ui.q = e.target.value; B.ui.keep = null; renderProvTable(); });
   P.querySelector(".card").addEventListener("click", e => {   // the card is new on each render, so one listener
     const b = e.target.closest("[data-psort],[data-a=unsort]"); if (!b) return;
     const k = b.dataset.psort, s = B.ui.psort;
     B.ui.psort = !k ? null : !s || s.f !== k ? {f: k, dir: 1} : s.dir > 0 ? {f: k, dir: -1} : null;
-    renderProvTable(); const nb = k && P.querySelector(`[data-psort="${k}"]`); if (nb) nb.focus({preventScroll: true});
+    B.ui.keep = null; renderProvTable(); const nb = k && P.querySelector(`[data-psort="${k}"]`); if (nb) nb.focus({preventScroll: true});
   });
   wireProvOrder();
-  [["bxFStatus", "status"], ["bxFType", "type"], ["bxFRegion", "region"]].forEach(([id, k]) => $(id).addEventListener("change", e => { B.ui[k] = e.target.value; renderProvTable(); }));
+  [["bxFStatus", "status"], ["bxFType", "type"], ["bxFRegion", "region"]].forEach(([id, k]) => $(id).addEventListener("change", e => { B.ui[k] = e.target.value; B.ui.keep = null; renderProvTable(); }));
   P.querySelector('[data-a="print"]').addEventListener("click", printProviders);
   P.querySelector('[data-a="md-add"]').addEventListener("click", () => editInMd(""));
   P.querySelector('[data-a="rfq-dl"]').addEventListener("click", () => { const t = tmpl(); if (t) saveFile(t.name || "Transport_Volume_Scenario_RFQ_FlexiTog.xlsx", xlsxBlob(t.bytes)); });
@@ -388,6 +394,7 @@ function renderProviders(){
     const s = e.target.closest("select[data-st]"); if (!s) return;
     const id = s.closest("tr").dataset.id, st = rfqOf(id);
     st.status = s.value; if (s.value === "sent" && !st.sentDate) st.sentDate = today(); if (s.value === "not_sent") st.sentDate = "";
+    B.ui.keep = [...$("bxProvBody").querySelectorAll("tr[data-id]")].map(r => r.dataset.id); B.ui.flash = id;
     await saveRfq(`RFQ status ${statusLabel(s.value)}`); syncProviders(); renderProvTable(); renderTabs();
   });
   $("bxProvBody").addEventListener("click", e => {

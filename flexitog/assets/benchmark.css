@@ -126,3 +126,7 @@ tr.noans td{opacity:.55}
 
 /* quote benchmark */
 .tag.above{border-color:var(--st-serious);box-shadow:inset 0 0 0 1px var(--st-serious)}
+
+/* the row whose RFQ status just changed: stays in place and lights up briefly */
+@keyframes bxjustset{from{background:var(--ice-soft)}to{background:transparent}}
+#bxProvBody tr.justset>td{animation:bxjustset 1.8s var(--ease)}
