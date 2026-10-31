@@ -59,10 +59,9 @@ async function save(name, value, okMsg){
   try { const where = await DataStore.set(name, value); if (okMsg) toast(where === "pending" ? `${okMsg}. ${PENDING_NOTE}` : okMsg + (where === "artifact" ? " (saved with the dashboard)" : " (saved in this browser)")); return true; }
   catch (e) { toast(storeErrorText(e), "bad"); return false; }
 }
-let settingsTimer = null;
-function saveSettingsSoon(){ clearTimeout(settingsTimer); settingsTimer = setTimeout(() => save("settings", B.settings), 500); }
-let goalsTimer = null;
-function saveGoalsSoon(){ clearTimeout(goalsTimer); goalsTimer = setTimeout(() => save("goals", B.goals), 600); }
+// Settings and goals register with the Save button at once: a delay here let a quick Save miss the last change.
+function saveSettingsSoon(){ save("settings", B.settings); }
+function saveGoalsSoon(){ save("goals", B.goals); }
 const storeReady = () => new Promise(res => { const t = () => (STORE.ready ? res() : setTimeout(t, 60)); t(); });
 
 // ============================================================ state
@@ -1121,7 +1120,7 @@ function renderGoals(){
     return `<input type="text" data-i="${i}" data-f="${f.key}" value="${esc(v ?? "")}" aria-label="${esc(f.label)}"${f.required ? ' aria-required="true"' : ""}>`;
   };
   P.innerHTML = `<div class="card">
-    <div class="cardhead"><h2>Service goals</h2><span class="faint" style="font-size:12px">${B.goals.length} goals · ${B.goals.filter(g => g.priority === "mandatory").length} mandatory · saved as you type</span></div>
+    <div class="cardhead"><h2>Service goals</h2><span class="faint" style="font-size:12px">${B.goals.length} goals · ${B.goals.filter(g => g.priority === "mandatory").length} mandatory · kept when you press Save</span></div>
     <p class="muted bcard-lead">Every provider reports against these goals in the response template: meets goal yes, no or partly, with a comment. They go into the report with their targets.</p>
     <div class="tablewrap mdgrid gtable"><table><thead><tr><th>ID</th>${GOAL_FIELDS.map(f => `<th>${esc(f.label)}${f.required ? ' <span class="req">*</span>' : ""}</th>`).join("")}<th></th></tr></thead>
       <tbody>${B.goals.map((g, i) => `<tr><td class="rn">${esc(g.id)}</td>${GOAL_FIELDS.map(f => `<td>${cell(f, g, i)}</td>`).join("")}<td><button type="button" class="del" data-del="${i}" aria-label="Delete goal ${esc(g.id)}" title="Delete goal">×</button></td></tr>`).join("") ||
@@ -1151,7 +1150,7 @@ function renderGoals(){
     B.goals = clone(DEFAULT_GOALS); save("goals", B.goals, "Goals reset"); renderGoals(); renderTabs();
   });
 }
-function renderGoalsCount(){ const s = $("bp-goals").querySelector(".cardhead span"); if (s) s.textContent = `${B.goals.length} goals · ${B.goals.filter(g => g.priority === "mandatory").length} mandatory · saved as you type`; }
+function renderGoalsCount(){ const s = $("bp-goals").querySelector(".cardhead span"); if (s) s.textContent = `${B.goals.length} goals · ${B.goals.filter(g => g.priority === "mandatory").length} mandatory · kept when you press Save`; }
 
 // ============================================================ 4. test orders and report
 const lineText = (t, mode) => (mode === "category"
