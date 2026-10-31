@@ -174,7 +174,8 @@
     return Math.max(row.minCharge || 0, (row.perKg || 0) * (Number(kg) || 0)) * (1 + (row.fuel || 0)) + (row.docs || 0) + (row.other || 0);
   }
   /* Providers against the Helmond baseline on a test order set.
-     orders: [{units, country, weight_kg}]; helmond[i]: {cost, leadWd} or null; providers: [{p, rates, cur, fx} or {p, none} or {p, cur, noFx}];
+     orders: [{units, country, weight_kg}]; helmond[i]: {cost, leadWd} or null; providers: [{p, rates, cur, fx} (v1 Rate Card) or
+     {p, priceFor(lane, band, kg) -> {price, transit} | null, cur, fx} (v2.3: the all-in test price as given) or {p, none} or {p, legacy} or {p, cur, noFx}];
      laneFor(country), bandFor(kg). Rows: baseline first, then providers by cost per order. */
   function helmondComparison({orders, helmond, providers, laneFor, bandFor}){
     const sum = (xs, f) => xs.reduce((a, x) => a + f(x), 0);
@@ -185,9 +186,12 @@
     providers.forEach(x => {
       if (x.none) { rows.push({p: x.p, kind: "none"}); return; }
       if (x.noFx) { rows.push({p: x.p, kind: "fx", cur: x.cur}); return; }
+      if (x.legacy) { rows.push({p: x.p, kind: "legacy"}); return; }
       const priced = [];
       orders.forEach((o, i) => {
-        const lane = laneFor(o.country), band = bandFor(o.weight_kg), r = x.rates.find(y => y.lane === lane && y.band === band);
+        const lane = laneFor(o.country), band = bandFor(o.weight_kg);
+        if (x.priceFor) { const q = lane && band ? x.priceFor(lane, band, o.weight_kg) : null; if (q) priced.push({i, cost: q.price * x.fx, lead: q.transit}); return; }
+        const r = x.rates.find(y => y.lane === lane && y.band === band);
         const c = r && r.served ? rfqShipmentCost(r, o.weight_kg) : null;
         if (c != null) priced.push({i, cost: c * x.fx, lead: r.transit});
       });
@@ -200,7 +204,7 @@
       row.dLead = bl.length && hb.lead != null ? sum(bl, y => y.lead) / bl.length - agg(bl.map(y => y.i)).lead : null;
       rows.push(row);
     });
-    const order = {rfq: 1, fx: 2, none: 3};
+    const order = {rfq: 1, fx: 2, legacy: 3, none: 4};
     rows.sort((a, b) => order[a.kind] - order[b.kind] || (a.kind === "rfq" ? (a.perOrder ?? Infinity) - (b.perOrder ?? Infinity) : a.p.name.localeCompare(b.p.name, "en")));
     return {baseline: agg(helmIdx), rows};
   }

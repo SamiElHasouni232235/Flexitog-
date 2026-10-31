@@ -119,7 +119,7 @@ def test_dashboard_html_is_self_contained(ws):
     assert 'id="menuBtn"' in page and 'id="viewMD"' in page and 'id="viewReport"' in page
     assert "SheetJS" in page and "function renderMD" in page
     for key in ("/*JSPDF*/", "/*AUTOTABLE*/", "/*DOCX*/", "/*BENCHCORE*/", "/*BENCHMARK*/", "/*BENCHCSS*/", "/*CHARTS*/",
-                "/*FORECASTCORE*/", "/*FORECAST*/", "/*FORECASTCSS*/", "/*JSZIP*/", "/*RFQCORE*/",
+                "/*FORECASTCORE*/", "/*FORECAST*/", "/*FORECASTCSS*/", "/*JSZIP*/", "/*RFQCORE*/", "/*RFQV23*/",
                 "/*AUTHCONFIG*/", "/*AUTHSTORE*/", "/*AUTHCORE*/", "/*AUTH*/", "/*AUTHCSS*/", "/*LOGO*/", "/*ROUTECORE*/"):
         assert key not in page
     assert 'id="viewBench"' in page and 'data-go="bench"' in page and "window.BenchUI" in page and "BenchCore" in page
@@ -127,7 +127,7 @@ def test_dashboard_html_is_self_contained(ws):
     assert "fonts.googleapis" not in page and "fonts.gstatic" not in page     # no network calls at runtime
     assert '"sales_orders":{"source":"Sample_Sales_Orders_MENA_Turkey_ANONYMIZED.xlsx","anonymized":true' in page
     # SheetJS 0.9 MB, jsPDF + AutoTable 0.45 MB, docx 0.48 MB, basemap 1.1 MB, JSZip 0.1 MB, RFQ template 0.3 MB
-    assert "window.FlexiRFQ" in page and "JSZip" in page and '"rfq_template":{"name":"Transport_Volume_Scenario_RFQ_FlexiTog.xlsx"' in page
+    assert "window.FlexiRFQ" in page and "JSZip" in page and '"rfq_template":{"name":"FlexiTog_RFQ_Quick_Quote_MENA-TR_v2.3.xlsx"' in page and "window.FlexiRFQ23" in page
     # login layer: inlined, the gate hides the app until auth.js sets data-auth="in"
     assert "window.FlexiAuth" in page and "window.AuthStore" in page and "FLEXI_AUTH_CONFIG" in page and 'id="authGate"' in page
     assert ':root:not([data-auth="in"]) .app{display:none!important}' in page

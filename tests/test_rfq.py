@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from flexitog.dashboard import ASSETS, RFQ_TEMPLATE
+from flexitog.dashboard import ASSETS, RFQ_LEGACY_TEMPLATE as RFQ_TEMPLATE   # the v1 tests run on the v1 template
 
 NODE = shutil.which("node")
 pytestmark = pytest.mark.skipif(NODE is None, reason="node not installed")

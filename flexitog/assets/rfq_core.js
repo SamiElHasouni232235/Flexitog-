@@ -492,7 +492,11 @@
     const writes = PP_FIELDS.map(([n, field]) => [n, provider[field]]).filter(([n, v]) => L.names[n] && !isBlank(v));
     const bySheet = {};
     writes.forEach(([n, v]) => { const d = L.names[n]; (bySheet[d.sheet] = bySheet[d.sheet] || []).push([d.cell, String(v)]); });
-    if (!Object.keys(bySheet).length && !Object.keys(L.names).length) throw new Error("The template has no PP_* defined names on the Provider Profile sheet.");
+    // Templates without PP_* names (Quick Quote v2.3): opts.cells = [[sheet, cell, value]], the input cells of the
+    // provider fields, read from the template's own Export formulas.
+    const cells = (opts && opts.cells) || [];
+    cells.filter(([, , v]) => !isBlank(v)).forEach(([sheet, cell, v]) => { (bySheet[sheet] = bySheet[sheet] || []).push([cell, String(v)]); });
+    if (!Object.keys(bySheet).length && !Object.keys(L.names).length && !cells.length) throw new Error("The template has no PP_* defined names on the Provider Profile sheet.");
     for (const [sheet, cells] of Object.entries(bySheet)) {
       const path = L.part(sheet); if (!path || !zip.file(path)) throw new Error(`Sheet "${sheet}" not found in the template.`);
       let xml = await zip.file(path).async("string");

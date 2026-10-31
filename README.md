@@ -536,31 +536,87 @@ dummy badge). Rows without a provider type (distributors, owned warehouses) stay
 RFQ status per provider: Not sent, Sent (set by hand, or by Prefilled RFQ), Answered (after a confirmed
 upload).
 
-1. Download latest RFQ gets the bundled template `flexitog/assets/rfq/Transport_Volume_Scenario_RFQ_FlexiTog.xlsx`.
-   Replace RFQ template stores a newer file in this browser. Reset to bundled drops it.
-2. Prefilled RFQ writes the provider ID, name, website and contact into Provider Profile B6 to B11 and adds a
-   hidden sheet `_rfqmeta` with two cells only: `template_version` and `provider_id`. No growth basis,
-   targets or internal data. Only the changed sheet XML is rewritten through JSZip.
-3. Upload answered RFQ (per row, or at the top of the table) reads the file with SheetJS:
-   - Template check: the Export sheet and a supported `meta.rfq_version`.
-   - Provider: the `_rfqmeta` provider ID picks the row; a different row asks to confirm. An ID missing
-     from Master Data offers Create in Master Data. A file without `_rfqmeta` opens a dropdown, preselected
-     from Provider Profile B6.
-   - Validation lists every problem with sheet and cell: currency in Provider Profile B16; per served lane
-     (not marked Not served in Provider Profile D53 to D61) and band: transit in H above 0, rate per kg in I
-     or minimum charge in J; every filled amount numeric and not negative (fees of 0 pass, fuel at most
-     100%). Any problem saves nothing.
-   - Preview of the parsed rates (lane, band, mode, transit, rates, fees, cost per shipment). Nothing saves
-     until Confirm and save.
-4. History: each confirmed upload is kept. The latest one is active; View parsed rates opens older ones,
-   Make this upload active switches back. Download original returns the uploaded file, Remove upload drops
-   the active one.
+The RFQ is the Quick Quote MENA-TR v2.3 (`meta.rfq_version` "RFQ-MENA-TR-QUICK v2.3",
+`flexitog/assets/rfq/FlexiTog_RFQ_Quick_Quote_MENA-TR_v2.3.xlsx`): 33 test shipments T01 to T33, each with a lane
+(L01 to L09), a band (B1 to B5) and a size (S 8 kg, M 52 kg, L 261 kg, XL 941 kg, XXL 2,380 kg), three delivery
+options per shipment (opt1 from Helmond, required; opt2 delivery from the provider's regional warehouse; opt3 another
+option), 28 questions Q01 to Q28, warehouse rates W01 to W14 and the file's own `meta.input_check`. Every price is an
+all-in DAP price in EUR with fuel and fees included, and the tool uses it as given.
+
+1. Download latest RFQ gets the bundled v2.3 template. Replace RFQ template stores a newer file in this browser,
+   Reset to bundled drops it.
+2. Prefilled RFQ writes the provider's name, contact, e-mail and phone into Q01 to Q04 (the input cells the
+   template's own Export formulas point at) and adds the hidden `_rfqmeta` sheet (template version and provider ID).
+3. Upload answered RFQ reads the hidden Export sheet with SheetJS (column A key, column B value). The version picks
+   the parser:
+   - v2.3 enters the benchmark. Lane and band come from the file per test shipment, never from a fixed T-number
+     list. Excel date serials become dates, percentages arrive as fractions, Q09 becomes HH:MM. A price, transit,
+     rate or numeric answer holding text (for example "incl") is listed by key and left out: never counted as 0.
+     If `meta.input_check` is not "No problems found", the preview and the detail show a warning and the valid
+     values still import. A file never saved in Excel is read from its input cells.
+   - v1 ("RFQ-MENA-TR v1.0") still imports through the existing parser and checks, and appears under "Legacy v1,
+     not comparable": out of the ranking and out of the Helmond comparison, because its cost and scoring
+     methods differ.
+   - Any other version is refused with the version it found.
+   Nothing saves before Confirm and save. The provider comes from `_rfqmeta`, or is picked by hand.
+4. History: each confirmed upload is kept; the latest is active. View test prices (v2.3) or View parsed rates
+   (v1) opens the detail, Make this upload active switches back, Download original and Remove upload as before.
+
+Quick Quote settings (the panel under the comparison, saved with the Save button): annual shipments per lane and
+band for Scenario A (141) and B (329), average kg per band, target transit per lane (L01 to L04 2, L05 and L06 3,
+L07 5, L08 and L09 4 working days), order lines per order 6, kg per pallet 250, average pallets in stock (no
+default), replenishment sea (W11) or air (W13), carrying cost % and stock value (input from Finance), volume year
+2027, scorecard weights 25% each (to be agreed with Mies), and the scoring rubric as one editable JSON object.
+
+Costs (`flexitog/assets/rfq_v23.js`, `window.FlexiRFQ23`), per option and scenario:
+- Options 1 and 3: annual cost = shipments per lane and band × the test price for that lane and band. A band
+  with volume but no test shipment takes the price per kg of the next lower band × the band's average kg,
+  tagged extrapolated. A blank price is not covered: no cost, lower coverage.
+- Option 2, only when opt2 delivery prices and W04, W05, W06, W07, W09 and the chosen replenishment price are
+  filled (otherwise "incomplete" with the missing keys): cost per order = delivery price + W07 + W06 × order
+  lines + W08 + (replenishment per pallet + W05) / kg per pallet × order kg + fixed share, with fixed share =
+  (W09 × 12 + W04 × average pallets × 12 + carrying % × stock value) / annual orders served from the warehouse.
+- Outputs: annual cost per lane and in total, cost per shipment and per kg, coverage, and on-time share
+  (shipments whose transit days are within the lane target). Every figure carries a source tag: quoted,
+  derived, extrapolated or assumption.
+
+Scores 0 to 4 per item; a missing answer scores 0 and is listed; Q13 and Q14 count × 0.75 (self-reported); area
+score = average of its items; total = weighted average of the areas. Cost: 4 × lowest comparable annual cost /
+this provider's, on each provider's cheapest complete option in Scenario A, compared on the lanes and bands all
+providers cover, minus 1 point below 90% coverage. A complete option is costed and covers at least 90% of the
+Scenario A shipments, so a partial road quote never stands in for the network; without one, the option with the
+highest coverage. Service (same option): on-time share, Q10, Q09, Q11, Q12. Quality: Q13, Q14, Q15, Q16, Q17
+(counted twice), Q18, Q19. Options and ease: Q20 to Q25, Q26, Option 2 completeness, Option 3 lanes.
+
+Red flags F1 to F8 (key and reason each): validity before the volume year (F1), surcharges "Some" with a
+per-piece or 70 kg rule (F2), a volumetric rule stricter than 1:6000 (F3), fuel % blank or for one month (F4),
+next-day GCC claimed but no option reaches 2 days on a GCC lane (F5), a lane with nothing offered (F6), input
+check not clean (F7), damage 0% or on-time 100% (F8). Follow-up questions per provider (with a copy button):
+missing scored answers, not-offered bands with volume, Option 2 gaps, each red flag.
+
+Screens: the ranked Quick Quote table (Options 1, 2 and 3, Option 1 in Scenario B, coverage, on time, area
+scores, total, red flags), Option 1 against Option 2 per lane (cost per order and transit, with the 2-day GCC
+marker), the options matrix Q20 to Q26, the comparison against Helmond, and the legacy v1 list. The provider
+detail shows test prices with source tags, costs per option and scenario, scores with a reason per item, the
+questions, the warehouse rates, red flags and follow-up questions. Removed with v1 data: worst-case transit,
+schedules, the timeline per shipment and the Scenario B discount. Export JSON writes the RFQ state and answers,
+the v2.3 results and the settings; Import JSON reads that file back.
+
+Option 1 prices also become per-shipment quotes in Master Data > Quotes (QR-<provider>-<lane>-<band>), so Landed
+Cost and the Quote Benchmark read them, and the Route Dashboard offers them per order (Option 2 transit for
+delivery from stock).
 
 Comparison against Helmond, per test order: Helmond = what FlexiTog pays under DAP from Helmond in the
-route engine (`window.FlexiDash.helmond`). Provider = MAX(minimum, rate per kg × kg) × (1 + fuel) + docs
-+ other for the order's lane and weight band, converted to EUR. Columns: orders priced, cost per order,
-cost per unit, lead time in working days, and the difference to Helmond on the orders both price.
-Providers without an answer show "No RFQ answer yet", never a guessed cost.
+route engine (`window.FlexiDash.helmond`). Provider = the Option 1 all-in price of the test shipment with the
+order's lane and weight band, as quoted. Columns: orders priced, cost per order, cost per unit, lead time in
+working days, and the difference to Helmond on the orders both price. Providers without an answer show "No
+RFQ answer yet", never a guessed cost; v1 answers show "Legacy v1, not comparable".
+
+Tests: `tests/test_rfq_v23.py`. Test 1 (the Aramex v2.3 test fill: Option 1 Scenario A EUR 188,208.28 with 129 of
+141 covered, B EUR 446,261.23, scores 4.00 / 1.60 / 3.41 / 1.56, total 2.64, flags F1 to F5 and F8) and the Aramex
+part of Tests 3 and 4 run when the provider files sit in `tests/fixtures/` under their own names; the blank
+template (Test 2), text in a price (Test 3), the v1 dummy as legacy (Test 4) and hand-calculated costs, scores and
+flags always run.
 
 Old lists: a Benchmarking provider list saved before this change moves into Master Data once, with its
 uploads (old types: 3PL / contract logistics to 3PL; freight forwarder, carrier, courier, customs broker
@@ -569,8 +625,9 @@ and 4PL to Freight forwarder; distributors stay outside Benchmarking).
 Storage: every Benchmarking file goes through `DataStore` in `workspace.js`, the same layer as Master Data
 (artifact database when published, this browser otherwise). RFQ state under `rfqstate`, parsed values and
 rates under `rfqvalues`, original files and a replaced template in IndexedDB `flexitog-bench`. No
-Benchmarking file calls localStorage directly. Logic without DOM is `flexitog/assets/rfq_core.js`
-(`window.FlexiRFQ`), tested in `tests/test_rfq.py` against `tests/fixtures/Sample_RFQ_Response_DUMMY.xlsx`.
+Benchmarking file calls localStorage directly. Logic without DOM: `flexitog/assets/rfq_v23.js` (Quick Quote v2.3)
+and `flexitog/assets/rfq_core.js` (`window.FlexiRFQ`: the Export sheet reader, the prefill and the v1 parser,
+tested in `tests/test_rfq.py` against `tests/fixtures/Sample_RFQ_Response_DUMMY.xlsx`).
 JSZip 3.10.1 (MIT) is inlined from `flexitog/assets/vendor/`.
 
 Storage follows the master data: saved with the dashboard when published, in this browser (localStorage,

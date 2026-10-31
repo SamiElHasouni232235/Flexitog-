@@ -186,7 +186,8 @@
      rfqResponses[] with the parsed Export values of every returned RFQ, the newest at latestResponseIndex.
      getRfqRate(providerId, lane, band) reads rate.<lane>.<band>.cost_per_shipment and .transit_days from
      that latest response, and getRfqStock(providerId, lane) reads stock.<lane>.serve_from_stock and
-     .transit_days. A missing response, value or provider gives {source: "placeholder"}, so the caller keeps
+     .transit_days. A Quick Quote v2.3 answer gives the Option 1 price of the test shipment with that lane and band, and the
+     Option 2 transit from the regional warehouse. A missing response, value or provider gives {source: "placeholder"}, so the caller keeps
      the engine's placeholder rates and labels the option "placeholder". */
   function rfqAdapter(getProviders) {
     const latest = id => {
@@ -195,9 +196,19 @@
       return r && r.values ? {p, r} : null;
     };
     const num = v => (v === "" || v == null || !Number.isFinite(Number(v)) ? null : Number(v));
+    // Quick Quote v2.3: the test shipment with the same lane and band (read from the file); its all-in price as given.
+    const V23 = "RFQ-MENA-TR-QUICK v2.3";
+    const ship23 = (v, lane, band) => { const k = Object.keys(v).find(x => /^ship\.T\d+\.lane$/.test(x) && v[x] === lane && v[x.replace(/lane$/, "band")] === band); return k ? k.replace(/lane$/, "") : null; };
     function getRfqRate(providerId, lane, band) {
       const L = latest(providerId); if (!L || !lane || !band) return {source: "placeholder"};
-      const v = L.r.values, k = `rate.${lane}.${band}.`;
+      const v = L.r.values;
+      if (v["meta.rfq_version"] === V23) {
+        const t = ship23(v, lane, band), cost = t ? num(v[t + "opt1_price_eur"]) : null;
+        if (cost == null || cost <= 0) return {source: "placeholder"};
+        return {source: "rfq", providerId, providerName: L.p.name, lane, band, costPerShipment: cost, transitDays: num(v[t + "opt1_transit_days"]),
+          mode: v[t + "opt1_service"] || "", currency: "EUR", responseDate: (L.r.summary || {}).responseDate || String(L.r.uploadedAt || "").slice(0, 10)};
+      }
+      const k = `rate.${lane}.${band}.`;
       const cost = num(v[k + "cost_per_shipment"]), days = num(v[k + "transit_days"]);
       if (cost == null || cost <= 0) return {source: "placeholder"};
       return {source: "rfq", providerId, providerName: L.p.name, lane, band, costPerShipment: cost, transitDays: days,
@@ -205,6 +216,11 @@
     }
     function getRfqStock(providerId, lane) {
       const L = latest(providerId); if (!L || !lane) return {source: "placeholder"};
+      if (L.r.values["meta.rfq_version"] === V23) {   // Option 2: delivery from the regional warehouse, fastest quoted band
+        const v = L.r.values, days = Object.keys(v).filter(x => /^ship\.T\d+\.lane$/.test(x) && v[x] === lane).map(x => x.replace(/lane$/, ""))
+          .filter(t => num(v[t + "opt2_delivery_price_eur"]) != null).map(t => num(v[t + "opt2_transit_days"])).filter(d => d != null);
+        return days.length ? {source: "rfq", providerId, providerName: L.p.name, lane, transitDays: Math.min(...days)} : {source: "placeholder"};
+      }
       const v = L.r.values, yes = String(v[`stock.${lane}.serve_from_stock`] || "").toLowerCase();
       const days = num(v[`stock.${lane}.transit_days`]);
       if (!(yes === "yes" || yes === "true") || days == null) return {source: "placeholder"};
