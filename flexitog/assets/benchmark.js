@@ -50,7 +50,7 @@ const DEFAULT_SETTINGS = () => ({
   scope: "target", builtin: true, fx: clone(DEFAULT_FX),
   gen: {baseYears: [], mode: "factor", scale: 1, targetUsd: 2400000, seed: 2026, showValues: true, lineDetail: "sku"},
   report: {deadline: addDays(today(), 21), contact_name: "", contact_role: "Supply chain", contact_email: "", contact_phone: ""},
-  rfq23: window.FlexiRFQ23.DEFAULT_SETTINGS(),   // Quick Quote v2.3: volumes, lane targets, warehouse assumptions, weights
+  rfq30: window.FlexiRFQ30.DEFAULT_SETTINGS(),   // RFQ v3.0 internal settings: volume cases, S2 to S4 inputs, score weights
 });
 const optsOf = f => (typeof f.options === "function" ? f.options() : f.options || []);
 const optLabel = (f, v) => { const o = optsOf(f).find(x => x[0] === v); return o ? o[1] : (v ?? ""); };
@@ -269,7 +269,7 @@ async function replaceTemplate(file){
   let info;
   try { info = templateInfo(bytes); } catch (e) { toast(e.message || "This file is not an RFQ template", "bad"); return; }
   if (!info.version) { toast("The Export sheet has no meta.rfq_version. Template not replaced.", "bad"); return; }
-  if (info.version !== V.VERSION) toast(info.version && V.LEGACY_VERSIONS.includes(info.version) ? `Template ${info.version} is the old detailed RFQ: its answers import as legacy, not comparable.` : `Template ${info.version} is not supported, so uploads of its answers will be refused until the tool supports it.`, "bad");
+  if (info.version !== V.VERSION) toast(info.version === V.V23 ? `Template ${info.version} is the old Quick Quote: its answers import as M1 only.` : info.version && V.LEGACY_VERSIONS.includes(info.version) ? `Template ${info.version} is the old detailed RFQ: its answers import as legacy, not comparable.` : `Template ${info.version} is not supported, so uploads of its answers will be refused until the tool supports it.`, "bad");
   const rec = {bytes: bytes.buffer.slice(0), name: file.name, version: info.version, date: info.date, replacedAt: nowIso()};
   await DataStore.files.put("rfq-template", rec);
   RFQT.current = Object.assign({}, rec, {bytes, source: "replaced"});
@@ -280,7 +280,7 @@ const xlsxBlob = bytes => new Blob([bytes], {type: "application/vnd.openxmlforma
 async function downloadPrefilled(id){
   const p = B.providers.find(x => x.id === id), t = tmpl(); if (!p || !t) return;
   try {
-    const src = t.version === V.VERSION ? v23Sources() : {}, cell = (k, v) => (src[k] ? [src[k][0], src[k][1], v] : null);
+    const src = ["v30", "v23"].includes(V.versionKind(t.version)) ? srcOf(V.versionKind(t.version)) : {}, cell = (k, v) => (src[k] ? [src[k][0], src[k][1], v] : null);
     const cells = [cell("q.Q01.answer", p.name), cell("q.Q02.answer", p.contactName), cell("q.Q03.answer", p.contactEmail), cell("q.Q04.answer", p.contactPhone)].filter(Boolean);
     const bytes = await R.prefill(t.bytes, p, JSZip, {version: t.version, cells});
     await saveFile(R.fileName(p, today()), xlsxBlob(bytes));
@@ -321,7 +321,7 @@ function provRow(p, flash){
   const dis = a ? "" : " disabled";
   const acts = p.baseline ? `<button type="button" class="btn ghost sm" data-a="md">Edit in Master Data</button>`
     : `<label class="btn sm filebtn" title="Upload the RFQ this provider answered">Upload answered RFQ<input type="file" data-up="${esc(p.id)}" accept=".xlsx,.xlsm" aria-label="Upload answered RFQ for ${esc(p.name)}"></label>
-      <button type="button" class="btn ghost sm" data-a="rates"${dis}>${a && isV23(a) ? "View test prices" : "View parsed rates"}</button>
+      <button type="button" class="btn ghost sm" data-a="rates"${dis}>${a && isModular(a) ? "View modules" : "View parsed rates"}</button>
       <button type="button" class="btn ghost sm" data-a="orig"${dis}>Download original</button>
       <button type="button" class="btn ghost sm" data-a="rm"${dis}>Remove upload</button>
       <button type="button" class="btn ghost sm" data-a="prefill"${tmpl() ? "" : " disabled"} title="RFQ with this provider's details and the metadata sheet; sets status Sent">Prefilled RFQ</button>
@@ -390,7 +390,7 @@ function renderProviders(){
   [["bxFStatus", "status"], ["bxFType", "type"], ["bxFRegion", "region"]].forEach(([id, k]) => $(id).addEventListener("change", e => { B.ui[k] = e.target.value; B.ui.keep = null; renderProvTable(); }));
   P.querySelector('[data-a="print"]').addEventListener("click", printProviders);
   P.querySelector('[data-a="md-add"]').addEventListener("click", () => editInMd(""));
-  P.querySelector('[data-a="rfq-dl"]').addEventListener("click", () => { const t = tmpl(); if (t) saveFile(t.name || "FlexiTog_RFQ_Quick_Quote_MENA-TR_v2.3.xlsx", xlsxBlob(t.bytes)); });
+  P.querySelector('[data-a="rfq-dl"]').addEventListener("click", () => { const t = tmpl(); if (t) saveFile(t.name || "FlexiTog_RFQ_MENA-TR_v3.0.xlsx", xlsxBlob(t.bytes)); });
   $("bxRfqTpl").addEventListener("change", e => { const f = e.target.files[0]; e.target.value = ""; if (f) replaceTemplate(f); });
   $("bxUpAny").addEventListener("change", e => { const f = e.target.files[0]; e.target.value = ""; if (f) uploadRfq(null, f); });
   const rs = P.querySelector('[data-a="rfq-reset"]');
@@ -528,7 +528,7 @@ function previewHtml(p, file, P, v, rates, warnings, hasMeta){
       ${served.map(r => `<tr><td class="num">${r.lane}</td><td>${esc(r.name)}</td><td class="num">${r.band}</td><td>${esc(r.mode)}</td><td class="n">${n2(r.transit)}</td><td class="n">${n2(r.perKg)}</td><td class="n">${n2(r.minCharge)}</td><td class="n">${pc(r.fuel)}</td><td class="n">${n2(r.docs)}</td><td class="n">${n2(r.other)}</td><td class="n">${r.perShipment == null ? '<span class="faint">per order</span>' : n2(r.perShipment)}</td></tr>`).join("")}</tbody></table></div>
     <p class="faint bnote">Nothing is saved yet. Confirm to store this upload for ${esc(p.name)} and make it the active one; earlier uploads stay in the history.</p>`;
 }
-// The version in meta.rfq_version picks the parser: Quick Quote v2.3 enters the benchmark; v1 still imports through its own
+// The version in meta.rfq_version picks the parser: modular v3.0 enters the benchmark, Quick Quote v2.3 as M1 only; v1 still imports through its own
 // parser as "Legacy v1, not comparable"; any other version is refused.
 async function uploadRfq(rowId, file){
   let buf, wb, P;
@@ -538,8 +538,8 @@ async function uploadRfq(rowId, file){
     P = R.parseWorkbook(wb, XLSX, {});
   } catch (e) { await problemsDialog(file.name, [{sheet: "", cell: "", message: (e && e.message) || "This file could not be read as an Excel workbook."}]); return; }
   const kind = V.versionKind(P.version);
-  if (kind === "unknown") { await problemsDialog(file.name, [{sheet: "Export", cell: "B2", message: `RFQ version "${P.version || "missing"}" is not supported. This tool reads ${V.VERSION}; answers in ${V.LEGACY_VERSIONS.join(", ")} import as legacy, not comparable.`}]); return; }
-  if (kind === "v23") return uploadRfq23(rowId, file, buf, wb);
+  if (kind === "unknown") { await problemsDialog(file.name, [{sheet: "Export", cell: "B2", message: `RFQ version "${P.version || "missing"}" is not supported. This tool reads ${V.VERSION}; ${V.V23} answers import as M1 only, ${V.LEGACY_VERSIONS.join(", ")} answers as legacy, not comparable.`}]); return; }
+  if (kind === "v30" || kind === "v23") return uploadModular(rowId, file, buf, wb, kind);
   P = R.parseWorkbook(wb, XLSX, {sources: legacySources()});
   // 1. right template: version and row count of the Export sheet, version of the metadata sheet
   const base = R.validate(P, null), meta = R.readMeta(wb);
@@ -556,7 +556,7 @@ async function uploadRfq(rowId, file){
   if (problems.length) { await problemsDialog(file.name, problems); return; }
   // 4. preview; nothing saves before Confirm
   const rates = R.rateTable(v);
-  const warnings = ["Legacy v1, not comparable: this answer uses the detailed RFQ v1. It is stored and shown, but stays out of the ranking and the Helmond comparison. Ask the provider for the Quick Quote v2.3."]
+  const warnings = ["Legacy v1, not comparable: this answer uses the detailed RFQ v1. It is stored and shown, but stays out of the ranking and the Helmond comparison. Ask the provider for the modular RFQ v3.0."]
     .concat(base.warnings.filter(w => !/not saved in Excel/.test(w) || !P.fromInputs), P.fromInputs ? ["The file was not saved in Excel after it was filled in. Rates are read from the input cells; the RFQ's own totals are unavailable."] : []);
   const ok = await ask(`Preview: ${p.name}`, previewHtml(p, file, P, v, rates, warnings, !!meta), [{label: "Cancel", value: null}, {label: "Confirm and save", value: true, primary: true}], true);
   if (!ok) { toast("Upload cancelled. Nothing saved."); return; }
@@ -607,7 +607,7 @@ async function syncRfqQuotes(pid){
   const prefix = `QR-${pid}-`, keep = (MD.t.quotes || []).filter(q => !String(q.quote_id).startsWith(prefix));
   const quotes = [], lanes = [];
   const limits = Object.fromEntries(FRT.BANDS.map(([b, max], i) => [b, [i ? FRT.BANDS[i - 1][1] : 0, Number.isFinite(max) ? max : null]]));
-  if (isV23(up)) quotes23(pid, up, limits, quotes, lanes);
+  if (isModular(up)) quotesModular(pid, up, limits, quotes, lanes);
   else if (up) {
     const v = up.values || {}, cur = String((up.summary || {}).currency || v["provider.currency"] || "EUR").toUpperCase();
     if (!["EUR", "USD"].includes(cur)) { toast(`${p.name}: quoted in ${cur}. Quotes take EUR or USD, so this answer feeds Benchmarking only.`, "bad"); }
@@ -689,14 +689,14 @@ function openDetail(id, tab, idx){
   const n = p.rfqResponses.length, ri = idx == null ? p.latestResponseIndex : idx, r = n && ri >= 0 ? p.rfqResponses[ri] : null;
   const v = r ? r.values || {} : {}, D = r ? R.detail(v, r.labels || {}) : null, s = r ? r.summary || R.summarize(v) : null;
   const cur = (s && s.currency) || "EUR";
-  const v23 = isV23(r);
-  const T = v23 ? (["profile", "prices", "costs", "scores", "questions", "warehouse", "flags"].includes(tab) ? tab : tab === "rates" ? "prices" : "profile")
+  const mod = isModular(r);
+  const T = mod ? (["profile", "M1", "M2", "M3", "M4", "M5", "M6", "questions", "scores", "flags"].includes(tab) ? tab : tab === "rates" ? "M1" : "profile")
     : (["profile", "rates", "costs", "rq"].includes(tab) ? tab : "profile");
-  const tabs = v23 ? [["profile", "Profile"], ["prices", "Test prices"], ["costs", "Costs"], ["scores", "Scores"], ["questions", "Questions"], ["warehouse", "Warehouse"], ["flags", "Red flags and follow-up"]]
+  const tabs = mod ? [["profile", "Profile"]].concat(MODS.map(([k]) => [k, k]), [["questions", "Questions"], ["scores", "Scores"], ["flags", "Red flags and follow-up"]])
     : [["profile", "Profile and coverage"], ["rates", "Rates"], ["costs", "Costs"], ["rq", "Reliability & Quality"]];
   const kv = rows => `<dl class="kv">${rows.filter(x => !isBlank(x[1])).map(([k, x]) => `<dt>${esc(k)}</dt><dd>${x}</dd>`).join("")}</dl>`;
   let body = "";
-  if (v23) body = detailBody23(p, r, T);
+  if (mod) body = detailBodyModular(p, r, T);
   else if (T === "profile") {
     body = kv([["Provider ID", esc(p.id)], ["Type", esc(p.type)], ["Website", p.website ? `<a href="${esc(safeUrl(p.website))}" target="_blank" rel="noopener noreferrer">${esc(p.website)}</a>` : ""], ["Contact", esc(p.contactName)],
       ["Phone", esc(p.contactPhone)], ["Email", p.contactEmail ? `<a href="mailto:${esc(p.contactEmail)}">${esc(p.contactEmail)}</a>` : ""], ["Country", esc(CNAME(p.hqCountry))],
@@ -726,7 +726,7 @@ function openDetail(id, tab, idx){
       <div class="iact">${n ? `<select id="bxRespSel" aria-label="Upload">${p.rfqResponses.map((x, i) => `<option value="${i}"${i === ri ? " selected" : ""}>Upload ${i + 1} · ${esc(String(x.uploadedAt).slice(0, 10))} · ${esc(x.fileName)}${i === p.latestResponseIndex ? " (active)" : ""}</option>`).join("")}</select>` : ""}
         ${r && ri !== p.latestResponseIndex ? `<button type="button" class="btn ghost sm" data-a="activate">Make this upload active</button>` : ""}
         ${r && r.fileId ? `<button type="button" class="btn ghost sm" data-a="orig">Download original file</button>` : ""}<button type="button" class="btn ghost" data-a="close">Close</button></div></div>
-    <div style="padding:10px 16px 0">${seg2("bxDetTabs", tabs, T)}${r && !v23 ? ' <span class="srct assumption">Legacy v1, not comparable</span>' : ""}${r ? `<span class="faint bnote" style="margin-left:10px">${esc(r.rfqVersion)} · ${esc(r.fileName)} · uploaded ${esc(String(r.uploadedAt).slice(0, 16).replace("T", " "))}${ri === p.latestResponseIndex ? " · active" : " · older upload"}</span>` : ""}</div>
+    <div style="padding:10px 16px 0">${seg2("bxDetTabs", tabs, T)}${r && !mod ? ' <span class="srct assumption">Legacy v1, not comparable</span>' : ""}${r ? `<span class="faint bnote" style="margin-left:10px">${esc(r.rfqVersion)} · ${esc(r.fileName)} · uploaded ${esc(String(r.uploadedAt).slice(0, 16).replace("T", " "))}${ri === p.latestResponseIndex ? " · active" : " · older upload"}</span>` : ""}</div>
     <div class="fbody" style="display:block">${body}</div></div>`;
   dlg.querySelector('[data-a="close"]').addEventListener("click", () => dlg.close());
   dlg.querySelector("#bxDetTabs").addEventListener("click", e => { const b = e.target.closest("button"); if (b) openDetail(id, b.dataset.v, ri); });
@@ -753,9 +753,10 @@ function comparison(){
   const provs = B.providers.filter(p => !p.baseline).map(p => {
     const up = p.latestResponseIndex >= 0 ? p.rfqResponses[p.latestResponseIndex] : null;
     if (!up) return {p, none: true};
-    if (!isV23(up)) return {p, legacy: true};   // v1: cost method differs, out of the comparison
+    if (!isModular(up)) return {p, legacy: true};   // v1: cost method differs, out of the comparison
     const Q = V.quote(up.values || {});
-    return {p, cur: "EUR", fx: 1, priceFor: (lane, band) => V.priceFor(Q, lane, band, "opt1")};
+    // the M1 price of the test shipment with the order's lane and band, as quoted
+    return {p, cur: "EUR", fx: 1, priceFor: (lane, band) => { const r = Q.m1.find(x => x.lane === lane && x.band === band); return r && r.price != null ? {price: r.price, transit: r.transit} : null; }};
   });
   const res = FlexiCalc.helmondComparison({orders: t.orders, helmond: H, providers: provs, laneFor: FRT.laneFor, bandFor: FRT.bandFor});
   const rows = [Object.assign({p: base || {name: "Helmond EU hub", id: "HLM", type: "Own hub", baseline: true}, kind: "baseline"}, res.baseline)].concat(res.rows);
@@ -768,7 +769,7 @@ function comparisonHtml(C){
     const name = `<b>${esc(r.p.name)}</b>${r.kind === "baseline" ? ' <span class="st baseline">Baseline</span>' : ""}<br><span class="faint num">${esc(r.p.id)} · ${esc(r.p.type || "")}</span>`;
     if (r.kind === "none") return `<tr class="noans"><td>${name}</td><td colspan="7" class="faint">No RFQ answer yet</td></tr>`;
     if (r.kind === "fx") return `<tr class="noans"><td>${name}</td><td colspan="7" class="faint">Quoted in ${esc(r.cur)}, which has no exchange rate under Sales Data and Analysis. Add it to compare.</td></tr>`;
-    if (r.kind === "legacy") return `<tr class="noans"><td>${name}</td><td colspan="7" class="faint">Legacy v1 answer, not comparable. Ask for the Quick Quote v2.3.</td></tr>`;
+    if (r.kind === "legacy") return `<tr class="noans"><td>${name}</td><td colspan="7" class="faint">Legacy v1 answer, not comparable. Ask for the modular RFQ v3.0.</td></tr>`;
     const d = r.kind === "baseline" ? '<td class="n faint">baseline</td><td class="n faint">baseline</td><td class="n faint">baseline</td>'
       : `<td class="n">${signed(r.dOrder, 0)}</td><td class="n">${signed(r.dUnit, 2)}</td><td class="n">${signed(r.dLead, 1)}</td>`;
     return `<tr${r.kind === "baseline" ? ' class="baserow"' : ""}><td>${name}</td><td class="n">${fmt(r.n)} of ${fmt(C.orders)}</td><td class="n">${r.perOrder == null ? "n/a" : fmt(r.perOrder)}</td><td class="n">${r.perUnit == null ? "n/a" : fmt(r.perUnit, 2)}</td><td class="n">${r.lead == null ? "n/a" : fmt(r.lead, 1)}</td>${d}</tr>`;
@@ -779,219 +780,267 @@ function comparisonHtml(C){
 function renderCompare(){
   const el = $("bxCompare"); if (!el) return;
   const C = comparison();
-  el.innerHTML = v23TableHtml() + optVsHtml() + matrixHtml() +
+  el.innerHTML = answersTableHtml() + modulesHtml() +
     `<div class="card"><div class="cardhead"><h2>Against Helmond, on the test order set</h2><span class="faint" style="font-size:12px">${C ? `${fmt(C.orders)} test orders · Helmond first` : ""}</span></div>${comparisonHtml(C)}</div>` + legacyHtml();
   el.querySelectorAll('[data-a="detail"]').forEach(b => b.addEventListener("click", () => openDetail(b.closest("tr").dataset.id)));
-  const cp = $("bxCmpProv"); if (cp) cp.addEventListener("change", () => { B.ui.cmpProv = cp.value; renderCompare(); });
-  el.querySelectorAll("#bxCmpScen button").forEach(b => b.addEventListener("click", () => { B.ui.cmpScen = b.dataset.v; renderCompare(); }));
+  el.querySelectorAll("#bxModTab button").forEach(b => b.addEventListener("click", () => { B.ui.mod = b.dataset.v; renderCompare(); }));
 }
 
-// ============================================================ RFQ Quick Quote v2.3 (rfq_v23.js holds the logic)
-// v2.3 answers are priced, scored and compared here. v1 answers keep their own parser and views, listed apart as
-// "Legacy v1, not comparable" and left out of the ranking and the Helmond comparison.
-const V = window.FlexiRFQ23;
+// ============================================================ RFQ MENA-TR v3.0, modular (rfq_v30.js holds the logic)
+// v3.0 answers price modules M1 to M6; v2.3 answers count as M1 only. Both feed the scenarios on the Dashboard and the two
+// role scores here. v1 answers stay readable, listed as "Legacy v1, not comparable", and out of every scenario.
+const V = window.FlexiRFQ30;
 const activeUp = p => (p && p.latestResponseIndex >= 0 ? p.rfqResponses[p.latestResponseIndex] : null);
-const isV23 = up => !!up && up.rfqVersion === V.VERSION;
-const v23Sources = () => (PAYLOAD.rfq_template || {}).sources || {};
-const legacySources = () => (PAYLOAD.rfq_legacy || {}).sources || {};
-const S23 = () => B.settings.rfq23;
-// Every provider with an active v2.3 answer: evaluated, scored against each other, ranked by total. Cached per
-// upload set and settings.
-function v23All(){
-  const list = B.providers.filter(p => !p.baseline).map(p => ({p, up: activeUp(p)})).filter(x => isV23(x.up));
-  return FlexiCalc.memo("rfq23", JSON.stringify([list.map(x => x.up.ref || x.up.uploadedAt), S23()]), () => {
-    const ev = list.map(x => Object.assign({id: x.p.id, name: x.p.name, p: x.p, up: x.up}, V.evaluate(x.up.values, S23())));
-    const scores = V.scoreAll(ev.map(e => ({id: e.id, Q: e.Q, A: e.A})), S23());
-    ev.forEach((e, i) => { e.S = scores[i]; e.follow = V.followUps(e.Q, e.A, e.S, e.flags, S23()); });
-    return ev.sort((a, b) => b.S.total - a.S.total || a.p.name.localeCompare(b.p.name, "en"));
+const isModular = up => !!up && (up.rfqVersion === V.VERSION || up.rfqVersion === V.V23);
+const srcOf = kind => (kind === "v30" ? (PAYLOAD.rfq_template || {}).sources : kind === "v23" ? (PAYLOAD.rfq_v23 || {}).sources : (PAYLOAD.rfq_legacy || {}).sources) || {};
+const legacySources = () => srcOf("legacy");
+const S30 = () => B.settings.rfq30;
+// Every provider with an active v3.0 or v2.3 answer: parsed, scored, flagged, with follow-up questions. Cached per uploads and settings.
+function modAll(){
+  const rows = B.providers.filter(p => !p.baseline).map(p => ({p, up: activeUp(p)})).filter(x => isModular(x.up));
+  return FlexiCalc.memo("rfq30", JSON.stringify([rows.map(x => x.up.ref || x.up.uploadedAt), S30()]), () => {
+    const list = rows.map(x => ({id: x.p.id, name: x.p.name, p: x.p, up: x.up, Q: V.quote(x.up.values || {})}));
+    const scores = V.scoreAll(list, S30(), "A"), s3 = list.length ? V.scenarios(list, S30(), "A", "best").S3 : null;
+    list.forEach((e, i) => {
+      e.S = scores[i]; e.flags = V.flags(e.Q, S30()); e.comp = V.completeness(e.Q);
+      e.follow = V.followUps(e.Q, e.flags, {missing: [...new Set([].concat(e.S.missing))]}, s3 && s3.provider === e.name ? s3.missing : [], S30());
+    });
+    return list;
   });
 }
-const v23Of = id => v23All().find(e => e.id === id);
-const legacyList = () => B.providers.filter(p => !p.baseline && activeUp(p) && !isV23(activeUp(p)));
-const TAGS = {quoted: "quoted", derived: "derived", extrapolated: "extrapolated", assumption: "assumption", not_offered: "not offered", invalid: "invalid"};
+const modOf = id => modAll().find(e => e.id === id);
+const legacyList = () => B.providers.filter(p => !p.baseline && activeUp(p) && !isModular(activeUp(p)));
+const TAGS = {quoted: "quoted", derived: "derived", extrapolated: "extrapolated", proxy: "proxy", assumption: "assumption", not_offered: "not offered", invalid: "invalid"};
 const srcTag = t => `<span class="srct ${esc(t)}">${esc(TAGS[t] || t)}</span>`;
 const eur = (v, dp) => (v == null ? "n/a" : "EUR " + fmt(v, dp == null ? 0 : dp));
 const sc2 = v => (v == null ? "n/a" : (Math.round(v * 100) / 100).toFixed(2));
-// One option in one scenario, as a short cell: cost, coverage and source, or its state.
-function optCell(O, opts){
-  const o = opts || {};
-  if (O.state === "not_quoted") return '<span class="faint">not quoted</span>';
-  if (O.state === "incomplete") {
-    const miss = O.inputs.missing.concat(O.inputs.needs.map(x => "setting: " + x));
-    return `<span class="srct assumption" title="${esc("Missing: " + miss.join(", "))}">incomplete</span>${o.short ? "" : `<br><span class="faint">${esc(miss.slice(0, 3).join(", "))}${miss.length > 3 ? "…" : ""}</span>`}`;
-  }
-  return `<b>${eur(O.cost)}</b><br><span class="faint num">${O.covered} of ${O.shipments}${O.extrapolated ? ` · ${O.extrapolated} extrapolated` : ""}</span> ${srcTag(O.tag)}`;
-}
+const MODS = [["M1", "Direct from Helmond"], ["M2", "Bulk to the region"], ["M3", "Customs"], ["M4", "Warehouse"], ["M5", "Delivery from warehouse"], ["M6", "Other solution"]];
+const laneName = L => (V.LANES[L] || {}).short || (V.LANES[L] || {}).name || L;
+const na = (txt, tip) => `<span class="faint"${tip ? ` title="${esc(tip)}"` : ""}>${esc(txt || "not offered")}</span>`;
+const money2 = (v, key, extra) => (v == null ? na("not offered", key) : `<span class="rqv" title="${esc(["quoted", key, extra].filter(Boolean).join(" · "))}">${fmt(v, 2)}</span>`);
+const invalidOf = (Q, key) => Q.invalid.some(x => x.key === key);
+const cellOr = (Q, v, key, extra) => (invalidOf(Q, key) ? srcTag("invalid") : money2(v, key, extra));
 
-// ---- upload of a v2.3 answer: template check, provider, preview, save on confirm
-function shim23(Q){   // the v1 identity keys pickProvider and createFromFile read, filled from Q01 to Q04
-  const v = {"provider.name": Q.name, "provider.contact_name": Q.contact, "provider.contact_email": Q.email, "provider.contact_phone": Q.phone};
-  const served = V.lanesCovered(Q);
-  Object.keys(V.LANES).forEach(L => { v[`coverage.${L}.presence`] = served.includes(L) ? "Served" : "Not served"; });
+// ---- upload of a v3.0 (or v2.3) answer: template check, provider, preview, save on confirm
+function shimOf(Q){   // the v1 identity keys pickProvider and createFromFile read, filled from Q01 to Q04
+  const v = {"provider.name": Q.name, "provider.contact_name": (Q.q.Q02 || {}).answer || "", "provider.contact_email": (Q.q.Q03 || {}).answer || "", "provider.contact_phone": (Q.q.Q04 || {}).answer || ""};
+  V.LANE_IDS.forEach(L => { v[`coverage.${L}.presence`] = Q.m1.some(r => r.lane === L && r.price != null) || Q.m5.some(r => r.lane === L && r.price != null) ? "Served" : "Not served"; });
   return v;
 }
-function previewHtml23(p, file, Q, E, hasMeta){
-  const o1 = E.A.opt1.A, inv = Q.invalid;
-  const row = s => `<tr><td class="num">${s.id}</td><td class="num">${esc(s.lane)}</td><td>${esc((V.LANES[s.lane] || {}).name || "")}</td><td class="num">${esc(s.band)} ${esc(s.size)}</td><td class="n">${fmt(s.kg)}</td>
-    ${["opt1", "opt2", "opt3"].map(o => `<td class="n">${s[o].price == null ? (inv.some(x => x.key === `ship.${s.id}.${o === "opt2" ? "opt2_delivery" : o}_price_eur`) ? srcTag("invalid") : '<span class="faint">not offered</span>') : fmt(s[o].price, 2)}</td><td class="n">${s[o].transit == null ? "" : fmt(s[o].transit, 1)}</td>`).join("")}</tr>`;
+function warnHtml(Q){
+  return (Q.inputCheck !== V.OK_CHECK ? `<p class="warnbox">⚠ Input check of the file: ${esc(Q.inputCheck || "no result (the file was not saved in Excel)")}. The valid values still import.</p>` : "") +
+    (Q.invalid.length ? `<p class="warnbox">⚠ ${Q.invalid.length} cell${Q.invalid.length === 1 ? "" : "s"} hold${Q.invalid.length === 1 ? "s" : ""} text where a number belongs, left out of every calculation: ${Q.invalid.map(x => `<b>${esc(x.key)}</b> "${esc(x.value)}"`).join(", ")}.</p>` : "") +
+    (Q.moduleNotes.length ? `<p class="warnbox">⚠ ${Q.moduleNotes.map(n => `${n.module} ${esc(n.note)}`).join("; ")}.</p>` : "");
+}
+function modulesLine(Q){
+  const comp = V.completeness(Q);
+  return MODS.map(([M, l]) => { const off = Q.modules[M], pr = Q.priced[M], c = comp[M];
+    return `<span class="modchip${pr ? " on" : off === "Yes" ? " warn" : ""}" title="${esc(`${M} ${l}: ${off === "Yes" ? "offered" : off === "No" ? "not offered" : "not stated"}${pr ? `, ${Math.round(c * 100)}% filled` : off === "Yes" ? ", but no prices" : ""}`)}">${M}${pr ? ` ${Math.round(c * 100)}%` : off === "Yes" ? " !" : ""}</span>`; }).join("");
+}
+function previewHtmlModular(p, file, Q, hasMeta){
+  const s1 = V.scenarios([{id: p.id, name: p.name, Q}], S30(), "A", p.id).S1;
   return `<dl class="kv"><dt>Provider</dt><dd><b>${esc(p.name)}</b> · ${esc(p.id)} · ${esc(p.type)}</dd><dt>File</dt><dd>${esc(file.name)}</dd>
-      <dt>Template</dt><dd>${esc(Q.version)} · ${hasMeta ? "metadata sheet found" : "no metadata sheet, provider picked by hand"}</dd>
-      <dt>Quote</dt><dd>${esc(Q.name || "no company name")}${Q.validUntil ? ` · valid until ${esc(Q.validUntil)}` : ""} · all prices EUR, all-in DAP</dd>
-      <dt>Option 1</dt><dd>${o1.covered} of ${o1.shipments} Scenario A shipments covered${o1.cost != null ? ` · EUR ${fmt(o1.cost, 2)} a year` : ""}</dd></dl>
-    ${Q.inputCheck !== V.OK_CHECK ? `<p class="warnbox">⚠ Input check of the file: ${esc(Q.inputCheck || "no result (the file was not saved in Excel)")}. The valid values still import.</p>` : ""}
-    ${inv.length ? `<p class="warnbox">⚠ ${inv.length} field${inv.length === 1 ? "" : "s"} hold${inv.length === 1 ? "s" : ""} text where a number belongs, left out and never counted as 0: ${inv.map(x => `<b>${esc(x.key)}</b> "${esc(x.value)}"`).join(", ")}.</p>` : ""}
-    <div class="tablewrap btable" style="max-height:44vh;margin-top:8px"><table><thead><tr><th>ID</th><th>Lane</th><th>Country</th><th>Band</th><th>kg</th><th>Opt 1 EUR</th><th>days</th><th>Opt 2 EUR</th><th>days</th><th>Opt 3 EUR</th><th>days</th></tr></thead>
-      <tbody>${Q.shipments.map(row).join("")}</tbody></table></div>
+      <dt>Template</dt><dd>${esc(Q.version)}${Q.kind === "v23" ? ` · <span class="srct assumption">v2.3, M1 only</span>` : ""} · ${hasMeta ? "metadata sheet found" : "no metadata sheet, provider picked by hand"}</dd>
+      <dt>Quote</dt><dd>${esc(Q.name || "no company name")}${Q.validUntil ? ` · valid until ${esc(Q.validUntil)}` : ""} · EUR excl. VAT, DAP</dd>
+      <dt>Modules</dt><dd><div class="tags">${modulesLine(Q)}</div></dd>
+      <dt>S1, volume case A</dt><dd>${s1.state === "complete" ? `${eur(s1.total, 2)} a year · ${fmt(s1.covered)} of ${fmt(s1.shipments)} shipments covered` : "no M1 prices"}</dd></dl>
+    ${warnHtml(Q)}
     <p class="faint bnote">Nothing is saved yet. Confirm to store this answer for ${esc(p.name)} and make it the active one; earlier uploads stay in the history.</p>`;
 }
-async function uploadRfq23(rowId, file, buf, wb){
-  const P = R.parseWorkbook(wb, XLSX, {sources: v23Sources()}), meta = R.readMeta(wb);
+async function uploadModular(rowId, file, buf, wb, kind){
+  const P = R.parseWorkbook(wb, XLSX, {sources: srcOf(kind)}), meta = R.readMeta(wb);
   const values = V.valuesOf(P), Q = V.quote(values), errs = [];
-  if (!Q.shipments.length) errs.push({sheet: "Export", cell: "", message: "The Export sheet has no test shipments (ship.Txx keys)."});
-  else if (Q.shipments.length !== Q.shipmentCount) errs.push({sheet: "Export", cell: "", message: `The Export sheet has ${Q.shipments.length} test shipments, but meta.shipment_count says ${Q.shipmentCount}. The file may be damaged.`});
-  Q.shipments.filter(s => !V.LANES[s.lane] || !V.BANDS.includes(s.band)).forEach(s => errs.push({sheet: "Export", cell: "", message: `${s.id}: lane "${s.lane}" or band "${s.band}" is not one of L01 to L09 and B1 to B5.`}));
-  if (meta && meta.version && meta.version !== V.VERSION) errs.push({sheet: R.META_SHEET, cell: "B1", message: `The metadata sheet says ${meta.version}, but the Export sheet says ${V.VERSION}.`});
+  if (!Q.m1.length) errs.push({sheet: "Export", cell: "", message: kind === "v30" ? "The Export sheet has no M1 rows (m1.Txx keys). The file may be damaged." : "The Export sheet has no test shipments (ship.Txx keys)."});
+  Q.m1.filter(r => !V.LANES[r.lane] || !V.BANDS.includes(r.band)).forEach(r => errs.push({sheet: "Export", cell: "", message: `${r.id}: lane "${r.lane}" or band "${r.band}" is not one of L01 to L09 and B1 to B5.`}));
+  Q.m2.filter(r => !V.LANES[r.lane] || !V.LOADS[r.load]).forEach(r => errs.push({sheet: "Export", cell: "", message: `${r.id}: lane "${r.lane}" or load "${r.load}" is not one of L01 to L09 and P1, P5, C20, C40.`}));
+  if (meta && meta.version && meta.version !== Q.version) errs.push({sheet: R.META_SHEET, cell: "B1", message: `The metadata sheet says ${meta.version}, but the Export sheet says ${Q.version}.`});
   if (errs.length) { await problemsDialog(file.name, errs); return; }
-  const pid = await pickProvider(rowId, meta, shim23(Q)); if (!pid) return;
+  const pid = await pickProvider(rowId, meta, shimOf(Q)); if (!pid) return;
   syncProviders();
   const p = B.providers.find(x => x.id === pid); if (!p) { toast("That provider is not in Master Data", "bad"); return; }
-  const E = V.evaluate(values, S23());
-  const ok = await ask(`Preview: ${p.name}`, previewHtml23(p, file, Q, E, !!meta), [{label: "Cancel", value: null}, {label: "Confirm and save", value: true, primary: true}], true);
+  const ok = await ask(`Preview: ${p.name}`, previewHtmlModular(p, file, Q, !!meta), [{label: "Cancel", value: null}, {label: "Confirm and save", value: true, primary: true}], true);
   if (!ok) { toast("Upload cancelled. Nothing saved."); return; }
   const uploadedAt = nowIso();
-  const entry = {uploadedAt, fileName: file.name, rfqVersion: V.VERSION, values, labels: {}, types: {}, uncached: !!P.fromInputs,
-    summary: {responseDate: uploadedAt.slice(0, 10), quoteValidUntil: Q.validUntil || "", currency: "EUR", quoteReference: ""},
+  const entry = {uploadedAt, fileName: file.name, rfqVersion: Q.version, values, labels: {}, types: {}, uncached: !!P.fromInputs,
+    summary: {responseDate: uploadedAt.slice(0, 10), quoteValidUntil: Q.validUntil || "", currency: "EUR", quoteReference: "", tag: Q.tag},
     ref: uid("RSP"), fileId: uid("RFQF"), hasMeta: !!meta, confirmedAt: nowIso()};
   await DataStore.files.put("rfq-file:" + entry.fileId, {bytes: buf, name: file.name, uploadedAt, providerId: p.id});
   const st = rfqOf(p.id); st.uploads = (st.uploads || []).concat([entry]); st.active = st.uploads.length - 1;
   B.respDirty = true;
   if (!(await saveRfq())) return;
-  const md = (MD.t.distribution_centers || []).find(r => String(r.dc_id) === p.id) || {};
-  const fill = {dc_id: p.id}; [["contact_name", Q.contact], ["contact_email", Q.email], ["contact_phone", Q.phone]].forEach(([k, x]) => { if (isBlank(md[k]) && !isBlank(x)) fill[k] = String(x); });
+  const md = (MD.t.distribution_centers || []).find(r => String(r.dc_id) === p.id) || {}, sh = shimOf(Q);
+  const fill = {dc_id: p.id}; [["contact_name", sh["provider.contact_name"]], ["contact_email", sh["provider.contact_email"]], ["contact_phone", sh["provider.contact_phone"]]].forEach(([k, x]) => { if (isBlank(md[k]) && !isBlank(x)) fill[k] = String(x); });
   if (Object.keys(fill).length > 1) await mdUpsertRows("distribution_centers", [fill]);
   syncProviders();
   await syncRfqQuotes(p.id);
-  toast(`${p.name}: Quick Quote saved (upload ${st.uploads.length}, active)${Q.invalid.length ? `, ${Q.invalid.length} invalid field${Q.invalid.length === 1 ? "" : "s"} left out` : ""}. ${PENDING_NOTE}`);
+  toast(`${p.name}: ${Q.kind === "v23" ? "Quick Quote v2.3 saved as M1 only" : "RFQ v3.0 saved"} (upload ${st.uploads.length}, active)${Q.invalid.length ? `, ${Q.invalid.length} invalid cell${Q.invalid.length === 1 ? "" : "s"} left out` : ""}. ${PENDING_NOTE}`);
   renderTabs(); renderChips(); renderProvTable();
 }
 
-// ---- comparison cards under the provider table
-function v23TableHtml(){
-  const ev = v23All();
-  if (!ev.length) return `<div class="card"><div class="cardhead"><h2>Quick Quote v2.3 answers</h2></div><p class="empty">No v2.3 answers yet. Send the Quick Quote (Download latest RFQ) and upload the answers on each provider's row.</p></div>`;
-  const rows = ev.map((e, i) => { const O = e.S.option ? e.A[e.S.option].A : null, ar = k => (e.S.areas.find(a => a.key === k) || {}).score;
-    return `<tr data-id="${esc(e.id)}"><td class="n">${i + 1}</td><td><button type="button" class="lnk" data-a="detail">${esc(e.p.name)}</button>${badge(e.p)}<br><span class="faint num">${esc(e.id)}</span></td>
-      <td>${optCell(e.A.opt1.A)}</td><td>${optCell(e.A.opt2.A, {short: true})}</td><td>${optCell(e.A.opt3.A)}</td><td>${optCell(e.A.opt1.B)}</td>
-      <td class="n">${O ? `${pctTxt(O.covered / O.shipments)}<br><span class="faint">${esc(V.labelOf(e.S.option).replace(/ from .*| other .*/, ""))}</span>` : "n/a"}</td>
-      <td class="n">${O ? `${O.onTime} of ${O.shipments}<br><span class="faint">${pctTxt(O.onTime / O.shipments)}</span>` : "n/a"}</td>
-      ${["cost", "service", "quality", "options"].map(k => `<td class="n">${sc2(ar(k))}</td>`).join("")}<td class="n"><b>${sc2(e.S.total)}</b></td>
-      <td>${e.flags.length ? `<div class="tags">${[...new Set(e.flags.map(f => f.id))].map(id => `<span class="tag flag" title="${esc(e.flags.filter(f => f.id === id).map(f => f.reason).join(" "))}">${id}</span>`).join("")}</div>` : '<span class="faint">none</span>'}</td></tr>`; }).join("");
-  const W = S23().weights;
-  return `<div class="card"><div class="cardhead"><h2>Quick Quote v2.3 answers</h2><span class="faint" style="font-size:12px">Ranked by total score · Scenario A unless marked B · scores 0 to 4</span></div>
-    <div class="tablewrap btable"><table><thead><tr><th>#</th><th>Provider</th><th>Option 1 A</th><th>Option 2 A</th><th>Option 3 A</th><th>Option 1 B</th><th>Coverage</th><th>On time</th><th>Cost</th><th>Service</th><th>Quality</th><th>Options</th><th>Total</th><th>Red flags</th></tr></thead><tbody>${rows}</tbody></table></div>
-    <p class="faint bnote">Annual cost = shipments per lane and band (settings below) × the all-in test price for that lane and band, used as given. A band with volume but no test shipment takes the next lower band's price per kg × the band's average kg (extrapolated). A blank price is not covered: it adds no cost and lowers coverage. On time: shipments whose transit days are within the lane target. Coverage and on time are for the option the scores use: the cheapest complete option in Scenario A. Weights: cost ${W.cost}%, service ${W.service}%, quality ${W.quality}%, options ${W.options}% (to be agreed with Mies). Open a provider for the reasons per score, red flags and follow-up questions.</p></div>`;
+// ---- cards under the provider table: answers and scores, module comparison, legacy v1
+function answersTableHtml(){
+  const ev = modAll();
+  if (!ev.length) return `<div class="card"><div class="cardhead"><h2>RFQ answers</h2></div><p class="empty">No v3.0 or v2.3 answers yet. Send the RFQ (Download latest RFQ) and upload the answers on each provider's row.</p></div>`;
+  const W = S30().weights, flagChips = e => (e.flags.length ? `<div class="tags">${[...new Set(e.flags.map(f => f.id))].map(id => `<span class="tag flag" title="${esc(e.flags.filter(f => f.id === id).map(f => f.reason).join(" "))}">${id}</span>`).join("")}</div>` : '<span class="faint">none</span>');
+  const area = (s, k) => sc2((s.areas.find(a => a.key === k) || {}).score);
+  const rows = ev.slice().sort((a, b) => Math.max(b.S.forwarder.total, b.S.threepl.total) - Math.max(a.S.forwarder.total, a.S.threepl.total)).map(e => `<tr data-id="${esc(e.id)}">
+      <td><button type="button" class="lnk" data-a="detail">${esc(e.name)}</button>${badge(e.p)}<br><span class="faint num">${esc(e.id)} · ${esc(e.Q.tag)}</span></td>
+      <td><div class="tags">${modulesLine(e.Q)}</div>${e.Q.inputCheck !== V.OK_CHECK || e.Q.invalid.length ? `<span class="faint" title="${esc(e.Q.inputCheck || "")}">⚠ ${e.Q.invalid.length} invalid</span>` : ""}</td>
+      <td class="n" title="${esc(`Cost ${area(e.S.forwarder, "cost")} · service ${area(e.S.forwarder, "service")} · quality ${area(e.S.forwarder, "quality")} · options ${area(e.S.forwarder, "options")}`)}"><b>${sc2(e.S.forwarder.total)}</b></td>
+      <td class="n" title="${esc(`Cost ${area(e.S.threepl, "cost")} · service ${area(e.S.threepl, "service")} · quality ${area(e.S.threepl, "quality")} · options ${area(e.S.threepl, "options")}`)}"><b>${sc2(e.S.threepl.total)}</b></td>
+      <td>${flagChips(e)}</td></tr>`).join("");
+  return `<div class="card"><div class="cardhead"><h2>RFQ answers</h2><span class="faint" style="font-size:12px">Modules offered and filled · two role scores, 0 to 4 · volume case A</span></div>
+    <div class="tablewrap btable"><table><thead><tr><th>Provider</th><th>Modules (share filled)</th><th>Forwarder score</th><th>3PL score</th><th>Red flags</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="faint bnote">Forwarder score: cost from S1 and M2, compared with the other providers on the lane-bands and loads all of them price. 3PL score: the S3 stock cost with each provider as the 3PL, on the countries all of them serve, plus M4 and M5 completeness under options. Both share the service, quality and options areas. Weights: forwarder ${W.forwarder.cost}/${W.forwarder.service}/${W.forwarder.quality}/${W.forwarder.options}, 3PL ${W.threepl.cost}/${W.threepl.service}/${W.threepl.quality}/${W.threepl.options} (to be agreed with Mies). Open a provider for the reasons per score, red flags and follow-up questions.</p></div>`;
 }
-function optVsHtml(){
-  const ev = v23All(); if (!ev.length) return "";
-  const id = ev.some(e => e.id === B.ui.cmpProv) ? B.ui.cmpProv : ev[0].id, e = ev.find(x => x.id === id), sc = B.ui.cmpScen === "B" ? "B" : "A";
-  const o1 = e.A.opt1[sc], o2 = e.A.opt2[sc];
-  // transit per lane from the covered cells, also when Option 2 cannot be costed yet
-  const tr = (O, L) => { const cs = O.cells.filter(c => c.lane === L && c.covered && c.transit != null), n = cs.reduce((a, c) => a + c.n, 0); return n ? cs.reduce((a, c) => a + c.n * c.transit, 0) / n : null; };
-  const mark = (L, d) => (V.LANES[L].gcc && d != null ? (d <= 2 ? ' <span class="okb yes" title="Within the 2-day GCC target">≤ 2 d</span>' : ' <span class="okb no" title="Above the 2-day GCC target">&gt; 2 d</span>') : "");
-  const rows = Object.keys(V.LANES).map(L => {
-    const a = o1.lanes.find(x => x.lane === L), b = o2.lanes.find(x => x.lane === L), t1 = tr(o1, L), t2 = tr(o2, L);
-    if (!a.shipments) return "";
-    return `<tr><td class="num">${L}</td><td>${esc(V.LANES[L].name)}</td><td class="n">${a.shipments}</td><td class="n">${a.target}</td>
-      <td class="n">${a.perShipment == null ? '<span class="faint">not covered</span>' : eur(a.perShipment, 2)}</td><td class="n">${t1 == null ? "" : fmt(t1, 1)}${mark(L, t1)}</td>
-      <td class="n">${o2.state !== "ok" ? `<span class="faint">${o2.state === "incomplete" ? "incomplete" : "not quoted"}</span>` : b.perShipment == null ? '<span class="faint">not covered</span>' : eur(b.perShipment, 2)}</td><td class="n">${t2 == null ? "" : fmt(t2, 1)}${mark(L, t2)}</td></tr>`;
-  }).join("");
-  return `<div class="card" id="bxOptVs"><div class="cardhead"><h2>Option 1 against Option 2 per lane</h2>
-      <div class="ctl"><select id="bxCmpProv" aria-label="Provider">${ev.map(x => `<option value="${esc(x.id)}"${x.id === id ? " selected" : ""}>${esc(x.p.name)}</option>`).join("")}</select>${seg2("bxCmpScen", [["A", "Scenario A"], ["B", "Scenario B"]], sc)}</div></div>
-    <div class="tablewrap btable"><table><thead><tr><th>Lane</th><th>Country</th><th>Shipments</th><th>Target (wd)</th><th>Option 1 cost per order</th><th>Option 1 transit</th><th>Option 2 cost per order</th><th>Option 2 transit</th></tr></thead><tbody>${rows}</tbody></table></div>
-    <p class="faint bnote">Cost per order: volume-weighted over the lane's bands. Option 2 adds pick, pack, receiving, replenishment per kg and the fixed monthly share to the delivery price${o2.state === "incomplete" ? `; it is incomplete for ${esc(e.p.name)}: ${esc(o2.inputs.missing.concat(o2.inputs.needs.map(x => "setting: " + x)).join(", "))}` : ""}. The marker shows the 2-day GCC target on L01 to L04.</p></div>`;
+// One module compared side by side for every provider. who: [{name, Q}] (every provider, or one in the detail).
+function moduleTable(M, who){
+  const L9 = V.LANE_IDS, cell = fn => who.map(e => { const x = fn(e); return x ? `<div class="pcmp">${who.length > 1 ? `<span class="faint">${esc(e.name)}</span> ` : ""}${x}</div>` : ""; }).join("") || na();
+  if (M === "M1") return `<table class="mtab"><thead><tr><th>Class</th>${L9.map(L => `<th>${L}<br><span class="faint">${esc(laneName(L))}</span></th>`).join("")}</tr></thead><tbody>
+    ${V.CLASSES.map(c => `<tr><th>${esc(c.label)}<br><span class="faint">${c.size} · ${c.band}</span></th>${L9.map(L => `<td>${cell(e => { const r = e.Q.m1.find(x => x.lane === L && x.band === c.band); return r ? `${cellOr(e.Q, r.price, `m1.${r.id}.price_eur`, r.service)}${r.price != null && r.transit != null ? ` <small>${fmt(r.transit)} d</small>` : ""}` : null; })}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+  if (M === "M2") return `<table class="mtab"><thead><tr><th>Load</th>${L9.map(L => `<th>${L}<br><span class="faint">${esc(laneName(L))}</span></th>`).join("")}</tr></thead><tbody>
+    ${Object.entries(V.LOADS).map(([ld, x]) => `<tr><th>${ld}<br><span class="faint">${esc(x.label)}</span></th>${L9.map(L => `<td>${cell(e => { const r = e.Q.m2.find(y => y.lane === L && y.load === ld); return r ? `${cellOr(e.Q, r.price, `m2.${r.id}.price_eur`, r.mode)}${r.price != null ? ` <small>${esc(r.mode || "")}${r.transit != null ? ` ${fmt(r.transit)} d` : ""}</small>` : ""}${r.altPrice != null ? `<br><small>alt ${esc(r.altMode || "")} ${fmt(r.altPrice, 2)}${r.altTransit != null ? ` · ${fmt(r.altTransit)} d` : ""}</small>` : ""}` : null; })}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+  if (M === "M3") return `<table class="mtab"><thead><tr><th>Country</th><th>Clearance per entry</th><th>Free-zone entry</th><th>Free-zone exit per order</th><th>Deposit</th><th>Days</th></tr></thead><tbody>
+    ${L9.map(L => `<tr><th>${L} ${esc(laneName(L))}</th>${["clearance", "fzEntry", "fzExit"].map((k, i) => `<td>${cell(e => { const x = e.Q.m3[L]; const key = `m3.${L}.${["clearance_eur", "fz_entry_eur", "fz_exit_eur"][i]}`; return x ? cellOr(e.Q, x[k], key) : null; })}</td>`).join("")}
+      <td>${cell(e => (e.Q.m3[L] && e.Q.m3[L].deposit ? esc(e.Q.m3[L].deposit) : null))}</td><td>${cell(e => (e.Q.m3[L] && e.Q.m3[L].days != null ? fmt(e.Q.m3[L].days, 1) : null))}</td></tr>`).join("")}</tbody></table>`;
+  if (M === "M4") {
+    const LABELS = {W01: "City and country", W02: "Customs status", W03: "Countries served", W04: "Model", W05: "Storage per pallet per month", W06: "Inbound per pallet", W07: "Devanning per 20ft",
+      W08: "Devanning per 40ft", W09: "Pick per order line", W10: "Pick per full carton", W11: "Pack per order", W12: "Outbound handling per pallet", W13: "Labelling per carton", W14: "Returns per order",
+      W15: "Fixed monthly fee", W16: "One-off setup", W17: "One-off IT integration", W18: "Minimum term (months)", W19: "Minimum monthly charge", W20: "Dedicated space per m2 per month",
+      W21: "Dedicated staff per FTE per month", W22: "Management fee", W23: "Dedicated minimum m2"};
+    const cols = who.flatMap(e => ["A", "B"].filter(w => !isBlank(e.Q.m4[w].W01) || Object.keys(LABELS).some(id => e.Q.m4[w][id] != null)).map(w => ({e, w})));
+    if (!cols.length) return `<p class="empty">No warehouse (M4) data.</p>`;
+    const val = (e, w, id) => { const x = e.Q.m4[w][id], key = `m4.${w}.${id}`; if (invalidOf(e.Q, key)) return srcTag("invalid"); if (x == null) return na("not quoted");
+      return typeof x === "number" ? (id === "W22" ? `<span title="quoted · ${key}">${(x * 100).toFixed(1)}%</span>` : /W18|W23/.test(id) ? `<span title="quoted · ${key}">${fmt(x)}</span>` : money2(x, key)) : esc(x); };
+    return `<table class="mtab"><thead><tr><th>Field</th>${cols.map(c => `<th>${esc(c.e.name)}<br><span class="faint">warehouse ${c.w}</span></th>`).join("")}</tr></thead><tbody>
+      ${Object.entries(LABELS).map(([id, l]) => `<tr><th>${id} <span class="faint">${esc(l)}</span></th>${cols.map(c => `<td>${val(c.e, c.w, id)}${c.e.Q.m4.comments[id] && c === cols[0] ? "" : ""}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+  }
+  if (M === "M5") return `<table class="mtab"><thead><tr><th>Class</th>${L9.map(L => `<th>${L}<br><span class="faint">${esc(laneName(L))}</span></th>`).join("")}</tr></thead><tbody>
+    ${V.CLASSES.slice(0, 3).map(c => `<tr><th>${esc(c.label)}<br><span class="faint">${c.size}</span></th>${L9.map(L => `<td>${cell(e => { const r = e.Q.m5.find(x => x.lane === L && x.band === c.band); return r && (r.price != null || invalidOf(e.Q, `m5.${r.id}.price_eur`)) ? `${cellOr(e.Q, r.price, `m5.${r.id}.price_eur`, `warehouse ${r.warehouse || "?"}`)} <small>${r.warehouse || ""}${r.transit != null ? ` ${fmt(r.transit)} d` : ""}${/^y/i.test(r.nextDay) ? " · next day" : ""}</small>` : r ? na() : null; })}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+  return who.map(e => { const m = e.Q.m6; if (!m.O01 && !m.lines.length) return `<p class="faint">${who.length > 1 ? esc(e.name) + ": " : ""}no other solution (M6).</p>`;
+    return `<div class="m6"><h3>${esc(m.O01 || "Unnamed solution")} <span class="faint">${esc(e.name)}</span></h3><p>${esc(m.O02)}</p><p class="faint">Countries: ${esc(m.O03 || "not stated")} · ${m.O04 != null ? `${fmt(m.O04)} working days door to door` : "transit not stated"} · next-day GCC: ${esc(m.O05 || "not stated")}</p>
+      ${m.lines.length ? `<table class="mtab"><thead><tr><th>Price element</th><th>Unit</th><th>EUR</th></tr></thead><tbody>${m.lines.map(l => `<tr><td>${esc(l.desc)}</td><td>${esc(l.unit)}</td><td>${cellOr(e.Q, l.price, `m6.${l.id}.price_eur`)}</td></tr>`).join("")}</tbody></table>` : ""}</div>`; }).join("");
 }
-function matrixHtml(){
-  const ev = v23All(); if (!ev.length) return "";
-  const ids = ["Q20", "Q21", "Q22", "Q23", "Q24", "Q25", "Q26"], items = V.rubricOf(S23()).areas.flatMap(a => a.items);
-  const head = ids.map(id => `<th title="${esc((items.find(i => i.id === id) || {}).label || id)}">${id}<br><span class="faint">${esc(((items.find(i => i.id === id) || {}).label || "").replace(/ service| freight| origin documents| for the consignee/g, ""))}</span></th>`).join("");
-  const cell = (e, id) => { const a = (e.Q.q[id] || {}).answer, c = (e.Q.q[id] || {}).comment, s = V.scoreAnswer(items.find(i => i.id === id) || {starts: []}, e.Q);
-    return `<td class="mx p${s.points}" title="${esc(c || "")}">${isBlank(a) ? '<span class="faint">no answer</span>' : esc(String(a).replace(/ \(list in Comment\)/, ""))}</td>`; };
-  return `<div class="card"><div class="cardhead"><h2>Options matrix</h2><span class="faint" style="font-size:12px">Q20 to Q26 · hover a cell for the provider's comment</span></div>
-    <div class="tablewrap btable"><table class="matrix"><thead><tr><th>Provider</th>${head}</tr></thead><tbody>${ev.map(e => `<tr><td><b>${esc(e.p.name)}</b></td>${ids.map(id => cell(e, id)).join("")}</tr>`).join("")}</tbody></table></div></div>`;
+function modulesHtml(){
+  const ev = modAll(); if (!ev.length) return "";
+  const M = MODS.some(([k]) => k === B.ui.mod) ? B.ui.mod : "M1";
+  return `<div class="card" id="bxMods"><div class="cardhead"><h2>Module comparison</h2>${seg2("bxModTab", MODS.map(([k, l]) => [k, `${k} ${l}`]), M)}</div>
+    <div class="tablewrap btable">${moduleTable(M, ev)}</div>
+    <p class="faint bnote">EUR excl. VAT. M1 and M2 are DAP prices, used as given. A blank cell is not offered; text in a price is invalid and left out. Hover a price for its key and service.</p></div>`;
 }
 function legacyHtml(){
   const list = legacyList(); if (!list.length) return "";
   const rows = list.map(p => R.getComparableMetrics(p)).filter(Boolean).map(m => { const p = B.providers.find(x => x.id === m.providerId);
     return `<tr data-id="${esc(m.providerId)}"><td><button type="button" class="lnk" data-a="detail">${esc(m.name)}</button>${p ? badge(p) : ""}<br><span class="faint num">${esc(m.providerId)}</span></td>
-      <td class="n">${m.costA == null ? "n/a" : esc(m.currency || "") + " " + fmt(m.costA)}</td><td class="n">${m.costB == null ? "n/a" : esc(m.currency || "") + " " + fmt(m.costB)}</td><td class="n">${m.perKgB == null ? "n/a" : fmt(m.perKgB, 2)}</td>
-      <td class="n">${m.bandsWithoutRate ?? "n/a"}</td><td class="n">${m.r1OnTime == null ? "n/a" : pctTxt(m.r1OnTime)}</td><td class="n">${m.q1Damage == null ? "n/a" : pctTxt(m.q1Damage)}</td>
-      <td><div class="tags">${m.regions.map(x => `<span class="tag r-${rc(x)}">${esc(x)}</span>`).join("")}</div></td><td class="num">${esc(m.responseDate)}</td></tr>`; }).join("");
-  return `<div class="card legacy"><div class="cardhead"><h2>Legacy v1, not comparable</h2><span class="faint" style="font-size:12px">${list.length} answer${list.length === 1 ? "" : "s"} in the detailed RFQ v1 · out of the ranking</span></div>
-    <p class="muted bnote">These answers use the v1 rate card (rate per kg, minimum, fuel and fees) and v1 questions, so their cost and scoring methods differ from the Quick Quote. They stay readable here; ask these providers for the Quick Quote v2.3 to compare them.</p>
-    <div class="tablewrap btable"><table><thead><tr><th>Provider</th><th>Total cost A</th><th>Total cost B</th><th>Cost per kg B</th><th>Bands without rate</th><th>R1 on-time</th><th>Q1 damage</th><th>Regions</th><th>Response</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+      <td class="n">${m.costA == null ? "n/a" : esc(m.currency || "") + " " + fmt(m.costA)}</td><td class="n">${m.costB == null ? "n/a" : esc(m.currency || "") + " " + fmt(m.costB)}</td>
+      <td class="n">${m.bandsWithoutRate ?? "n/a"}</td><td class="num">${esc(m.responseDate)}</td></tr>`; }).join("");
+  return `<div class="card legacy"><div class="cardhead"><h2>Legacy v1, not comparable</h2><span class="faint" style="font-size:12px">${list.length} answer${list.length === 1 ? "" : "s"} in the detailed RFQ v1 · out of every scenario</span></div>
+    <p class="muted bnote">These answers use the v1 rate card and v1 questions. They stay readable here; ask these providers for the RFQ v3.0.</p>
+    <div class="tablewrap btable"><table><thead><tr><th>Provider</th><th>Total cost A</th><th>Total cost B</th><th>Bands without rate</th><th>Response</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
 }
 
-// ---- settings of the v2.3 calculation (the old v1 Volumes sheet and the warehouse assumptions), kept with the
-// benchmarking settings and saved with the Save button
+// ---- internal settings (never sent to providers), kept with the benchmarking settings and saved with the Save button
 function rfqSettingsHtml(){
-  const s = S23(), L = Object.keys(V.LANES);
+  const s = S30(), L9 = V.LANE_IDS, ev = modAll();
   const num = (path, v, label, extra) => `<input type="number" step="any" min="0" data-s="${path}" value="${v == null ? "" : esc(v)}" aria-label="${esc(label)}"${extra || ""}>`;
-  const tot = sc => L.reduce((a, l) => a + V.BANDS.reduce((b, k) => b + (Number(s.volumes[sc][l][k]) || 0), 0), 0);
-  const vol = sc => `<div class="setcol"><h3>Scenario ${sc} <span class="faint" data-tot="${sc}">${fmt(tot(sc))} shipments a year</span></h3><div class="tablewrap"><table class="setgrid"><thead><tr><th>Lane</th>${V.BANDS.map(b => `<th>${b}</th>`).join("")}</tr></thead><tbody>
-    ${L.map(l => `<tr><td class="num" title="${esc(V.LANES[l].name)}">${l}</td>${V.BANDS.map(b => `<td>${num(`volumes.${sc}.${l}.${b}`, s.volumes[sc][l][b], `Scenario ${sc} ${l} ${b} shipments a year`)}</td>`).join("")}</tr>`).join("")}</tbody></table></div></div>`;
-  const W = s.weights;
-  return `<details class="card rfqset" id="bxRfqSet"${B.ui.setOpen ? " open" : ""}><summary><b>Quick Quote settings</b><span class="faint"> · volumes, lane targets, warehouse assumptions and scorecard weights · saved with the Save button</span></summary>
+  const chk = (path, on, label) => `<input type="checkbox" data-sb="${path}"${on ? " checked" : ""} aria-label="${esc(label)}">`;
+  const sel = (path, v, opts, label) => `<select data-ss="${path}" aria-label="${esc(label)}">${opts.map(([k, l]) => `<option value="${esc(k)}"${String(v ?? "") === String(k) ? " selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
+  const tot = sc => L9.reduce((a, l) => a + V.BANDS.reduce((b, k) => b + (Number(s.volumes[sc][l][k]) || 0), 0), 0);
+  const vol = sc => `<div class="setcol"><h3>Volume case ${sc} <span class="faint" data-tot="${sc}">${fmt(tot(sc))} customer shipments a year</span></h3><div class="tablewrap"><table class="setgrid"><thead><tr><th>Lane</th>${V.BANDS.map(b => `<th>${b}</th>`).join("")}</tr></thead><tbody>
+    ${L9.map(l => `<tr><td class="num" title="${esc(V.LANES[l].name)}">${l}</td>${V.BANDS.map(b => `<td>${num(`volumes.${sc}.${l}.${b}`, s.volumes[sc][l][b], `Volume case ${sc} ${l} ${b}`)}</td>`).join("")}</tr>`).join("")}</tbody></table></div></div>`;
+  const provOpts = [["", "choose a provider"]].concat(ev.map(e => [e.id, e.name]));
+  const site = (x, i) => `<div class="setsite"><h4>Site ${i + 1} <button type="button" class="btn ghost sm" data-a="site-rm" data-i="${i}">Remove</button></h4><div class="setrow">
+      <label>Country${sel(`s4.sites.${i}.country`, x.country, L9.map(L => [L, `${L} ${V.LANES[L].name}`]), "Site country")}</label>
+      <label>Customs status${sel(`s4.sites.${i}.customs`, x.customs, [["Free zone", "Free zone"], ["Bonded", "Bonded"], ["Duty paid", "Duty paid"]], "Customs status")}</label>
+      <label>m2${num(`s4.sites.${i}.m2`, x.m2, "m2")}</label><label>Rent per m2 per year${num(`s4.sites.${i}.rentPerM2`, x.rentPerM2, "Rent per m2")}</label>
+      <label>Staff FTE${num(`s4.sites.${i}.fte`, x.fte, "FTE")}</label><label>Cost per FTE per year${num(`s4.sites.${i}.costPerFte`, x.costPerFte, "Cost per FTE")}</label>
+      <label>One-off setup${num(`s4.sites.${i}.setup`, x.setup, "Setup")}</label><label>One-off licences${num(`s4.sites.${i}.licence`, x.licence, "Licences")}</label>
+      <label>Equipment lease per month${num(`s4.sites.${i}.equipmentMonth`, x.equipmentMonth, "Equipment")}</label><label>WMS per month${num(`s4.sites.${i}.wmsMonth`, x.wmsMonth, "WMS")}</label>
+      <label>Insurance and utilities per year${num(`s4.sites.${i}.insuranceYear`, x.insuranceYear, "Insurance and utilities")}</label><label>Carrying cost per year${num(`s4.sites.${i}.carryingCost`, x.carryingCost, "Carrying cost")}</label>
+      <label>Amortisation years${num(`s4.sites.${i}.amortYears`, x.amortYears, "Amortisation years")}</label>
+      <label>Delivery proxy provider${sel(`s4.sites.${i}.proxyProvider`, x.proxyProvider, provOpts, "Delivery proxy provider")}</label>
+      <label>Proxy warehouse${sel(`s4.sites.${i}.proxyWarehouse`, x.proxyWarehouse, [["A", "A"], ["B", "B"]], "Proxy warehouse")}</label></div></div>`;
+  return `<details class="card rfqset" id="bxRfqSet"${B.ui.setOpen ? " open" : ""}><summary><b>Internal settings</b><span class="faint"> · volumes, distributor, 3PL and own-site inputs, score weights · never sent to providers · saved with the Save button</span></summary>
     <div class="setwrap">${vol("A")}${vol("B")}
-      <div class="setcol"><h3>Average gross kg per band</h3><div class="setrow">${V.BANDS.map(b => `<label>${b}${num(`avgKg.${b}`, s.avgKg[b], `Average kg ${b}`)}</label>`).join("")}</div>
-        <h3>Target transit, working days</h3><div class="setrow">${L.map(l => `<label title="${esc(V.LANES[l].name)}">${l}${num(`targetDays.${l}`, s.targetDays[l], `Target days ${l}`)}</label>`).join("")}</div>
-        <h3>Option 2 warehouse</h3><div class="setrow">
-          ${V.CLASSES.map(c => `<label title="${esc(c.label)} (${c.size}, ${c.kg} kg)">Order lines, ${esc(c.label.toLowerCase())} <span class="faint">update from order history</span>${num(`orderLinesByClass.${c.band}`, s.orderLinesByClass[c.band], `Order lines per ${c.label} order`)}</label>`).join("")}
-          <label>Kg per pallet${num("kgPerPallet", s.kgPerPallet, "Kg per pallet")}</label>
-          <label>Average pallets in stock${num("avgPallets", s.avgPallets, "Average pallets in stock", ' placeholder="enter"')}</label>
-          <label>Replenishment${seg2("bxRep", [["sea", "Sea (W11)"], ["air", "Air (W13)"]], s.replenishment)}</label>
-          <label>Carrying cost % <span class="faint">input from Finance</span>${num("carryingPct", s.carryingPct, "Carrying cost percent")}</label>
-          <label>Stock value EUR <span class="faint">input from Finance</span>${num("stockValue", s.stockValue, "Stock value EUR", ' placeholder="enter"')}</label></div>
-        <h3>Scorecard</h3><div class="setrow"><label>Volume year${num("volumeYear", s.volumeYear, "Volume year", ' step="1"')}</label>
-          ${["cost", "service", "quality", "options"].map(k => `<label>${k[0].toUpperCase() + k.slice(1)} %${num(`weights.${k}`, W[k], `Weight ${k}`)}</label>`).join("")}</div>
-        <p class="faint bnote">Weights: to be agreed with Mies. The rubric (thresholds and points per item) is one editable object:</p>
+      <div class="setcol"><h3>General</h3>
+        <div class="setrow">${V.BANDS.map(b => `<label>Average kg ${b}${num(`avgKg.${b}`, s.avgKg[b], `Average kg ${b}`)}</label>`).join("")}</div>
+        <div class="setrow">${V.STOCK_BANDS.map((b, i) => `<label>Cartons ${["S", "M", "L"][i]}${num(`cartons.${b}`, s.cartons[b], `Cartons ${b}`)}</label><label>Pallets ${["S", "M", "L"][i]}${num(`pallets.${b}`, s.pallets[b], `Pallets ${b}`)}</label>`).join("")}</div>
+        <div class="setrow">${V.CLASSES.map(c => `<label>Order lines, ${esc(c.size)} <span class="faint">update from order history</span>${num(`orderLines.${c.band}`, s.orderLines[c.band], `Order lines ${c.size}`)}</label>`).join("")}</div>
+        <div class="setrow">${L9.map(L => `<label title="${esc(V.LANES[L].name)}">Target ${L}${num(`targetDays.${L}`, s.targetDays[L], `Target days ${L}`)}</label>`).join("")}
+          <label>Kg per pallet${num("kgPerPallet", s.kgPerPallet, "Kg per pallet")}</label><label>Volume year${num("volumeYear", s.volumeYear, "Volume year", ' step="1"')}</label></div></div>
+      <div class="setcol wide"><h3>S2 distributor holds stock <span class="faint">bulk loads per year; discount and sales value: commercial input from Tarek</span></h3>
+        <div class="tablewrap"><table class="setgrid"><thead><tr><th>Country</th><th>Distributor</th><th>P1</th><th>P5</th><th>C20</th><th>C40</th><th>Discount %</th><th>Sales value EUR</th></tr></thead><tbody>
+        ${L9.map(L => `<tr><td>${L} <span class="faint">${esc(laneName(L))}</span></td><td>${chk(`s2.${L}.on`, s.s2[L].on, `Distributor in ${L}`)}</td>${["P1", "P5", "C20", "C40"].map(ld => `<td>${num(`s2.${L}.loads.${ld}`, s.s2[L].loads[ld], `${ld} loads to ${L}`)}</td>`).join("")}
+          <td>${num(`s2.${L}.discountPct`, s.s2[L].discountPct, `Discount ${L}`)}</td><td>${num(`s2.${L}.salesValue`, s.s2[L].salesValue, `Sales value ${L}`)}</td></tr>`).join("")}</tbody></table></div></div>
+      <div class="setcol wide"><h3>S3 3PL holds stock</h3><div class="setrow">
+        <label>Provider${sel("s3.provider", s.s3.provider, [["", "first with warehouse data"]].concat(ev.map(e => [e.id, e.name])), "S3 provider")}</label>
+        <label>Warehouse${sel("s3.warehouse", s.s3.warehouse, [["A", "A"], ["B", "B"]], "S3 warehouse")}</label>
+        <label>Warehouse country${sel("s3.country", s.s3.country || "", [["", "from W01"]].concat(L9.map(L => [L, `${L} ${V.LANES[L].name}`])), "Warehouse country")}</label>
+        <label>Average pallets in stock <span class="faint">required</span>${num("s3.avgPallets", s.s3.avgPallets, "Average pallets", ' placeholder="enter"')}</label>
+        <label>Replenishment load${sel("s3.load", s.s3.load, Object.keys(V.LOADS).map(k => [k, k]), "Replenishment load")}</label>
+        <label>Labelling needed ${chk("s3.labelling", s.s3.labelling, "Labelling")}</label>
+        <label>Amortisation years${num("s3.amortYears", s.s3.amortYears, "Amortisation years")}</label>
+        <label>Carrying cost % <span class="faint">input from Finance</span>${num("s3.carryingPct", s.s3.carryingPct, "Carrying cost")}</label>
+        <label>Stock value EUR <span class="faint">input from Finance</span>${num("s3.stockValue", s.s3.stockValue, "Stock value")}</label>
+        <label>M2 and M3 source${sel("s3.moduleSource", s.s3.moduleSource, [["same", "same provider as M4"], ["cheapest", "cheapest provider per module"]], "Module source")}</label></div>
+        <p class="faint bnote">Countries served (blank: every country with an M5 price from this warehouse) and share of orders from stock:</p>
+        <div class="setrow">${L9.map(L => `<label>${L} ${chk(`s3.served.${L}`, (s.s3.served || []).includes(L), `Served ${L}`)}${num(`s3.share.${L}`, s.s3.share[L], `Share from stock ${L}`)}</label>`).join("")}</div></div>
+      <div class="setcol wide"><h3>S4 own warehouse <span class="faint">sources: free-zone authority quotes, Benten (warehouse), Anna Murphy (finance)</span></h3>
+        ${(s.s4.sites || []).map(site).join("") || '<p class="faint">No own site yet.</p>'}
+        <div class="iact"><button type="button" class="btn ghost sm" data-a="site-add">Add a site</button>
+          <label class="faint">M2 and M3 source ${sel("s4.moduleSource", s.s4.moduleSource, [["same", "same provider as the proxy"], ["cheapest", "cheapest provider per module"]], "S4 module source")}</label></div></div>
+      <div class="setcol wide"><h3>Score weights <span class="faint">to be agreed with Mies</span></h3><div class="setrow">
+        ${["forwarder", "threepl"].flatMap(r => ["cost", "service", "quality", "options"].map(k => `<label>${r === "forwarder" ? "Forwarder" : "3PL"} ${k} %${num(`weights.${r}.${k}`, s.weights[r][k], `${r} ${k}`)}</label>`)).join("")}</div>
         <details><summary class="faint">Edit the rubric (JSON)</summary><textarea id="bxRubric" rows="12" spellcheck="false" aria-label="Scoring rubric as JSON">${esc(JSON.stringify(V.rubricOf(s), null, 1))}</textarea>
           <div class="iact"><button type="button" class="btn ghost sm" data-a="rubric-reset">Reset rubric</button></div></details>
         <div class="iact"><button type="button" class="btn ghost sm" data-a="set-reset">Reset all settings to the defaults</button></div></div></div></details>`;
 }
+function setPath(path, v){
+  const ks = path.split("."), last = ks.pop();
+  const obj = ks.reduce((o, k) => (o[k] == null ? (o[k] = {}) : o[k]), S30());
+  obj[last] = v;
+}
 function wireRfqSettings(){
   const el = $("bxRfqSet"); if (!el) return;
   el.addEventListener("toggle", () => { B.ui.setOpen = el.open; });
-  const changed = () => { saveSettingsSoon(); FlexiCalc.invalidate(); renderCompare(); };
+  const changed = (redraw) => { saveSettingsSoon(); FlexiCalc.invalidate(); renderCompare(); if (redraw) renderRfqSettings(); };
   el.querySelectorAll("input[data-s]").forEach(inp => inp.addEventListener("change", () => {
-    const path = inp.dataset.s.split("."), last = path.pop(), obj = path.reduce((o, k) => o[k], S23());
     const v = inp.value.trim() === "" ? null : Number(inp.value);
-    if (v != null && !(v >= 0)) { toast("Enter a number of 0 or more", "bad"); inp.value = obj[last] ?? ""; return; }
-    obj[last] = v;
-    ["A", "B"].forEach(sc => { const t = el.querySelector(`[data-tot="${sc}"]`); if (t) t.textContent = `${fmt(Object.values(S23().volumes[sc]).reduce((a, r) => a + Object.values(r).reduce((b, x) => b + (Number(x) || 0), 0), 0))} shipments a year`; });
+    if (v != null && !(v >= 0)) { toast("Enter a number of 0 or more", "bad"); return; }
+    setPath(inp.dataset.s, v);
+    ["A", "B"].forEach(sc => { const t = el.querySelector(`[data-tot="${sc}"]`); if (t) t.textContent = `${fmt(Object.values(S30().volumes[sc]).reduce((a, r) => a + Object.values(r).reduce((b, x) => b + (Number(x) || 0), 0), 0))} customer shipments a year`; });
     changed();
   }));
-  el.querySelector("#bxRep").addEventListener("click", e => { const b = e.target.closest("button[data-v]"); if (!b) return; S23().replenishment = b.dataset.v; el.querySelectorAll("#bxRep button").forEach(x => x.setAttribute("aria-pressed", x === b)); changed(); });
+  el.querySelectorAll("input[data-sb]").forEach(inp => inp.addEventListener("change", () => {
+    const path = inp.dataset.sb;
+    if (/^s3\.served\./.test(path)) { const L = path.split(".")[2], cur = new Set(S30().s3.served || []); if (inp.checked) cur.add(L); else cur.delete(L); S30().s3.served = V.LANE_IDS.filter(x => cur.has(x)); }
+    else setPath(path, inp.checked);
+    changed();
+  }));
+  el.querySelectorAll("select[data-ss]").forEach(s => s.addEventListener("change", () => { setPath(s.dataset.ss, s.value === "" ? (/country$/.test(s.dataset.ss) ? null : "") : s.value); changed(); }));
+  el.querySelector('[data-a="site-add"]').addEventListener("click", () => { S30().s4.sites = (S30().s4.sites || []).concat([V.newSite()]); changed(true); });
+  el.querySelectorAll('[data-a="site-rm"]').forEach(b => b.addEventListener("click", () => { S30().s4.sites.splice(Number(b.dataset.i), 1); changed(true); }));
   $("bxRubric").addEventListener("change", e => {
     let r; try { r = JSON.parse(e.target.value); } catch (err) { toast("The rubric is not valid JSON: " + err.message, "bad"); return; }
-    if (!r || !Array.isArray(r.areas)) { toast("The rubric needs an areas list", "bad"); return; }
-    S23().rubric = r; changed(); toast("Rubric updated. " + PENDING_NOTE);
+    if (!r || !Array.isArray(r.service) || !Array.isArray(r.quality) || !Array.isArray(r.options)) { toast("The rubric needs service, quality and options lists", "bad"); return; }
+    S30().rubric = r; changed(); toast("Rubric updated. " + PENDING_NOTE);
   });
-  el.querySelector('[data-a="rubric-reset"]').addEventListener("click", () => { S23().rubric = null; $("bxRubric").value = JSON.stringify(V.RUBRIC, null, 1); changed(); });
+  el.querySelector('[data-a="rubric-reset"]').addEventListener("click", () => { S30().rubric = null; $("bxRubric").value = JSON.stringify(V.RUBRIC, null, 1); changed(); });
   el.querySelector('[data-a="set-reset"]').addEventListener("click", e => {
-    if (!confirmInline(e.target, "Click again to reset the Quick Quote settings to the defaults")) return;
-    B.settings.rfq23 = V.DEFAULT_SETTINGS(); changed(); renderRfqSettings();
+    if (!confirmInline(e.target, "Click again to reset the internal settings to the defaults")) return;
+    B.settings.rfq30 = V.DEFAULT_SETTINGS(); changed(true);
   });
 }
 function renderRfqSettings(){ const host = $("bxRfqSetHost"); if (!host) return; host.innerHTML = rfqSettingsHtml(); wireRfqSettings(); }
 
-// ---- JSON export and import of the RFQ answers, the v2.3 results and the settings
+// ---- JSON export and import of the RFQ answers, the results and the settings
 function exportJson(){
-  const sum = O => ({state: O.state, cost: O.cost, covered: O.covered, shipments: O.shipments, perShipment: O.perShipment, perKg: O.perKg, onTime: O.onTime, extrapolated: O.extrapolated, tag: O.tag});
-  const data = {kind: "flexitog-benchmarking-rfq", format: 2, exported: nowIso(), rfqVersion: V.VERSION, settings: {rfq23: S23()},
-    rfq: B.rfq,
-    results: v23All().map(e => ({providerId: e.id, name: e.p.name, option: e.S.option, total: e.S.total, areas: Object.fromEntries(e.S.areas.map(a => [a.key, a.score])),
-      missing: e.S.missing, flags: e.flags, followUps: e.follow, invalid: e.Q.invalid, inputCheck: e.Q.inputCheck,
-      options: Object.fromEntries(["opt1", "opt2", "opt3"].map(o => [o, {A: sum(e.A[o].A), B: sum(e.A[o].B)}]))})),
+  const list = modAll(), sum = R0 => ({state: R0.state, total: R0.total, parts: R0.parts, types: R0.types, missing: R0.missing, tags: R0.tags, coverage: [R0.covered, R0.shipments]});
+  const scen = sc => { const o = V.scenarios(list, S30(), sc, "best"); return Object.fromEntries(["S1", "S2", "S3", "S3b", "S4"].map(k => [k, sum(o[k])]).concat([["S5", {state: o.S5.state, solutions: o.S5.solutions}]])); };
+  const data = {kind: "flexitog-benchmarking-rfq", format: 3, exported: nowIso(), rfqVersion: V.VERSION, settings: {rfq30: S30()}, rfq: B.rfq,
+    providers: list.map(e => ({providerId: e.id, name: e.name, tag: e.Q.tag, modules: e.Q.modules, completeness: e.comp, invalid: e.Q.invalid, inputCheck: e.Q.inputCheck,
+      forwarder: e.S.forwarder.total, threepl: e.S.threepl.total, flags: e.flags, followUps: e.follow})),
+    scenarios: list.length ? {A: scen("A"), B: scen("B")} : null,
     legacy: legacyList().map(p => ({providerId: p.id, name: p.name, rfqVersion: activeUp(p).rfqVersion, note: "Legacy v1, not comparable"}))};
   saveFile(`FlexiTog_benchmarking_RFQ_${today()}.json`, new Blob([JSON.stringify(data, null, 1)], {type: "application/json"}));
 }
@@ -999,82 +1048,53 @@ async function importJson(file){
   let d; try { d = JSON.parse(await file.text()); } catch (e) { toast("This file is not valid JSON", "bad"); return; }
   if (!d || d.kind !== "flexitog-benchmarking-rfq" || !d.rfq || typeof d.rfq !== "object") { toast("This JSON is not a FlexiTog benchmarking RFQ export", "bad"); return; }
   const ids = Object.keys(d.rfq), known = ids.filter(id => (MD.t.distribution_centers || []).some(r => String(r.dc_id) === id));
-  const go = await ask("Import RFQ answers", `<p>${esc(file.name)}: RFQ state and answers of ${ids.length} provider${ids.length === 1 ? "" : "s"}${ids.length > known.length ? ` (${ids.length - known.length} not in Master Data, kept until they are added)` : ""}${d.settings && d.settings.rfq23 ? ", and the Quick Quote settings" : ""}.</p>
+  const go = await ask("Import RFQ answers", `<p>${esc(file.name)}: RFQ state and answers of ${ids.length} provider${ids.length === 1 ? "" : "s"}${ids.length > known.length ? ` (${ids.length - known.length} not in Master Data, kept until they are added)` : ""}${d.settings && d.settings.rfq30 ? ", and the internal settings" : ""}.</p>
     <p class="muted">The answers replace the current RFQ state of those providers. Original files are not in a JSON export.</p>`, [{label: "Cancel", value: null}, {label: "Import", value: true, primary: true}]);
   if (!go) return;
   ids.forEach(id => { B.rfq[id] = d.rfq[id]; });
-  if (d.settings && d.settings.rfq23) { B.settings.rfq23 = V.withDefaults(d.settings.rfq23); saveSettingsSoon(); }
+  if (d.settings && d.settings.rfq30) { B.settings.rfq30 = V.withDefaults(d.settings.rfq30); saveSettingsSoon(); }
   B.respDirty = true; await saveRfq(`Imported ${ids.length} provider${ids.length === 1 ? "" : "s"}`);
   syncProviders(); for (const id of known) await syncRfqQuotes(id);
   FlexiCalc.invalidate(); renderProviders(); renderTabs(); renderChips();
 }
 
-// ---- provider detail for a v2.3 answer
+// ---- provider detail for a v3.0 or v2.3 answer
 async function copyText(t){
   try { await navigator.clipboard.writeText(t); toast("Copied"); return; } catch (e) {}
   const ta = document.createElement("textarea"); ta.value = t; ta.style.position = "fixed"; ta.style.opacity = "0"; document.body.appendChild(ta); ta.select();
   try { document.execCommand("copy"); toast("Copied"); } catch (x) { toast("Copy failed. Select the text and copy it by hand.", "bad"); }
   ta.remove();
 }
-function detailBody23(p, r, T){
-  const e = v23Of(p.id) && v23Of(p.id).up === r ? v23Of(p.id) : Object.assign({p, up: r}, V.evaluate(r.values, S23()));
-  if (!e.S) { e.S = V.scoreAll([{id: p.id, Q: e.Q, A: e.A}], S23())[0]; e.follow = V.followUps(e.Q, e.A, e.S, e.flags, S23()); e.alone = true; }
-  const Q = e.Q, kv = rows => `<dl class="kv">${rows.filter(x => !isBlank(x[1])).map(([k, x]) => `<dt>${esc(k)}</dt><dd>${x}</dd>`).join("")}</dl>`;
-  const qa = id => (Q.q[id] || {}).answer, inv = new Set(Q.invalid.map(x => x.key));
-  const banner = (Q.inputCheck !== V.OK_CHECK ? `<p class="warnbox">⚠ Input check of the file: ${esc(Q.inputCheck || "no result (not saved in Excel)")}. Valid values are used.</p>` : "") +
-    (Q.invalid.length ? `<p class="warnbox">⚠ Left out, text where a number belongs: ${Q.invalid.map(x => `<b>${esc(x.key)}</b> "${esc(x.value)}"`).join(", ")}.</p>` : "");
-  if (T === "profile") return banner + kv([["Provider ID", esc(p.id)], ["Type", esc(p.type)], ["Company (Q01)", esc(qa("Q01"))], ["Contact (Q02)", esc(qa("Q02"))], ["E-mail (Q03)", qa("Q03") ? `<a href="mailto:${esc(qa("Q03"))}">${esc(qa("Q03"))}</a>` : ""],
-      ["Phone (Q04)", esc(qa("Q04"))], ["Prices valid until (Q05)", esc(qa("Q05"))], ["Fuel included (Q06)", qa("Q06") == null ? "" : pctTxt(qa("Q06")) + " · information only, fuel is in the prices"],
-      ["Surcharges on top (Q07)", esc(qa("Q07"))], ["Payment terms (Q08)", qa("Q08") == null ? "" : `${fmt(qa("Q08"))} days`], ["Rate sheets attached (Q28)", esc(qa("Q28"))],
-      ["Lanes priced", esc(V.lanesCovered(Q).map(L => `${L} ${V.LANES[L].name}`).join(", ") || "none")], ["Input check", esc(Q.inputCheck || "no result")], ["RFQ status", esc(statusLabel(p.status))], ["RFQ sent", esc(p.dateRfqSent)]]);
-  if (T === "prices") {
-    const cell = (s, o) => { const k = `ship.${s.id}.${o === "opt2" ? "opt2_delivery" : o}_price_eur`, x = s[o];
-      return `<td>${esc(x.service || "")}</td><td class="n">${x.price == null ? (inv.has(k) ? srcTag("invalid") : '<span class="faint">not offered</span>') : `${fmt(x.price, 2)} ${srcTag("quoted")}`}</td><td class="n">${x.transit == null ? "" : fmt(x.transit, 1)}</td>`; };
-    return banner + `<div class="tablewrap btable" style="max-height:60vh"><table><thead><tr><th>ID</th><th>Lane</th><th>Country</th><th>Band</th><th>Size</th><th>kg</th><th>Opt 1 service</th><th>Price EUR</th><th>days</th><th>Opt 2</th><th>Delivery EUR</th><th>days</th><th>Opt 3 service</th><th>Price EUR</th><th>days</th><th>Comment</th></tr></thead><tbody>
-      ${Q.shipments.map(s => `<tr><td class="num">${s.id}</td><td class="num">${esc(s.lane)}</td><td>${esc((V.LANES[s.lane] || {}).name || "")}</td><td class="num">${esc(s.band)}</td><td>${esc(s.size)}</td><td class="n">${fmt(s.kg)}</td>${cell(s, "opt1")}${cell(s, "opt2").replace(/^<td>[^<]*<\/td>/, "<td></td>")}${cell(s, "opt3")}<td class="wrap">${esc(s.comment)}</td></tr>`).join("")}</tbody></table></div>
-      <p class="faint bnote">All-in DAP prices in EUR excl. VAT, fuel and fees included, used as given. A blank price is not offered; text in a price is invalid and left out.</p>`;
-  }
-  if (T === "costs") {
-    const opt = ["opt1", "opt2", "opt3"].includes(B.ui.detOpt) ? B.ui.detOpt : "opt1", sc = B.ui.detScen === "B" ? "B" : "A", O = e.A[opt][sc];
-    const sumRow = (o, s) => { const X = e.A[o][s]; return `<tr><td>${esc(V.labelOf(o))}</td><td class="num">${s}</td><td class="n">${X.state === "ok" ? eur(X.cost, 2) : `<span class="faint">${X.state === "incomplete" ? "incomplete" : "not quoted"}</span>`}</td>
-      <td class="n">${X.state === "ok" ? eur(X.perShipment, 2) : ""}</td><td class="n">${X.state === "ok" && X.perKg != null ? fmt(X.perKg, 2) : ""}</td><td class="n">${X.covered} of ${X.shipments}</td><td class="n">${X.state === "ok" ? `${X.onTime} of ${X.shipments}` : ""}</td><td class="n">${X.extrapolated || ""}</td><td>${X.tag ? srcTag(X.tag) : ""}</td></tr>`; };
-    const cells = O.cells.map(c => `<tr><td class="num">${c.lane}</td><td class="num">${c.band}</td><td class="n">${c.n}</td><td class="n">${fmt(c.kg)}</td>
-      <td class="n">${c.covered && c.price != null && O.state === "ok" ? eur(c.price, 2) : c.covered && c.price != null ? `<span class="faint">${eur(c.price, 2)} delivery</span>` : '<span class="faint">not covered</span>'}</td><td class="n">${c.cost != null ? eur(c.cost, 2) : ""}</td><td class="n">${c.transit == null ? "" : fmt(c.transit, 1)}${c.onTime ? ' <span class="okb yes">on time</span>' : ""}</td>
-      <td>${c.covered ? srcTag(O.state === "ok" ? c.tag : c.tag === "extrapolated" ? "extrapolated" : "quoted") : srcTag("not_offered")}${c.tag === "extrapolated" ? ` <span class="faint">from ${esc(c.from)} (${esc(c.ship)})</span>` : c.ship ? ` <span class="faint">${esc(c.ship)}</span>` : ""}</td></tr>`).join("");
-    const inp = O.inputs;
-    return banner + `<div class="tablewrap"><table><thead><tr><th>Option</th><th>Scenario</th><th>Annual cost</th><th>Per shipment</th><th>Per kg</th><th>Coverage</th><th>On time</th><th>Extrapolated</th><th>Source</th></tr></thead><tbody>
-      ${["opt1", "opt2", "opt3"].flatMap(o => ["A", "B"].map(s => sumRow(o, s))).join("")}</tbody></table></div>
-      <div class="iact" style="margin:12px 0 6px">${seg2("bxDetOpt", V.OPTIONS.map(([k, l]) => [k, l]), opt)}${seg2("bxDetScen", [["A", "Scenario A"], ["B", "Scenario B"]], sc)}</div>
-      ${opt === "opt2" ? `<p class="faint bnote">Option 2 per order of a class = delivery + handling (${inp.method === "cartons and pallets" ? "W07 + W15 × cartons + W16 × pallets + W08" : `W07 + W06 × order lines of the class (${V.CLASSES.map(c => `${c.label} ${S23().orderLinesByClass[c.band]}`).join(", ")}) + W08`}) + storage share (W04 × ${S23().avgPallets ?? "?"} pallets × 12 + carrying cost, per kg through the warehouse) + replenishment share ((${inp.rep} + W05) / ${S23().kgPerPallet} kg per pallet × class kg) + fixed share (W09 × 12 per order through the warehouse)${O.rates && O.rates.state === "ok" ? `: EUR ${fmt(O.rates.storagePerKg, 4)} per kg and EUR ${fmt(O.rates.fixedPerOrder, 2)} per order over ${fmt(O.rates.orders)} orders and ${fmt(O.rates.kg)} kg` : ""}.${O.state === "incomplete" ? ` Incomplete: ${esc(inp.missing.concat(inp.needs.map(x => "setting: " + x)).join(", "))}.` : ""}</p>` : ""}
-      <div class="tablewrap btable" style="max-height:44vh"><table><thead><tr><th>Lane</th><th>Band</th><th>Shipments</th><th>Avg kg</th><th>Price per shipment</th><th>Annual cost</th><th>Transit</th><th>Source</th></tr></thead><tbody>${cells}</tbody></table></div>`;
-  }
-  if (T === "scores") {
-    return `<p class="muted">Total <b>${sc2(e.S.total)}</b> of 4 · scored on ${e.S.option ? esc(V.labelOf(e.S.option)) : "no complete option"}${e.alone ? " · cost scored alone (no other v2.3 provider in this comparison)" : ""}.${e.S.missing.length ? ` Missing answers score 0: ${esc(e.S.missing.join(", "))}.` : ""}</p>` +
-      e.S.areas.map(a => `<h3 style="margin:12px 0 6px">${esc(a.label)} <span class="faint">${sc2(a.score)} · weight ${S23().weights[a.key]}%</span></h3><div class="tablewrap"><table><thead><tr><th>Item</th><th>Points</th><th>Reason</th></tr></thead><tbody>
-        ${a.items.map(it => `<tr><td>${esc(it.id)} <span class="faint">${esc(it.label)}</span>${it.weight > 1 ? ` <span class="faint">counted ${it.weight}×</span>` : ""}</td><td class="n">${sc2(it.points)}</td><td class="wrap">${esc(it.reason)}${it.missing ? ' <span class="srct invalid">missing</span>' : ""}</td></tr>`).join("")}</tbody></table></div>`).join("");
-  }
+function detailBodyModular(p, r, T){
+  const live = modOf(p.id), e = live && live.up === r ? live : (() => { const Q = V.quote(r.values || {}); const x = {id: p.id, name: p.name, Q};
+    x.S = V.scoreAll([x], S30(), "A")[0]; x.flags = V.flags(Q, S30()); x.comp = V.completeness(Q); x.follow = V.followUps(Q, x.flags, x.S, [], S30()); return x; })();
+  const Q = e.Q, kv = rows => `<dl class="kv">${rows.filter(x => !isBlank(x[1])).map(([k, x]) => `<dt>${esc(k)}</dt><dd>${x}</dd>`).join("")}</dl>`, qa = id => (Q.q[id] || {}).answer;
+  if (T === "profile") return warnHtml(Q) + kv([["Provider ID", esc(p.id)], ["Type", esc(p.type)], ["Answer", `${esc(Q.version)} · ${esc(Q.tag)}`], ["Company (Q01)", esc(qa("Q01"))], ["Contact (Q02)", esc(qa("Q02"))],
+      ["E-mail (Q03)", qa("Q03") ? `<a href="mailto:${esc(qa("Q03"))}">${esc(qa("Q03"))}</a>` : ""], ["Phone (Q04)", esc(qa("Q04"))], ["Prices valid until (Q05)", esc(qa("Q05"))],
+      ["Fuel included (Q06)", qa("Q06") == null ? "" : pctTxt(qa("Q06")) + " · information only, fuel is in the prices"], ["Surcharges on top (Q07)", esc(qa("Q07"))],
+      ["Modules", `<div class="tags">${modulesLine(Q)}</div>`], ["Input check", esc(Q.inputCheck || "no result")], ["RFQ status", esc(statusLabel(p.status))]]);
+  if (/^M[1-6]$/.test(T)) return warnHtml(Q) + `<div class="tablewrap btable" style="max-height:62vh">${moduleTable(T, [e])}</div>`;
   if (T === "questions") return `<div class="tablewrap btable" style="max-height:60vh"><table><thead><tr><th>#</th><th>Answer</th><th>Comment</th></tr></thead><tbody>
       ${Object.entries(Q.q).map(([id, x]) => `<tr><td class="num">${id}</td><td>${x.answer == null ? '<span class="faint">no answer</span>' : esc(["Q06", "Q13", "Q14", "Q27"].includes(id) && typeof x.answer === "number" ? pctTxt(x.answer) : x.answer)}</td><td class="wrap">${esc(x.comment)}</td></tr>`).join("")}</tbody></table></div>`;
-  if (T === "warehouse") { const inp = V.opt2Inputs(Q, S23());
-    return `<p class="muted">${inp.complete ? "Option 2 inputs are complete." : `Option 2 is incomplete. Missing: ${esc(inp.missing.join(", "))}.`}${inp.needs.length ? ` Settings to enter: ${esc(inp.needs.join(", "))}.` : ""}</p>
-      <div class="tablewrap"><table><thead><tr><th>#</th><th>Answer</th><th>Comment</th></tr></thead><tbody>${Object.entries(Q.wh).map(([id, x]) => `<tr><td class="num">${id}</td><td>${x.answer == null ? '<span class="faint">blank</span>' : esc(typeof x.answer === "number" ? fmt(x.answer, 2) : x.answer)}</td><td class="wrap">${esc(x.comment)}</td></tr>`).join("")}</tbody></table></div>`; }
-  // flags and follow-up questions
+  if (T === "scores") return ["forwarder", "threepl"].map(role => { const s = e.S[role];
+    return `<h3 style="margin:12px 0 6px">${role === "forwarder" ? "Forwarder" : "3PL"} score <b>${sc2(s.total)}</b> <span class="faint">of 4</span></h3>` + s.areas.map(a => `<div class="tablewrap"><table><thead><tr><th>${esc(a.label)} <span class="faint">${sc2(a.score)} · weight ${S30().weights[role][a.key]}%</span></th><th>Points</th><th>Reason</th></tr></thead><tbody>
+      ${a.items.map(it => `<tr><td>${esc(it.id)} <span class="faint">${esc(it.label)}</span>${it.weight > 1 ? ` <span class="faint">counted ${it.weight}×</span>` : ""}</td><td class="n">${sc2(it.points)}</td><td class="wrap">${esc(it.reason)}${it.missing ? ' <span class="srct invalid">missing</span>' : ""}</td></tr>`).join("")}</tbody></table></div>`).join(""); }).join("") +
+    (e.S.missing.length ? `<p class="muted">Missing answers score 0: ${esc(e.S.missing.join(", "))}.</p>` : "");
   return `<h3 style="margin:0 0 6px">Red flags</h3>${e.flags.length ? `<ul class="flaglist">${e.flags.map(f => `<li><span class="tag flag">${f.id}</span> <span class="num faint">${esc(f.key)}</span> ${esc(f.reason)}</li>`).join("")}</ul>` : '<p class="faint">None.</p>'}
     <h3 style="margin:14px 0 6px">Follow-up questions <button type="button" class="btn ghost sm" data-a="copyq"${e.follow.length ? "" : " disabled"}>Copy</button></h3>
     ${e.follow.length ? `<ol class="followq" id="bxFollow">${e.follow.map(x => `<li>${esc(x)}</li>`).join("")}</ol>` : '<p class="faint">Nothing to ask.</p>'}`;
 }
-const followText = id => { const e = v23Of(id); return e ? e.follow.map((x, i) => `${i + 1}. ${x}`).join("\n") : ""; };
 
-// ---- Option 1 prices become per-shipment quotes in Master Data > Quotes (Landed Cost and the Quote Benchmark)
-function quotes23(pid, up, limits, quotes, lanes){
-  const Q = V.quote(up.values), date = String(up.uploadedAt || today()).slice(0, 10), src = "RFQ answer " + up.fileName;
-  Q.shipments.filter(s => s.opt1.price != null && V.LANES[s.lane] && limits[s.band]).forEach(s => {
-    const c = V.LANES[s.lane].country, mode = modeOf(s.opt1.service || ""), lane = `L-HLM-${c}-${mode.toUpperCase()}`, [from, to] = limits[s.band];
+// ---- M1 prices become per-shipment quotes in Master Data > Quotes (Landed Cost and the Quote Benchmark)
+function quotesModular(pid, up, limits, quotes, lanes){
+  const Q = V.quote(up.values || {}), date = String(up.uploadedAt || today()).slice(0, 10), src = "RFQ answer " + up.fileName;
+  Q.m1.filter(r => r.price != null && V.LANES[r.lane] && limits[r.band]).forEach(r => {
+    const c = V.LANES[r.lane].country, mode = modeOf(r.service || ""), lane = `L-HLM-${c}-${mode.toUpperCase()}`, [from, to] = limits[r.band];
     if (!lanes.some(l => l.lane_id === lane) && !(MD.t.lanes || []).some(l => l.lane_id === lane))
       lanes.push({lane_id: lane, origin_id: "HLM", destination_id: c, mode, status: "unproven", source_ref: src, source_date: date, data_status: "confirmed", data_source: "imported:" + up.fileName});
-    quotes.push({quote_id: `QR-${pid}-${s.lane}-${s.band}`, provider_id: pid, lane_id: lane, quote_date: date, valid_until: Q.validUntil || null, base_rate: s.opt1.price, rate_unit: "per shipment",
-      min_charge: null, weight_from_kg: from, weight_to_kg: to, fuel_surcharge: 0, peak_surcharge: 0, war_risk_surcharge: 0, other_surcharge: 0, currency: "EUR", transit_days: s.opt1.transit,
-      notes: `From Quick Quote ${up.fileName}, ${s.id} ${s.lane} ${s.band} (${fmt(s.kg)} kg test shipment); all-in DAP price as given, fuel and fees included`,
+    quotes.push({quote_id: `QR-${pid}-${r.lane}-${r.band}`, provider_id: pid, lane_id: lane, quote_date: date, valid_until: Q.validUntil || null, base_rate: r.price, rate_unit: "per shipment",
+      min_charge: null, weight_from_kg: from, weight_to_kg: to, fuel_surcharge: 0, peak_surcharge: 0, war_risk_surcharge: 0, other_surcharge: 0, currency: "EUR", transit_days: r.transit,
+      notes: `From ${Q.kind === "v23" ? "Quick Quote v2.3" : "RFQ v3.0"} M1 ${up.fileName}, ${r.id} ${r.lane} ${r.band} (${fmt(r.kg)} kg test shipment); all-in DAP price as given`,
       source_ref: src, source_date: date, data_status: "confirmed", data_source: "imported:" + up.fileName});
   });
 }
@@ -1127,14 +1147,14 @@ function providerReportModel(list){
       ["RFQ sent", dash(p.dateRfqSent)], ["Answer received", dash(p.dateResponseReceived)], ["Test order sent", dash(p.dateTestOrderSent)], ["Notes", dash(p.notes)]].filter(x => x[1] !== "-")}});
     if (p.baseline) { profiles.push({p: "Baseline: costs and lead times from Master Data and the parameters. No RFQ."}); return; }
     if (!r) { profiles.push({p: "No RFQ answer yet."}); return; }
-    if (isV23(r)) {
-      const e = v23Of(p.id) || Object.assign({}, V.evaluate(r.values, S23()), {S: null, follow: []});
-      const cellTxt = O => (O.state === "ok" ? `EUR ${fmt(O.cost)} · ${O.covered} of ${O.shipments}` : O.state === "incomplete" ? "incomplete" : "not quoted");
-      profiles.push({p: `Active upload ${p.latestResponseIndex + 1} of ${p.rfqResponses.length}: ${r.fileName}, ${r.rfqVersion}, uploaded ${String(r.uploadedAt).slice(0, 10)}.${e.Q.validUntil ? ` Prices valid until ${e.Q.validUntil}.` : ""} Input check: ${e.Q.inputCheck || "no result"}.`});
-      profiles.push({table: {head: ["Option", "Scenario A", "Scenario B"], align: ["l", "r", "r"], widths: [2, 1.5, 1.5], small: true,
-        body: V.OPTIONS.map(([o, l]) => [l, cellTxt(e.A[o].A), cellTxt(e.A[o].B)])}});
-      if (e.S) profiles.push({table: {head: ["Score (0 to 4)", "Value"], align: ["l", "r"], widths: [3, 1], small: true,
-        body: e.S.areas.map(a => [a.label, sc2(a.score)]).concat([["Total", sc2(e.S.total)]])}});
+    if (isModular(r)) {
+      const e = modOf(p.id) || (() => { const Q = V.quote(r.values || {}); return {Q, comp: V.completeness(Q), flags: V.flags(Q, S30()), S: null}; })();
+      profiles.push({p: `Active upload ${p.latestResponseIndex + 1} of ${p.rfqResponses.length}: ${r.fileName}, ${r.rfqVersion} (${e.Q.tag}), uploaded ${String(r.uploadedAt).slice(0, 10)}.${e.Q.validUntil ? ` Prices valid until ${e.Q.validUntil}.` : ""} Input check: ${e.Q.inputCheck || "no result"}.`});
+      profiles.push({table: {head: ["Module", "Offered", "Filled"], align: ["l", "l", "r"], widths: [2.5, 1, 1], small: true,
+        body: MODS.map(([M, l]) => [`${M} ${l}`, e.Q.modules[M] || "not stated", `${Math.round((e.comp[M] || 0) * 100)}%`])}});
+      if (e.S) profiles.push({table: {head: ["Score (0 to 4)", "Forwarder", "3PL"], align: ["l", "r", "r"], widths: [2, 1, 1], small: true,
+        body: ["cost", "service", "quality", "options"].map(k => [k[0].toUpperCase() + k.slice(1), sc2((e.S.forwarder.areas.find(a => a.key === k) || {}).score), sc2((e.S.threepl.areas.find(a => a.key === k) || {}).score)])
+          .concat([["Total", sc2(e.S.forwarder.total), sc2(e.S.threepl.total)]])}});
       profiles.push({p: e.flags.length ? `Red flags: ${e.flags.map(f => `${f.id} ${f.reason}`).join(" ")}` : "Red flags: none."});
       if (e.Q.invalid.length) profiles.push({p: `Left out, text where a number belongs: ${e.Q.invalid.map(x => x.key).join(", ")}.`});
       return;
@@ -1826,7 +1846,7 @@ async function init(){
       catch (e) { console.error(e); toast("Moving the old provider list into Master Data failed: " + (e.message || e), "bad"); }
     }
     B.goals = goals === undefined ? clone(DEFAULT_GOALS) : goals;
-    if (settings) { const d = DEFAULT_SETTINGS(); B.settings = Object.assign(d, settings, {gen: Object.assign(d.gen, settings.gen || {}), report: Object.assign(d.report, settings.report || {}), fx: Object.assign(d.fx, settings.fx || {}), rfq23: window.FlexiRFQ23.withDefaults(settings.rfq23)}); }
+    if (settings) { const d = DEFAULT_SETTINGS(); B.settings = Object.assign(d, settings, {gen: Object.assign(d.gen, settings.gen || {}), report: Object.assign(d.report, settings.report || {}), fx: Object.assign(d.fx, settings.fx || {}), rfq30: window.FlexiRFQ30.withDefaults(settings.rfq30)}); }
     B.sources = [];
     for (const s of meta || []) { const rows = await DataStore.get("sales_" + s.id); if (rows) B.sources.push(Object.assign({}, s, {rows})); }
   } catch (e) { console.error(e); toast("Could not load the saved benchmarking data", "bad"); }
@@ -1840,8 +1860,8 @@ async function init(){
 // getComparableMetrics(provider or id): the latest RFQ response in comparable form, for the scorecard.
 const getComparableMetrics = p => R.getComparableMetrics(typeof p === "string" ? B.providers.find(x => x.id === p) : p);
 // The Quick Quote results for the Dashboard: the same evaluated, scored list and settings this tab shows (one source of truth).
-const rfq23 = {ready: () => B.ready, list: () => (B.ready ? (syncProviders(), v23All()) : []), settings: () => S23(), legacy: () => (B.ready ? legacyList().map(p => ({id: p.id, name: p.name})) : [])};
-window.BenchUI = {show(){ render(); }, state: B, getComparableMetrics, rfq23, syncProviders, comparison, comparisonReportModel, providerReportModel,
+const rfq30 = {ready: () => B.ready, list: () => (B.ready ? (syncProviders(), modAll()) : []), settings: () => S30(), legacy: () => (B.ready ? legacyList().map(p => ({id: p.id, name: p.name})) : [])};
+window.BenchUI = {show(){ render(); }, state: B, getComparableMetrics, rfq30, syncProviders, comparison, comparisonReportModel, providerReportModel,
   rfq: {tmpl, uploadRfq, openDetail, removeUpload, downloadPrefilled, files: DataStore.files}, schema: {goals: GOAL_FIELDS}, reportModel, packageOf, templateBook, buildPdf, buildDocx, chartImages, currentTest};
 init();
 })();

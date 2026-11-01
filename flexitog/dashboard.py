@@ -32,9 +32,11 @@ from .sales_orders import sales_orders_table
 from .schema import COUNTRY_ALIASES, COUNTRY_NAMES, COUNTRY_REGION, DC_TYPE_LABELS, ENTITIES, EU27, PLACEHOLDER, SOURCE_COL
 
 ASSETS = Path(__file__).parent / "assets"
-# The RFQ providers fill in: Quick Quote v2.3 (Download latest RFQ). The detailed v1 template stays for answers
-# that still come back in v1: they import as "Legacy v1, not comparable" through its own key map.
-RFQ_TEMPLATE = ASSETS / "rfq" / "FlexiTog_RFQ_Quick_Quote_MENA-TR_v2.3.xlsx"
+# The RFQ providers fill in: the modular RFQ v3.0 (Download latest RFQ). The Quick Quote v2.3 and the detailed v1 templates
+# stay for answers that still come back in them (v2.3 imports as M1 only, v1 as "Legacy v1, not comparable"); their key maps
+# let the upload read files never saved in Excel.
+RFQ_TEMPLATE = ASSETS / "rfq" / "FlexiTog_RFQ_MENA-TR_v3.0.xlsx"
+RFQ_V23_TEMPLATE = ASSETS / "rfq" / "FlexiTog_RFQ_Quick_Quote_MENA-TR_v2.3.xlsx"
 RFQ_LEGACY_TEMPLATE = ASSETS / "rfq" / "Transport_Volume_Scenario_RFQ_FlexiTog.xlsx"
 # Home page and login logo: flexitog/assets/brand/logo.<ext> (refrigiwear_logo.<ext> also works). Drop the file
 # there and rebuild; without it the page shows a 300 px placeholder box.
@@ -134,6 +136,7 @@ def build_payload(ws, per_region_synthetic: int = 15, sales_orders: str | Path |
         # The bundled RFQ template, served by Download latest RFQ until a newer one replaces it.
         "rfq_template": {"name": RFQ_TEMPLATE.name, "base64": base64.b64encode(RFQ_TEMPLATE.read_bytes()).decode("ascii"),
                          "sources": rfq_sources(RFQ_TEMPLATE)},
+        "rfq_v23": {"name": RFQ_V23_TEMPLATE.name, "sources": rfq_sources(RFQ_V23_TEMPLATE)},
         "rfq_legacy": {"name": RFQ_LEGACY_TEMPLATE.name, "sources": rfq_sources(RFQ_LEGACY_TEMPLATE)},
     }
 
@@ -202,7 +205,7 @@ def build_html(ws, sales_orders: str | Path | None = None) -> str:
         "/*WORKSPACE*/": (ASSETS / "workspace.js").read_text(encoding="utf-8"),
         "/*BENCHCORE*/": (ASSETS / "bench_core.js").read_text(encoding="utf-8"),
         "/*RFQCORE*/": (ASSETS / "rfq_core.js").read_text(encoding="utf-8"),
-        "/*RFQV23*/": (ASSETS / "rfq_v23.js").read_text(encoding="utf-8"),
+        "/*RFQV30*/": (ASSETS / "rfq_v30.js").read_text(encoding="utf-8"),
         "/*DASHRFQ*/": (ASSETS / "dash_rfq.js").read_text(encoding="utf-8"),
         "/*BENCHMARK*/": (ASSETS / "benchmark.js").read_text(encoding="utf-8"),
         "/*CHARTS*/": (ASSETS / "charts.js").read_text(encoding="utf-8"),

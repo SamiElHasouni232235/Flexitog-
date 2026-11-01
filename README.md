@@ -177,46 +177,35 @@ HTML file that runs the whole simulator in the browser, with no Python and no se
   country or factory for brands, SKUs, origin, lead time and share of the batch. Blue is reserved for
   suppliers: distributor-held stock is plum and the country value scale is violet.
 
-### Logistics benchmark on the Dashboard (Benchmarking results)
+### Logistics scenarios on the Dashboard (Benchmarking results)
 
-The Dashboard opens with the Benchmarking tab's Quick Quote v2.3 results per country, region and order class
-(`flexitog/assets/dash_rfq.js`). It reads and explains only: it calls the `rfq_v23.js` functions on the list the
-Benchmarking tab ranks (`BenchUI.rfq23`), so every total matches that tab. It updates when an answer is uploaded or
-removed, or a Quick Quote setting changes.
+The Dashboard opens with the five logistics scenarios built from the modular RFQ v3.0 answers on Benchmarking
+(`flexitog/assets/dash_rfq.js`). It reads and explains only: it calls the `rfq_v30.js` functions on the providers
+Benchmarking lists (`BenchUI.rfq30`) with the internal settings from Benchmarking, so every total matches that tab.
+It updates when an answer is uploaded or removed, or a setting changes.
 
-- Filters: provider (all or one), scenario A or B, option 1, 2, 3 or cheapest.
-- Key figures: providers compared, best provider by total score, annual cost of the cheapest complete option in
-  Scenario A and B, coverage, GCC on-time share.
-- Map: with answers present, countries take the colour of the cheapest option ("Cheapest RFQ option" in Colour
-  countries by); the tooltip lists per class the cost per option, transit against the target, the cheapest provider
-  and the red flags for that country.
-- Region cards (GCC L01 to L04, Türkiye L05, North Africa L06 to L09): annual cost per option, coverage, on-time
-  share, cheapest provider. Region totals are volume-weighted sums of their countries. With several providers the
-  cheapest is compared like for like: the highest coverage first, then the lowest cost.
-- Order class matrix: parcel (S, 8 kg, B1), small consignment (M, 52 kg, B2), pallet (L, 261 kg, B3), multi-pallet
-  (XL, 941 kg, B4), full load (XXL, 2,380 kg, B5) against the nine countries; each cell the cheapest price with its
-  option and provider, red when the transit misses the lane target, "–" without a test shipment.
-- Cost per pallet: the pallet class price and the multi-pallet price / 4 per country; storage per pallet per month.
-- Holding stock per provider: W01, W02, W04 to W09, W11 and W13 and the handling per class, or "not quoted".
-- Helmond or regional stock: Option 1 against Option 2 per country and class, with the class from which regional
-  stock is cheaper for it and every larger class. Skipped, with the missing keys, while Option 2 is incomplete.
-- Answers Q1 to Q7: deterministic sentences from templates and the figures, then the data gaps and the follow-up
-  questions from Benchmarking (copy button). No AI calls.
+- Filters: volume case A or B, region, country detail (or follow the map selection), and a provider per module
+  (best per module, or one fixed provider for M1 to M6). A fixed M4 provider is the 3PL for S3.
+- Scenario cards S1 to S5, each in its own colour (S1 blue, S2 plum, S3 orange, S3b pink, S4 green, S5 grey):
+  annual cost for the scope, cost per order, the saving or extra cost against S1, inputs filled, source tags and the
+  providers per module. Incomplete and not configured scenarios say what is missing. S5 is indicative, not ranked.
+- Logistics scenario comparison: annual cost, against S1, per order, per kg, shipments covered, on-time share, inputs
+  filled and one-off cost. The cheapest complete scenario is green.
+- Region by scenario: annual cost per region (GCC, Türkiye, North Africa) and scenario, the cheapest marked.
+- Map: countries take the colour of the cheapest complete scenario for that country ("Cheapest scenario (S1 to S4)"
+  in Colour countries by). The tooltip lists each scenario's annual cost and cost per order per class.
+- Country detail: cost per order by class and scenario (`classCost`) and a stacked bar of the annual cost per cost
+  type (transport to region, customs, warehouse handling, storage, delivery, fixed, direct from Helmond, commercial).
+- Unit cost: per order, per kg and per pallet (per kg × kg per pallet) per scenario for the scope.
+- Break-even volume: S1, S3 and S4 at 0.5, 1, 1.5, 2 and 3 times the volume case, with the multiplier from which S3
+  or S4 becomes cheaper than S1.
+- Answers: deterministic sentences from templates and the figures, then the follow-up questions per provider
+  (copy button). No AI calls.
 
-A blank or not-offered price shows "not quoted", never 0. Every figure's tooltip names its source: quoted, derived,
-extrapolated or assumption.
-
-Option 2 per order of a class = delivery (opt2_delivery_price_eur) + handling (W07 + W06 × order lines of the class +
-W08; order lines per class are a Quick Quote setting, 6 by default, "update from order history"; when a later RFQ
-version adds W15 pick per full carton and W16 outbound per pallet, W07 + W15 × cartons + W16 × pallets + W08) +
-replenishment share ((W11 or W13 + W05) / kg per pallet × class kg) + storage share ((W04 × average pallets × 12 +
-carrying cost) / annual kg through the warehouse × class kg) + fixed share (W09 × 12 / annual orders through the
-warehouse). The same functions price Option 2 on the Benchmarking tab, so the class breakdown sums to its total.
-
-Tests: `tests/test_rfq_v23.py` runs the Dashboard figures on `tests/fixtures/aramex_v23_values.json` (the values
-Benchmarking stored from the Aramex test fill): region totals per scenario, pallet costs, Saudi Arabia per class, the
-parcels not quoted, Option 2 incomplete, the warehouse card, key figures and answers, and the Option 2 breakdown
-summing to the Benchmarking total with test warehouse rates.
+Removed with this change (fed only by v2.3 logic): the key figure tiles (providers compared, best total score,
+cheapest option, coverage, GCC on time), the region cards per option, the order class matrix per option, cost per
+pallet, holding stock per provider and the Helmond against regional stock chart. The scenario views above replace
+them.
 
 ### Route Dashboard layout
 
@@ -577,87 +566,135 @@ dummy badge). Rows without a provider type (distributors, owned warehouses) stay
 RFQ status per provider: Not sent, Sent (set by hand, or by Prefilled RFQ), Answered (after a confirmed
 upload).
 
-The RFQ is the Quick Quote MENA-TR v2.3 (`meta.rfq_version` "RFQ-MENA-TR-QUICK v2.3",
-`flexitog/assets/rfq/FlexiTog_RFQ_Quick_Quote_MENA-TR_v2.3.xlsx`): 33 test shipments T01 to T33, each with a lane
-(L01 to L09), a band (B1 to B5) and a size (S 8 kg, M 52 kg, L 261 kg, XL 941 kg, XXL 2,380 kg), three delivery
-options per shipment (opt1 from Helmond, required; opt2 delivery from the provider's regional warehouse; opt3 another
-option), 28 questions Q01 to Q28, warehouse rates W01 to W14 and the file's own `meta.input_check`. Every price is an
-all-in DAP price in EUR with fuel and fees included, and the tool uses it as given.
+The RFQ is the modular RFQ MENA-TR v3.0 (`meta.rfq_version` "RFQ-MENA-TR-MODULAR v3.0",
+`flexitog/assets/rfq/FlexiTog_RFQ_MENA-TR_v3.0.xlsx`). A provider answers the modules it offers
+(`module.M1.offered` to `module.M6.offered`):
+- M1 direct from Helmond: 33 test shipments T01 to T33 (lane L01 to L09, band B1 to B5, size S 8 kg, M 52 kg,
+  L 261 kg, XL 941 kg, XXL 2,380 kg), service, all-in DAP price, transit.
+- M2 bulk to the region: B01 to B36, per lane and load (P1 1 pallet 250 kg, P5 1,250 kg, C20 11 pallets 2,750 kg,
+  C40 24 pallets 6,000 kg), mode, price, transit, an alternative mode.
+- M3 customs per country L01 to L09: clearance per entry, free-zone entry, free-zone exit per order, deposit, days.
+- M4 warehouse A and B: W01 to W23 (location, customs status, countries, model, storage, inbound, devanning,
+  pick, pack, labelling, fixed fee, one-off, minimum term, minimum monthly, dedicated site rates), and comments.
+- M5 delivery from the warehouse: D01 to D27 per lane and size S, M, L, with warehouse, price, transit, next day.
+- M6 other solution: O01 to O05 and up to five price lines P1 to P5.
+- Questions Q01 to Q28 and the file's own `meta.input_check`.
 
-1. Download latest RFQ gets the bundled v2.3 template. Replace RFQ template stores a newer file in this browser,
+1. Download latest RFQ gets the bundled v3.0 template. Replace RFQ template stores a newer file in this browser,
    Reset to bundled drops it.
 2. Prefilled RFQ writes the provider's name, contact, e-mail and phone into Q01 to Q04 (the input cells the
    template's own Export formulas point at) and adds the hidden `_rfqmeta` sheet (template version and provider ID).
 3. Upload answered RFQ reads the hidden Export sheet with SheetJS (column A key, column B value). The version picks
    the parser:
-   - v2.3 enters the benchmark. Lane and band come from the file per test shipment, never from a fixed T-number
-     list. Excel date serials become dates, percentages arrive as fractions, Q09 becomes HH:MM. A price, transit,
-     rate or numeric answer holding text (for example "incl") is listed by key and left out: never counted as 0.
-     If `meta.input_check` is not "No problems found", the preview and the detail show a warning and the valid
-     values still import. A file never saved in Excel is read from its input cells.
-   - v1 ("RFQ-MENA-TR v1.0") still imports through the existing parser and checks, and appears under "Legacy v1,
-     not comparable": out of the ranking and out of the Helmond comparison, because its cost and scoring
-     methods differ.
+   - v3.0 enters the scenarios and scores. A blank or not offered value is never 0. Text in a number field (for
+     example "incl") is invalid, listed by key and left out. If `meta.input_check` is not "No problems found", the
+     preview and the detail show a warning and the valid values still import. A module marked Yes without prices
+     is flagged; a module marked No with prices uses the prices and is flagged (F9). A file never saved in Excel is
+     read from its input cells.
+   - v2.3 ("RFQ-MENA-TR-QUICK v2.3") maps Option 1 to M1 and is tagged "v2.3, M1 only".
+   - v1 ("RFQ-MENA-TR v1.0") still imports through the existing parser and appears under "Legacy v1, not
+     comparable": out of every scenario, score and the Helmond comparison.
    - Any other version is refused with the version it found.
    Nothing saves before Confirm and save. The provider comes from `_rfqmeta`, or is picked by hand.
-4. History: each confirmed upload is kept; the latest is active. View test prices (v2.3) or View parsed rates
+4. History: each confirmed upload is kept; the latest is active. View modules (v3.0, v2.3) or View parsed rates
    (v1) opens the detail, Make this upload active switches back, Download original and Remove upload as before.
 
-Quick Quote settings (the panel under the comparison, saved with the Save button): annual shipments per lane and
-band for Scenario A (141) and B (329), average kg per band, target transit per lane (L01 to L04 2, L05 and L06 3,
-L07 5, L08 and L09 4 working days), order lines per order 6, kg per pallet 250, average pallets in stock (no
-default), replenishment sea (W11) or air (W13), carrying cost % and stock value (input from Finance), volume year
-2027, scorecard weights 25% each (to be agreed with Mies), and the scoring rubric as one editable JSON object.
+Internal settings (the panel under the comparison, never sent to providers, saved with the Save button through the
+same data store as every Benchmarking change):
+- Volume case A (141 customer shipments) and Volume case B (329) per lane and band. The name "volume case" keeps them
+  apart from scenarios S1 to S5.
+- Average kg per band, cartons and pallets per class S, M, L, order lines per class (6, update from order history),
+  kg per pallet 250, target transit per lane (L01 to L04 2, L05 and L06 3, L07 5, L08 and L09 4 working days),
+  volume year 2027.
+- S2 per country: distributor on or off, loads per year (P1, P5, C20, C40), discount % and sales value (commercial
+  input from Tarek).
+- S3: provider, warehouse A or B, warehouse country (from W01, editable), countries served (blank: every country
+  with an M5 price from that warehouse), share from stock per country (100%), average pallets in stock (required),
+  replenishment load (C20), labelling (No), amortisation 3 years, carrying cost % and stock value (input from
+  Finance), M2 and M3 from the same provider or the cheapest per module.
+- S4 per site: country, customs status, m2, rent per m2 per year, FTE and cost per FTE, setup and licences
+  (one-off), equipment and WMS per month, insurance and utilities per year, carrying cost, amortisation years, the
+  delivery proxy (a provider's M5 prices, tagged proxy). Sources: free-zone authority quotes, Benten (warehouse),
+  Anna Murphy (finance).
+- Score weights per role, 25% each (to be agreed with Mies), and the rubric as one editable JSON object.
 
-Costs (`flexitog/assets/rfq_v23.js`, `window.FlexiRFQ23`), per option and scenario:
-- Options 1 and 3: annual cost = shipments per lane and band × the test price for that lane and band. A band
-  with volume but no test shipment takes the price per kg of the next lower band × the band's average kg,
-  tagged extrapolated. A blank price is not covered: no cost, lower coverage.
-- Option 2, only when opt2 delivery prices and W04, W05, W06, W07, W09 and the chosen replenishment price are
-  filled (otherwise "incomplete" with the missing keys): cost per order = delivery price + W07 + W06 × order
-  lines + W08 + (replenishment per pallet + W05) / kg per pallet × order kg + fixed share, with fixed share =
-  (W09 × 12 + W04 × average pallets × 12 + carrying % × stock value) / annual orders served from the warehouse.
-- Outputs: annual cost per lane and in total, cost per shipment and per kg, coverage, and on-time share
-  (shipments whose transit days are within the lane target). Every figure carries a source tag: quoted,
-  derived, extrapolated or assumption.
+Scenarios (`flexitog/assets/rfq_v30.js`, `window.FlexiRFQ30`), per volume case. Each one is complete, incomplete
+(with the missing keys), not configured or, for S5, indicative. Only complete scenarios are ranked.
+- M1 price of a lane and band: the quoted price; a band with volume and no test shipment row takes the price per kg
+  of the next lower band × the band's average kg (extrapolated). A row that exists but is blank is not covered.
+- S1 direct from Helmond: shipments × M1 price per lane and band. Not covered volume lowers coverage only.
+- S2 distributor holds stock: in each distributor country, loads per year × M2 price (bulk) + discount % × sales
+  value (commercial); the distributor serves every order there. Other countries go direct (S1). Without a discount
+  the result is tagged "excludes distributor margin". M2 alternative-mode prices are not used as a fallback.
+- S3 3PL holds stock: orders of sizes S, M and L in served countries × the share from stock go through the
+  warehouse; XL, XXL and the rest go direct (S1).
+  - delivery = stock orders × M5 price of the lane and size from the chosen warehouse
+  - handling per order = W11 + (W10 × cartons, else W09 × order lines) + W12 × pallets (+ W13 × cartons with
+    labelling)
+  - free-zone exit = stock orders × M3 free-zone exit of the warehouse country (free zone or bonded)
+  - loads = ceil(stock kg / load kg); replenishment = loads × (M2 price + M3 clearance + free-zone entry)
+  - devanning = loads × W07 (C20) or W08 (C40); inbound = loads × pallets × W06 (P1, P5)
+  - storage = W05 × average pallets × 12; carrying = carrying % × stock value
+  - fixed = W15 × 12 + (W16 + W17) / amortisation years
+  - minimum top-up = max(0, W19 × 12 − (storage + handling + devanning))
+  Replenishment, devanning, storage and carrying spread over the served countries by kg; fixed and the minimum
+  top-up by orders.
+- S3b 3PL dedicated site: as S3 with (m2 × W20 × 12 + FTE × W21 × 12) × (1 + W22), m2 and FTE from S4 site 1, in
+  place of the handling, storage, fixed and minimum rates. Not configured without W20 and W21.
+- S4 own warehouse, per site: delivery via the proxy's M5 prices for the countries it serves, replenishment as S3
+  (no devanning), free-zone exit, own fixed = rent per m2 × m2 + FTE × cost per FTE + (setup + licences) /
+  amortisation years + equipment × 12 + WMS × 12 + insurance and utilities + carrying cost. The rest goes direct.
+- S5 other: each M6 line priced per shipment or order (× shipments) or per kg (× kg) on the countries in O03. The
+  lowest estimate is shown, indicative and never ranked.
+- Volume sensitivity: S1, S3 and S4 at 0.5, 1, 1.5, 2 and 3 times the volume case (S2 loads stay as set); break-even
+  is the lowest multiplier between 0.25 and 5 (steps of 0.05) where S3 or S4 costs less than S1.
+- The provider filter is "best" (cheapest price per lane, band or load over all providers), one provider for every
+  module, or one per module.
 
-Scores 0 to 4 per item; a missing answer scores 0 and is listed; Q13 and Q14 count × 0.75 (self-reported); area
-score = average of its items; total = weighted average of the areas. Cost: 4 × lowest comparable annual cost /
-this provider's, on each provider's cheapest complete option in Scenario A, compared on the lanes and bands all
-providers cover, minus 1 point below 90% coverage. A complete option is costed and covers at least 90% of the
-Scenario A shipments, so a partial road quote never stands in for the network; without one, the option with the
-highest coverage. Service (same option): on-time share, Q10, Q09, Q11, Q12. Quality: Q13, Q14, Q15, Q16, Q17
-(counted twice), Q18, Q19. Options and ease: Q20 to Q25, Q26, Option 2 completeness, Option 3 lanes.
+Scores 0 to 4, two roles per provider:
+- Forwarder: cost = 4 × lowest / this provider's, on the M1 lane-bands with volume that every forwarder prices
+  (shipments × price) plus one of each M2 lane-load every forwarder prices. Service: on-time share of its S1, Q10,
+  Q09, Q11, Q12.
+- 3PL: cost = 4 × lowest / this provider's S3 stock cost (total minus direct) on the countries every 3PL serves.
+  Service: on-time share of its M5 deliveries, then the same items. Options add M4 and M5 completeness.
+- Both: quality Q13, Q14 (self-reported, × 0.75), Q15, Q16, Q17 (counted twice), Q18, Q19; options Q20 to Q26.
+  A missing answer scores 0 and is listed. Total = weighted average of cost, service, quality and options.
 
-Red flags F1 to F8 (key and reason each): validity before the volume year (F1), surcharges "Some" with a
-per-piece or 70 kg rule (F2), a volumetric rule stricter than 1:6000 (F3), fuel % blank or for one month (F4),
-next-day GCC claimed but no option reaches 2 days on a GCC lane (F5), a lane with nothing offered (F6), input
-check not clean (F7), damage 0% or on-time 100% (F8). Follow-up questions per provider (with a copy button):
-missing scored answers, not-offered bands with volume, Option 2 gaps, each red flag.
+Red flags F1 to F11 (key and reason each): validity before the volume year (F1), surcharges "Some" with a per-piece
+or 70 kg rule (F2), a volumetric rule stricter than 1:6000 (F3), fuel % blank or for one month (F4), next-day GCC
+claimed but nothing reaches 2 days (F5), a lane without any M1 price when M1 is offered (F6), input check not clean
+(F7), damage 0% or on-time 100% (F8), a module offered without prices or marked No with prices (F9), warehouse stock
+duty paid (F10, duty not in the cost: get duty rates from Martin Remhof), minimum term above 12 months (F11).
+Follow-up questions per provider (copy button): missing scored answers, M1 bands with volume and no price, M2 gaps,
+the keys S3 still needs, each red flag.
 
-Screens: the ranked Quick Quote table (Options 1, 2 and 3, Option 1 in Scenario B, coverage, on time, area
-scores, total, red flags), Option 1 against Option 2 per lane (cost per order and transit, with the 2-day GCC
-marker), the options matrix Q20 to Q26, the comparison against Helmond, and the legacy v1 list. The provider
-detail shows test prices with source tags, costs per option and scenario, scores with a reason per item, the
-questions, the warehouse rates, red flags and follow-up questions. Removed with v1 data: worst-case transit,
-schedules, the timeline per shipment and the Scenario B discount. Export JSON writes the RFQ state and answers,
-the v2.3 results and the settings; Import JSON reads that file back.
+Screens on Benchmarking: the provider list with modules offered and share filled, both role scores and red flags;
+module comparison tables M1 to M6 side by side; the comparison against Helmond; the legacy v1 list. The provider
+detail has tabs for the profile, M1 to M6, questions, scores with a reason per item, and flags with follow-up
+questions. Export JSON writes the RFQ state, answers, scenarios for volume cases A and B, scores and settings;
+Import JSON reads that file back.
 
-Option 1 prices also become per-shipment quotes in Master Data > Quotes (QR-<provider>-<lane>-<band>), so Landed
-Cost and the Quote Benchmark read them, and the Route Dashboard offers them per order (Option 2 transit for
-delivery from stock).
+M1 prices also become per-shipment quotes in Master Data > Quotes (QR-<provider>-<lane>-<band>), so Landed Cost and
+the Quote Benchmark read them, and the Route Dashboard offers them per order (M5 transit for delivery from stock).
 
-Comparison against Helmond, per test order: Helmond = what FlexiTog pays under DAP from Helmond in the
-route engine (`window.FlexiDash.helmond`). Provider = the Option 1 all-in price of the test shipment with the
-order's lane and weight band, as quoted. Columns: orders priced, cost per order, cost per unit, lead time in
-working days, and the difference to Helmond on the orders both price. Providers without an answer show "No
-RFQ answer yet", never a guessed cost; v1 answers show "Legacy v1, not comparable".
+Comparison against Helmond, per test order: Helmond = what FlexiTog pays under DAP from Helmond in the route engine
+(`window.FlexiDash.helmond`). Provider = the M1 all-in price of the test shipment with the order's lane and weight
+band, as quoted. Columns: orders priced, cost per order, cost per unit, lead time in working days, and the
+difference to Helmond on the orders both price. Providers without an answer show "No RFQ answer yet", never a
+guessed cost; v1 answers show "Legacy v1, not comparable".
 
-Tests: `tests/test_rfq_v23.py`. Test 1 (the Aramex v2.3 test fill: Option 1 Scenario A EUR 188,208.28 with 129 of
-141 covered, B EUR 446,261.23, scores 4.00 / 1.60 / 3.41 / 1.56, total 2.64, flags F1 to F5 and F8) and the Aramex
-part of Tests 3 and 4 run when the provider files sit in `tests/fixtures/` under their own names; the blank
-template (Test 2), text in a price (Test 3), the v1 dummy as legacy (Test 4) and hand-calculated costs, scores and
-flags always run.
+Tests: `tests/test_rfq_v30.py`.
+- Test 1 runs on `tests/fixtures/rfq_v30_dummy_reconstructed.xlsx`, a dummy fill of the bundled template made by
+  `tools/build_rfq_v30_fixtures.py` (filled through the template's input cells and recalculated with LibreOffice),
+  and on "FlexiTog RFQ MENA-TR v3.0 - Dummy provider test fill.xlsx" when it sits in `tests/fixtures/`: S1 EUR
+  97,000, S2 EUR 56,800, S3 EUR 98,210, S4 EUR 228,310 with their breakdowns, S5 "Test consolidation hub", every
+  breakdown summing to its total.
+- Test 2 runs when "FlexiTog RFQ MENA-TR v3.0 - Aramex test fill.xlsx" is in `tests/fixtures/` (S1 EUR 188,208.28
+  with 12 not covered, m1.T05, m2.B01, m3.L01, S2 at 4 × P5 EUR 96,428.18, S2 with C20 incomplete, S3 incomplete
+  with F9, S5 "On-board courier").
+- Test 3 (blank template), Test 4 (`tests/fixtures/rfq_v30_input_errors.xlsx`, and the Aramex copy when present),
+  Test 5 (the v2.3 Aramex file, or its saved Export values `aramex_v23_values.json`, as "v2.3, M1 only" with the same
+  S1; the v1 dummy as legacy), module flags and the provider filter always run.
 
 Old lists: a Benchmarking provider list saved before this change moves into Master Data once, with its
 uploads (old types: 3PL / contract logistics to 3PL; freight forwarder, carrier, courier, customs broker
@@ -666,7 +703,7 @@ and 4PL to Freight forwarder; distributors stay outside Benchmarking).
 Storage: every Benchmarking file goes through `DataStore` in `workspace.js`, the same layer as Master Data
 (artifact database when published, this browser otherwise). RFQ state under `rfqstate`, parsed values and
 rates under `rfqvalues`, original files and a replaced template in IndexedDB `flexitog-bench`. No
-Benchmarking file calls localStorage directly. Logic without DOM: `flexitog/assets/rfq_v23.js` (Quick Quote v2.3)
+Benchmarking file calls localStorage directly. Logic without DOM: `flexitog/assets/rfq_v30.js` (modular RFQ v3.0)
 and `flexitog/assets/rfq_core.js` (`window.FlexiRFQ`: the Export sheet reader, the prefill and the v1 parser,
 tested in `tests/test_rfq.py` against `tests/fixtures/Sample_RFQ_Response_DUMMY.xlsx`).
 JSZip 3.10.1 (MIT) is inlined from `flexitog/assets/vendor/`.

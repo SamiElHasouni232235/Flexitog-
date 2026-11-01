@@ -197,16 +197,18 @@
     };
     const num = v => (v === "" || v == null || !Number.isFinite(Number(v)) ? null : Number(v));
     // Quick Quote v2.3: the test shipment with the same lane and band (read from the file); its all-in price as given.
-    const V23 = "RFQ-MENA-TR-QUICK v2.3";
-    const ship23 = (v, lane, band) => { const k = Object.keys(v).find(x => /^ship\.T\d+\.lane$/.test(x) && v[x] === lane && v[x.replace(/lane$/, "band")] === band); return k ? k.replace(/lane$/, "") : null; };
+    const V23 = "RFQ-MENA-TR-QUICK v2.3", V30 = "RFQ-MENA-TR-MODULAR v3.0";
+    // the row with this lane and band: ship.Txx (v2.3, Option 1) or m1.Txx (v3.0, M1); returns the key prefix and the price field names
+    const ship23 = (v, lane, band, pre) => { const re = new RegExp(`^${pre}\\.T\\d+\\.lane$`); const k = Object.keys(v).find(x => re.test(x) && v[x] === lane && v[x.replace(/lane$/, "band")] === band); return k ? k.replace(/lane$/, "") : null; };
     function getRfqRate(providerId, lane, band) {
       const L = latest(providerId); if (!L || !lane || !band) return {source: "placeholder"};
       const v = L.r.values;
-      if (v["meta.rfq_version"] === V23) {
-        const t = ship23(v, lane, band), cost = t ? num(v[t + "opt1_price_eur"]) : null;
+      if (v["meta.rfq_version"] === V23 || v["meta.rfq_version"] === V30) {
+        const v3 = v["meta.rfq_version"] === V30, t = ship23(v, lane, band, v3 ? "m1" : "ship"), f = v3 ? "" : "opt1_";
+        const cost = t ? num(v[t + f + "price_eur"]) : null;
         if (cost == null || cost <= 0) return {source: "placeholder"};
-        return {source: "rfq", providerId, providerName: L.p.name, lane, band, costPerShipment: cost, transitDays: num(v[t + "opt1_transit_days"]),
-          mode: v[t + "opt1_service"] || "", currency: "EUR", responseDate: (L.r.summary || {}).responseDate || String(L.r.uploadedAt || "").slice(0, 10)};
+        return {source: "rfq", providerId, providerName: L.p.name, lane, band, costPerShipment: cost, transitDays: num(v[t + f + "transit_days"]),
+          mode: v[t + (v3 ? "service" : "opt1_service")] || "", currency: "EUR", responseDate: (L.r.summary || {}).responseDate || String(L.r.uploadedAt || "").slice(0, 10)};
       }
       const k = `rate.${lane}.${band}.`;
       const cost = num(v[k + "cost_per_shipment"]), days = num(v[k + "transit_days"]);
@@ -216,9 +218,10 @@
     }
     function getRfqStock(providerId, lane) {
       const L = latest(providerId); if (!L || !lane) return {source: "placeholder"};
-      if (L.r.values["meta.rfq_version"] === V23) {   // Option 2: delivery from the regional warehouse, fastest quoted band
-        const v = L.r.values, days = Object.keys(v).filter(x => /^ship\.T\d+\.lane$/.test(x) && v[x] === lane).map(x => x.replace(/lane$/, ""))
-          .filter(t => num(v[t + "opt2_delivery_price_eur"]) != null).map(t => num(v[t + "opt2_transit_days"])).filter(d => d != null);
+      if (L.r.values["meta.rfq_version"] === V23 || L.r.values["meta.rfq_version"] === V30) {   // delivery from the regional warehouse (v2.3 Option 2, v3.0 M5), fastest quoted band
+        const v = L.r.values, v3 = v["meta.rfq_version"] === V30, re = v3 ? /^m5\.D\d+\.lane$/ : /^ship\.T\d+\.lane$/;
+        const days = Object.keys(v).filter(x => re.test(x) && v[x] === lane).map(x => x.replace(/lane$/, ""))
+          .filter(t => num(v[t + (v3 ? "price_eur" : "opt2_delivery_price_eur")]) != null).map(t => num(v[t + (v3 ? "transit_days" : "opt2_transit_days")])).filter(d => d != null);
         return days.length ? {source: "rfq", providerId, providerName: L.p.name, lane, transitDays: Math.min(...days)} : {source: "placeholder"};
       }
       const v = L.r.values, yes = String(v[`stock.${lane}.serve_from_stock`] || "").toLowerCase();
