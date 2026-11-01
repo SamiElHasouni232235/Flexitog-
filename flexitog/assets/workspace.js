@@ -202,10 +202,21 @@ function chunks(rows){
   if (cur.length || !out.length) out.push(cur);
   return out;
 }
+// The artifact database hands out frozen snapshots. Every read here returns a plain copy, so the views edit what they
+// loaded (an RFQ status, an upload added to a provider) instead of failing on a read-only object; every write sends
+// plain JSON (no undefined fields).
+const plainDb = db => ({doc(path){
+  const ref = db.doc(path);
+  return {
+    async get(){ const s = await ref.get(), d = s.exists ? JSON.parse(JSON.stringify(s.data())) : undefined; return {exists: s.exists, data: () => d}; },
+    set: v => ref.set(JSON.parse(JSON.stringify(v))),
+    delete: () => ref.delete(),
+  };
+}});
 async function storeInit(){
   if (CLAUDE) {
     try {
-      const db = await CLAUDE.use("db");
+      const raw = await CLAUDE.use("db"), db = raw ? plainDb(raw) : null;
       if (db) {
         STORE.db = db; STORE.where = "artifact";
         const meta = await db.doc("mdmeta/state").get();
@@ -1266,6 +1277,11 @@ new MutationObserver(list => {
   if (nodes.size) requestAnimationFrame(() => nodes.forEach(n => { if (n.isConnected) rollIn(n); }));
 }).observe(document.body, {childList: true, subtree: true});
 requestAnimationFrame(() => rollIn(document.body));
+
+// ============================================================ failures show: an action that throws says so instead of doing nothing
+const failNote = err => { const m = (err && (err.message || err.code)) || String(err || "unknown error"); toast(`That action failed: ${m}`, "bad"); };
+window.addEventListener("unhandledrejection", e => { console.error(e.reason); failNote(e.reason); });
+window.addEventListener("error", e => { if (e.error) failNote(e.error); });
 
 // ============================================================ the Save button, Ctrl+S / Cmd+S, and the leave warning
 $("saveBtn").addEventListener("click", () => Saver.save());
