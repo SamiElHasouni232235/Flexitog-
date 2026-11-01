@@ -968,7 +968,10 @@ function rfqSettingsHtml(){
         <div class="setrow">${V.CLASSES.map(c => `<label>Order lines, ${esc(c.size)} <span class="faint">update from order history</span>${num(`orderLines.${c.band}`, s.orderLines[c.band], `Order lines ${c.size}`)}</label>`).join("")}</div>
         <div class="setrow">${L9.map(L => `<label title="${esc(V.LANES[L].name)}">Target ${L}${num(`targetDays.${L}`, s.targetDays[L], `Target days ${L}`)}</label>`).join("")}
           <label>Kg per pallet${num("kgPerPallet", s.kgPerPallet, "Kg per pallet")}</label><label>Volume year${num("volumeYear", s.volumeYear, "Volume year", ' step="1"')}</label></div></div>
-      <div class="setcol wide"><h3>S2 distributor holds stock <span class="faint">bulk loads per year; discount and sales value: commercial input from Tarek</span></h3>
+      <div class="setcol wide"><h3>Revenue per order <span class="faint">EUR excl. VAT that FlexiTog invoices per customer order, per country; for the revenue per scenario</span></h3>
+        <div class="setrow">${L9.map(L => `<label title="${esc(V.LANES[L].name)}">${L} ${esc(laneName(L))}${num(`revenuePerOrder.${L}`, s.revenuePerOrder[L], `Revenue per order ${L}`)}</label>`).join("")}</div>
+        <div class="iact"><button type="button" class="btn ghost sm" data-a="rev-fc">Fill from the Sales Forecast</button><span class="faint">${s.revenueSource ? esc(s.revenueSource) : "Source: order history, or the Sales Forecast (revenue / orders per country)."}</span></div></div>
+      <div class="setcol wide"><h3>S2 distributor holds stock <span class="faint">bulk loads per year; discount and sales value: commercial input from Tarek; a blank sales value uses revenue per order x orders</span></h3>
         <div class="tablewrap"><table class="setgrid"><thead><tr><th>Country</th><th>Distributor</th><th>P1</th><th>P5</th><th>C20</th><th>C40</th><th>Discount %</th><th>Sales value EUR</th></tr></thead><tbody>
         ${L9.map(L => `<tr><td>${L} <span class="faint">${esc(laneName(L))}</span></td><td>${chk(`s2.${L}.on`, s.s2[L].on, `Distributor in ${L}`)}</td>${["P1", "P5", "C20", "C40"].map(ld => `<td>${num(`s2.${L}.loads.${ld}`, s.s2[L].loads[ld], `${ld} loads to ${L}`)}</td>`).join("")}
           <td>${num(`s2.${L}.discountPct`, s.s2[L].discountPct, `Discount ${L}`)}</td><td>${num(`s2.${L}.salesValue`, s.s2[L].salesValue, `Sales value ${L}`)}</td></tr>`).join("")}</tbody></table></div></div>
@@ -994,6 +997,16 @@ function rfqSettingsHtml(){
         <details><summary class="faint">Edit the rubric (JSON)</summary><textarea id="bxRubric" rows="12" spellcheck="false" aria-label="Scoring rubric as JSON">${esc(JSON.stringify(V.rubricOf(s), null, 1))}</textarea>
           <div class="iact"><button type="button" class="btn ghost sm" data-a="rubric-reset">Reset rubric</button></div></details>
         <div class="iact"><button type="button" class="btn ghost sm" data-a="set-reset">Reset all settings to the defaults</button></div></div></div></details>`;
+}
+// Revenue per order per country from the Sales Forecast: 2027 revenue / orders per country, converted to EUR.
+function revenueFromForecast(){
+  const F = window.ForecastUI; if (!F || !F.ready()) return null;
+  const rows = F.demandRows() || [], set = F.settings() || {}, fx = Number((set.fx || {})[set.reporting]) || 1;
+  const values = Object.fromEntries(V.LANE_IDS.map(L => {
+    const rs = rows.filter(x => x.country === V.LANES[L].country), rev = rs.reduce((a, x) => a + (Number(x.revenue) || 0), 0), n = rs.reduce((a, x) => a + (Number(x.orders) || 0), 0);
+    return [L, n > 0 && rev > 0 ? Math.round(rev * fx / n * 100) / 100 : null];
+  }));
+  return {values, label: `the Sales Forecast ${set.forecastYear || 2027} (${set.scenario || "base"}, ${set.reporting || "EUR"} to EUR at ${fx})`};
 }
 function setPath(path, v){
   const ks = path.split("."), last = ks.pop();
@@ -1026,6 +1039,17 @@ function wireRfqSettings(){
     S30().rubric = r; changed(); toast("Rubric updated. " + PENDING_NOTE);
   });
   el.querySelector('[data-a="rubric-reset"]').addEventListener("click", () => { S30().rubric = null; $("bxRubric").value = JSON.stringify(V.RUBRIC, null, 1); changed(); });
+  el.querySelector('[data-a="rev-fc"]').addEventListener("click", () => {
+    const f = revenueFromForecast();
+    if (!f) { toast("The Sales Forecast has no 2027 forecast yet. Open the Sales Forecast tab or enter the values by hand.", "bad"); return; }
+    const got = V.LANE_IDS.filter(L => f.values[L] != null);
+    if (!got.length) { toast("The Sales Forecast has no orders in these nine countries.", "bad"); return; }
+    got.forEach(L => { S30().revenuePerOrder[L] = f.values[L]; });
+    S30().revenueSource = `Filled ${today()} from ${f.label}.`;
+    changed(true);
+    const left = V.LANE_IDS.filter(L => f.values[L] == null);
+    toast(`Revenue per order filled for ${got.length} countries${left.length ? `; no forecast orders for ${left.join(", ")}` : ""}. ${PENDING_NOTE}`);
+  });
   el.querySelector('[data-a="set-reset"]').addEventListener("click", e => {
     if (!confirmInline(e.target, "Click again to reset the internal settings to the defaults")) return;
     B.settings.rfq30 = V.DEFAULT_SETTINGS(); changed(true);
@@ -1035,7 +1059,8 @@ function renderRfqSettings(){ const host = $("bxRfqSetHost"); if (!host) return;
 
 // ---- JSON export and import of the RFQ answers, the results and the settings
 function exportJson(){
-  const list = modAll(), sum = R0 => ({state: R0.state, total: R0.total, parts: R0.parts, types: R0.types, missing: R0.missing, tags: R0.tags, coverage: [R0.covered, R0.shipments]});
+  const list = modAll(), sum = R0 => ({state: R0.state, total: R0.total, parts: R0.parts, types: R0.types, missing: R0.missing, tags: R0.tags, coverage: [R0.covered, R0.shipments],
+    revenue: R0.revenue == null ? null : R0.revenue, revenueAfterCost: R0.revenueAfter == null ? null : R0.revenueAfter});
   const scen = sc => { const o = V.scenarios(list, S30(), sc, "best"); return Object.fromEntries(["S1", "S2", "S3", "S3b", "S4"].map(k => [k, sum(o[k])]).concat([["S5", {state: o.S5.state, solutions: o.S5.solutions}]])); };
   const data = {kind: "flexitog-benchmarking-rfq", format: 3, exported: nowIso(), rfqVersion: V.VERSION, settings: {rfq30: S30()}, rfq: B.rfq,
     providers: list.map(e => ({providerId: e.id, name: e.name, tag: e.Q.tag, modules: e.Q.modules, completeness: e.comp, invalid: e.Q.invalid, inputCheck: e.Q.inputCheck,

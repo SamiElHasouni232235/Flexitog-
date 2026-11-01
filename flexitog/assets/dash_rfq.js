@@ -52,12 +52,16 @@ const volIn = (lanes, f) => sum(lanes, L => sum(V.BANDS, b => (Number(((M.S.volu
 // A scenario in the current scope: cost, shipments, coverage, per order and per kg. Null cost when it is not complete.
 function scoped(id){
   const R = M.out[id], lanes = lanesIn();
-  if (id === "S5") return {R, cost: R.total, state: R.state};
+  if (id === "S5") return {R, cost: R.total, state: R.state, revenue: null, after: null};
   const cs = lanes.map(L => R.countries[L]);
   const cost = R.state === "complete" ? (RQ.region === "all" ? R.total : sum(cs, c => c.cost)) : null;
   const n = volIn(lanes, () => 1), kg = volIn(lanes, b => Number(M.S.avgKg[b]) || 0);
   const types = Object.fromEntries(V.TYPES.map(([k]) => [k, RQ.region === "all" ? R.types[k] : sum(cs, c => c.types[k])]));
-  return {R, cost, state: R.state, n, kg, types, perOrder: cost != null && n ? cost / n : null, perKg: cost != null && kg ? cost / kg : null,
+  const revMiss = lanes.filter(L => R.countries[L].revenue == null);
+  const revenue = R.state === "not_configured" || revMiss.length ? null : sum(cs, c => c.revenue);
+  const after = revenue != null && cost != null ? revenue - (cost - types.commercial) : null;
+  return {R, cost, state: R.state, n, kg, types, revenue, after, revMiss, costPct: after != null && revenue ? (revenue - after) / revenue : null,
+    revPerOrder: revenue != null && n ? revenue / n : null, perOrder: cost != null && n ? cost / n : null, perKg: cost != null && kg ? cost / kg : null,
     perPallet: cost != null && kg ? cost / (kg / (Number(M.S.kgPerPallet) || 250)) : null,
     shipments: sum(cs, c => c.shipments), covered: sum(cs, c => c.covered), measured: sum(cs, c => c.measured), onTime: sum(cs, c => c.onTime)};
 }
@@ -65,6 +69,7 @@ function cheapestIn(){
   const xs = RANKED.map(id => [id, scoped(id).cost]).filter(([, c]) => c != null).sort((a, b) => a[1] - b[1]);
   return xs.length ? xs[0][0] : null;
 }
+const revLine = x => (x.revenue != null ? `Revenue ${eur(x.revenue)}${x.after != null ? ` · after cost ${eur(x.after)} (cost ${pct(x.revenue - x.after, x.revenue)})` : ""}` : "");
 const tagChips = R => (R.tags || []).map(t => `<span class="rqtag" title="${esc(TAG_TIP[t] || t)}">${esc(t)}</span>`).join("");
 const sw = id => `<i class="sw" style="background:${COLOR[id]}"></i>`;
 function stateLine(R){
@@ -99,6 +104,7 @@ function cardHtml(id, best){
     main = `<span data-roll="rq-${id}">${eur(x.cost)}</span>`;
     const s1 = scoped("S1").cost;
     sub = `${eur(x.perOrder, 2)} per order${id !== "S1" && s1 != null ? ` · ${x.cost <= s1 ? "saves" : "costs"} ${eur(Math.abs(s1 - x.cost))} against S1` : ""}`;
+    if (x.revenue != null) sub += `<br><span class="rqrev" title="${esc(`revenue FlexiTog invoices (${x.R.revenueTag || "assumption"}: revenue per order x orders${id === "S2" ? ", distributor countries at the sales value less the discount" : ""}); after cost = revenue - logistics cost`)}">${revLine(x)}${id === "S2" && (x.R.tags || []).includes("excludes distributor margin") ? " · no distributor discount set" : ""}</span>`;
   } else { main = stateLine(R); sub = esc(missingText(R)); }
   return `<div class="rqcard${best === id ? " best" : ""}${R.state === "complete" || R.state === "indicative" ? "" : " off"}" style="--sc:${COLOR[id]}">
     <div class="rqch"><b>${id}</b><span>${esc(s.label)}</span>${best === id ? '<em class="rqbest">cheapest</em>' : ""}</div>
@@ -119,17 +125,21 @@ function topHtml(){
 // ---- 2. comparison table
 function compareHtml(){
   const best = cheapestIn(), s1 = scoped("S1").cost;
+  const afterBest = (RANKED.map(id => [id, scoped(id).after]).filter(([, a]) => a != null).sort((a, b) => b[1] - a[1])[0] || [null])[0];
   const rows = ALL.map(id => { const x = scoped(id), R = x.R;
-    if (id === "S5") return `<tr class="ind"><th>${sw(id)}${id} ${esc(sname(id))}</th><td class="n">${R.total != null ? `<span class="rqv" title="indicative · M6 lines priced per shipment, order or kg">${eur(R.total)}</span>` : stateLine(R) || '<span class="rqna">no estimate</span>'}</td><td colspan="7" class="faint">${esc(STATE[R.state] || R.state)}${R.solutions && R.solutions.length ? ` · ${esc(R.solutions.map(z => `${z.name}: ${z.title || "unnamed"}`).join("; "))}` : ""}</td></tr>`;
+    if (id === "S5") return `<tr class="ind"><th>${sw(id)}${id} ${esc(sname(id))}</th><td class="n">${R.total != null ? `<span class="rqv" title="indicative · M6 lines priced per shipment, order or kg">${eur(R.total)}</span>` : stateLine(R) || '<span class="rqna">no estimate</span>'}</td><td colspan="10" class="faint">${esc(STATE[R.state] || R.state)}${R.solutions && R.solutions.length ? ` · ${esc(R.solutions.map(z => `${z.name}: ${z.title || "unnamed"}`).join("; "))}` : ""}</td></tr>`;
     const ok = x.cost != null;
     return `<tr class="${best === id ? "best" : ""}"><th>${sw(id)}${id} ${esc(sname(id))}${best === id ? ' <em class="rqbest">cheapest</em>' : ""}</th>
       <td class="n">${ok ? `<span class="rqv" title="${esc((R.tags || []).join(" · "))}">${eur(x.cost)}</span>` : stateLine(R)}</td>
+      <td class="n">${x.revenue != null ? eur(x.revenue) : '<span class="rqna" title="Enter the revenue per order per country in the internal settings on Benchmarking">n/a</span>'}</td>
+      <td class="n${ok && afterBest === id ? " best" : ""}">${x.after != null ? eur(x.after) : ""}</td><td class="n">${x.costPct != null ? pct(x.revenue - x.after, x.revenue) : ""}</td>
       <td class="n">${ok && s1 != null && id !== "S1" ? `<span class="${x.cost <= s1 ? "rqsave" : "rqmore"}">${x.cost <= s1 ? "−" : "+"}${eur(Math.abs(x.cost - s1))}</span>` : ""}</td>
       <td class="n">${ok ? eur(x.perOrder, 2) : ""}</td><td class="n">${ok ? eur(x.perKg, 2) : ""}</td>
       <td class="n">${x.shipments ? `${fmt(x.covered, 0)} of ${fmt(x.shipments, 0)}` : ""}</td><td class="n">${x.measured ? pct(x.onTime, x.measured) : ""}</td>
       <td class="n">${Math.round((R.completeness || 0) * 100)}%</td><td class="n">${R.oneOff ? eur(R.oneOff) : ""}</td></tr>`; }).join("");
   return `<div class="card"><div class="cardhead"><h2>Logistics scenario comparison</h2><span class="faint" style="font-size:12px">Volume case ${RQ.vc} · ${esc(scopeName())} · green: the cheapest complete scenario</span></div>
-    <div class="tablewrap btable"><table class="rqtbl"><thead><tr><th>Scenario</th><th>Annual cost</th><th>Against S1</th><th>Per order</th><th>Per kg</th><th>Shipments covered</th><th>On time</th><th>Inputs</th><th>One-off</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="tablewrap btable"><table class="rqtbl"><thead><tr><th>Scenario</th><th>Annual cost</th><th>Revenue</th><th>Revenue after cost</th><th>Cost % of revenue</th><th>Against S1</th><th>Per order</th><th>Per kg</th><th>Shipments covered</th><th>On time</th><th>Inputs</th><th>One-off</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="faint bnote">Revenue: what FlexiTog invoices, revenue per order x customer orders of volume case ${RQ.vc}; in an S2 distributor country the distributor pays the sales value less its discount. Revenue after cost = revenue - logistics cost. The distributor discount counts once, as lower revenue, so revenue after cost equals gross sales minus the annual cost. Green in that column: the highest.${M.S.revenueSource ? " " + esc(M.S.revenueSource) : ""}</p>
     ${RANKED.filter(id => M.out[id].state !== "complete").map(id => `<p class="faint rqnote">${id} ${esc(sname(id))}: ${esc(missingText(M.out[id]))}</p>`).join("")}</div>`;
 }
 
@@ -169,7 +179,7 @@ function countryHtml(){
     return `<tr><th>${esc(c.label)}<br><span class="faint">${c.size} · ${fmt(M.S.avgKg[c.band], 0)} kg · ${fmt(vol(c.band), 0)} a year</span></th>${cells}</tr>`;
   }).join("");
   const bars = RANKED.map(id => { const R = M.out[id], c = R.countries[L];
-    return `<div class="rqbrow"><span class="rqbl">${sw(id)}${id}</span>${R.state === "complete" ? stackBar(c.types, c.cost) : `<div class="rqstack na"><span>${esc(STATE[R.state] || R.state)}</span></div>`}<span class="rqbv num">${R.state === "complete" ? eur(c.cost) : ""}</span></div>`; }).join("");
+    return `<div class="rqbrow"><span class="rqbl">${sw(id)}${id}</span>${R.state === "complete" ? stackBar(c.types, c.cost) : `<div class="rqstack na"><span>${esc(STATE[R.state] || R.state)}</span></div>`}<span class="rqbv num">${R.state === "complete" ? eur(c.cost) : ""}${R.state === "complete" && c.revenue != null && c.shipments > 0 ? `<small title="revenue in this country, after logistics cost">rev ${eur(c.revenue)} · after ${eur(c.revenueAfter)}</small>` : ""}</span></div>`; }).join("");
   const legend = V.TYPES.map(([k, l]) => `<span><i class="sw" style="background:${TYPE_COLOR[k]}"></i>${esc(l)}</span>`).join("");
   return `<div class="card" id="rqCountryCard"><div class="cardhead"><h2>${esc(V.LANES[L].name)}</h2><span class="faint" style="font-size:12px">${L} · ${esc(V.LANES[L].region)} · target ${M.S.targetDays[L]} working days · volume case ${RQ.vc}${best ? ` · cheapest ${best} ${esc(sname(best))}` : " · no complete scenario"}</span></div>
     <h3 class="rqh3">Cost per order by class</h3>
@@ -181,10 +191,10 @@ function countryHtml(){
 // ---- 5. unit cost and 6. break-even
 function unitHtml(){
   const rows = RANKED.map(id => { const x = scoped(id);
-    return `<tr><th>${sw(id)}${id} ${esc(sname(id))}</th><td class="n">${x.cost != null ? eur(x.perOrder, 2) : stateLine(x.R)}</td><td class="n">${x.cost != null ? eur(x.perKg, 2) : ""}</td><td class="n">${x.cost != null ? eur(x.perPallet, 2) : ""}</td></tr>`; }).join("");
+    return `<tr><th>${sw(id)}${id} ${esc(sname(id))}</th><td class="n">${x.cost != null ? eur(x.perOrder, 2) : stateLine(x.R)}</td><td class="n">${x.cost != null ? eur(x.perKg, 2) : ""}</td><td class="n">${x.cost != null ? eur(x.perPallet, 2) : ""}</td><td class="n">${x.revPerOrder != null ? eur(x.revPerOrder, 2) : ""}</td><td class="n">${x.after != null && x.n ? eur(x.after / x.n, 2) : ""}</td></tr>`; }).join("");
   const n = volIn(lanesIn(), () => 1), kg = volIn(lanesIn(), b => Number(M.S.avgKg[b]) || 0);
   return `<div class="card"><div class="cardhead"><h2>Unit cost</h2><span class="faint" style="font-size:12px">${esc(scopeName())} · ${fmt(n, 0)} orders · ${fmt(kg, 0)} kg a year</span></div>
-    <div class="tablewrap"><table class="rqtbl"><thead><tr><th>Scenario</th><th>Per order</th><th>Per kg</th><th>Per pallet (${fmt(M.S.kgPerPallet, 0)} kg)</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="tablewrap"><table class="rqtbl"><thead><tr><th>Scenario</th><th>Per order</th><th>Per kg</th><th>Per pallet (${fmt(M.S.kgPerPallet, 0)} kg)</th><th>Revenue per order</th><th>After cost per order</th></tr></thead><tbody>${rows}</tbody></table></div>
     <p class="faint bnote">Annual cost divided by the customer orders and kg of volume case ${RQ.vc}. Per pallet: per kg times the kg per pallet setting.</p></div>`;
 }
 function breakEvenHtml(){
@@ -217,7 +227,7 @@ function country(iso){
   RANKED.forEach(id => { const R = M.out[id], c = R.countries[L];
     if (R.state !== "complete") { lines.push(`${id} ${STATE[R.state] || R.state}`); return; }
     const per = V.CLASSES.map(k => [k, V.classCost(R, L, k.band)]).filter(([, x]) => x).map(([k, x]) => `${k.size} ${eur(x.price, 0)}`);
-    lines.push(`${id} ${eur(c.cost)} a year${per.length ? ` · per order ${per.join(", ")}` : ""}`);
+    lines.push(`${id} ${eur(c.cost)} a year${c.revenue != null && c.shipments > 0 ? `, revenue ${eur(c.revenue)}, after cost ${eur(c.revenueAfter)}` : ""}${per.length ? ` · per order ${per.join(", ")}` : ""}`);
   });
   if (M.out.S5.solutions && M.out.S5.solutions.some(z => z.lanes.includes(L))) lines.push(`S5 indicative: ${M.out.S5.solutions.filter(z => z.lanes.includes(L)).map(z => `${z.name}, ${z.title || "unnamed"}`).join("; ")}`);
   return {fill: best ? COLOR[best] : null, scenario: best, tip: lines.join("\n")};

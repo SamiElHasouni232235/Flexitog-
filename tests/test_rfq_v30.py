@@ -242,3 +242,25 @@ def test_module_flags_and_choice(tmp_path):
     assert r["s5"] == "indicative"
     assert r["best"] == 48500 and r["fixedP"] == 97000 and r["fixedH"] == 48500
     assert r["caseB"] > r["best"]
+
+
+# ---------------------------------------------------------------- revenue per scenario
+def test_revenue_per_scenario(tmp_path):
+    aov = {f"L0{i}": 2000 for i in range(1, 10)}
+    disc = dict(T1_SETTINGS, revenuePerOrder=aov, s2={"L01": {"on": True, "loads": {"C20": 2, "P5": 4}, "discountPct": 20}})
+    r = run("""const Q = quoteOf(F[0]), list = [{id: 'P', name: 'Dummy', Q}];
+  const pick = o => Object.fromEntries(['S1', 'S2', 'S3', 'S4'].map(k => [k, {total: r2(o[k].total), revenue: r2(o[k].revenue), after: r2(o[k].revenueAfter), missing: o[k].revenueMissing,
+    countries: r2(Object.values(o[k].countries).reduce((a, c) => a + (c.revenueAfter || 0), 0))}]));
+  out = {none: pick(V.scenarios(list, %s, 'A', 'best')), aov: pick(V.scenarios(list, %s, 'A', 'best')), disc: pick(V.scenarios(list, %s, 'A', 'best')),
+    answer: V.answers(V.scenarios(list, %s, 'A', 'best'), null, list).find(a => /Revenue after/.test(a))};""" % (
+        json.dumps(T1_SETTINGS), json.dumps(dict(T1_SETTINGS, revenuePerOrder=aov)), json.dumps(disc), json.dumps(disc)), tmp_path, DUMMY)
+    # without revenue per order: no revenue, the countries are listed
+    assert r["none"]["S1"]["revenue"] is None and len(r["none"]["S1"]["missing"]) == 9
+    # 141 orders x EUR 2,000 in every scenario; after cost = revenue - cost
+    for k, x in r["aov"].items():
+        assert x["revenue"] == 282000 and x["after"] == pytest.approx(282000 - x["total"], abs=0.01) and x["countries"] == pytest.approx(x["after"], abs=0.05), k
+    # S2 with a 20% discount in L01 (50 orders x EUR 2,000 = EUR 100,000): revenue drops by EUR 20,000, counted once
+    s2 = r["disc"]["S2"]
+    assert s2["total"] == 76800 and s2["revenue"] == 262000 and s2["after"] == 205200 == 282000 - 76800
+    assert r["disc"]["S1"]["revenue"] == 282000
+    assert "S2 Distributor holds stock" in r["answer"]

@@ -196,7 +196,10 @@ It updates when an answer is uploaded or removed, or a setting changes.
   in Colour countries by). The tooltip lists each scenario's annual cost and cost per order per class.
 - Country detail: cost per order by class and scenario (`classCost`) and a stacked bar of the annual cost per cost
   type (transport to region, customs, warehouse handling, storage, delivery, fixed, direct from Helmond, commercial).
-- Unit cost: per order, per kg and per pallet (per kg × kg per pallet) per scenario for the scope.
+- Revenue per scenario: on the cards, the comparison table (revenue, revenue after cost, cost % of revenue, the
+  highest revenue after cost in green), the map tooltip, the country bars and the answers.
+- Unit cost: per order, per kg and per pallet (per kg × kg per pallet), revenue and revenue after cost per order, per
+  scenario for the scope.
 - Break-even volume: S1, S3 and S4 at 0.5, 1, 1.5, 2 and 3 times the volume case, with the multiplier from which S3
   or S4 becomes cheaper than S1.
 - Answers: deterministic sentences from templates and the figures, then the follow-up questions per provider
@@ -606,6 +609,8 @@ same data store as every Benchmarking change):
 - Average kg per band, cartons and pallets per class S, M, L, order lines per class (6, update from order history),
   kg per pallet 250, target transit per lane (L01 to L04 2, L05 and L06 3, L07 5, L08 and L09 4 working days),
   volume year 2027.
+- Revenue per order per country (EUR excl. VAT that FlexiTog invoices per customer order), from order history or
+  "Fill from the Sales Forecast" (2027 revenue / orders per country, converted to EUR at the forecast's rate).
 - S2 per country: distributor on or off, loads per year (P1, P5, C20, C40), discount % and sales value (commercial
   input from Tarek).
 - S3: provider, warehouse A or B, warehouse country (from W01, editable), countries served (blank: every country
@@ -624,7 +629,8 @@ Scenarios (`flexitog/assets/rfq_v30.js`, `window.FlexiRFQ30`), per volume case. 
   of the next lower band × the band's average kg (extrapolated). A row that exists but is blank is not covered.
 - S1 direct from Helmond: shipments × M1 price per lane and band. Not covered volume lowers coverage only.
 - S2 distributor holds stock: in each distributor country, loads per year × M2 price (bulk) + discount % × sales
-  value (commercial); the distributor serves every order there. Other countries go direct (S1). Without a discount
+  value (commercial; a blank sales value uses revenue per order × the country's orders); the distributor serves
+  every order there. Other countries go direct (S1). Without a discount
   the result is tagged "excludes distributor margin". M2 alternative-mode prices are not used as a fallback.
 - S3 3PL holds stock: orders of sizes S, M and L in served countries × the share from stock go through the
   warehouse; XL, XXL and the rest go direct (S1).
@@ -646,6 +652,10 @@ Scenarios (`flexitog/assets/rfq_v30.js`, `window.FlexiRFQ30`), per volume case. 
   amortisation years + equipment × 12 + WMS × 12 + insurance and utilities + carrying cost. The rest goes direct.
 - S5 other: each M6 line priced per shipment or order (× shipments) or per kg (× kg) on the countries in O03. The
   lowest estimate is shown, indicative and never ranked.
+- Revenue per scenario: revenue per order × customer orders per country; in an S2 distributor country the
+  distributor pays the sales value less its discount. Revenue after cost = revenue − (annual cost − distributor
+  discount), so the discount counts once and revenue after cost equals gross sales minus the annual cost. Revenue
+  is n/a while a country with orders has no revenue per order.
 - Volume sensitivity: S1, S3 and S4 at 0.5, 1, 1.5, 2 and 3 times the volume case (S2 loads stay as set); break-even
   is the lowest multiplier between 0.25 and 5 (steps of 0.05) where S3 or S4 costs less than S1.
 - The provider filter is "best" (cheapest price per lane, band or load over all providers), one provider for every
