@@ -160,6 +160,8 @@ body.map-fs .minfo.left{top:72px}
 .mlegend > span{display:inline-flex;gap:5px;align-items:center;white-space:nowrap}
 /* full screen: the map box covers the viewport, native full screen when allowed */
 body.map-fs{overflow:hidden}
+/* a transformed parent (the card hover lift) would trap the fixed full-screen map inside the card */
+body.map-fs .card{transform:none!important;transition:none}
 body.map-fs .mapbox{position:fixed;inset:0;z-index:15;border-radius:0;border:0;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 body.map-fs #map{width:100%;height:100%;aspect-ratio:auto;touch-action:none}
 @media (max-width:760px){
@@ -562,7 +564,7 @@ details.custom .iact{display:flex;gap:6px;margin-top:8px}
 
   <!-- 3. Where on the map? -->
   <section class="maprow">
-    <div class="card">
+    <div class="card still">
       <div class="cardhead"><h2 id="mapTitle">Routes and issues</h2><span class="faint" style="font-size:12px">Drag to pan · Ctrl + scroll or pinch to zoom · click a country to select it</span></div>
       <div class="mapbox" id="mapbox">
         <div class="mtool">
