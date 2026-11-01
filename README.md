@@ -177,6 +177,47 @@ HTML file that runs the whole simulator in the browser, with no Python and no se
   country or factory for brands, SKUs, origin, lead time and share of the batch. Blue is reserved for
   suppliers: distributor-held stock is plum and the country value scale is violet.
 
+### Logistics benchmark on the Dashboard (Benchmarking results)
+
+The Dashboard opens with the Benchmarking tab's Quick Quote v2.3 results per country, region and order class
+(`flexitog/assets/dash_rfq.js`). It reads and explains only: it calls the `rfq_v23.js` functions on the list the
+Benchmarking tab ranks (`BenchUI.rfq23`), so every total matches that tab. It updates when an answer is uploaded or
+removed, or a Quick Quote setting changes.
+
+- Filters: provider (all or one), scenario A or B, option 1, 2, 3 or cheapest.
+- Key figures: providers compared, best provider by total score, annual cost of the cheapest complete option in
+  Scenario A and B, coverage, GCC on-time share.
+- Map: with answers present, countries take the colour of the cheapest option ("Cheapest RFQ option" in Colour
+  countries by); the tooltip lists per class the cost per option, transit against the target, the cheapest provider
+  and the red flags for that country.
+- Region cards (GCC L01 to L04, Türkiye L05, North Africa L06 to L09): annual cost per option, coverage, on-time
+  share, cheapest provider. Region totals are volume-weighted sums of their countries. With several providers the
+  cheapest is compared like for like: the highest coverage first, then the lowest cost.
+- Order class matrix: parcel (S, 8 kg, B1), small consignment (M, 52 kg, B2), pallet (L, 261 kg, B3), multi-pallet
+  (XL, 941 kg, B4), full load (XXL, 2,380 kg, B5) against the nine countries; each cell the cheapest price with its
+  option and provider, red when the transit misses the lane target, "–" without a test shipment.
+- Cost per pallet: the pallet class price and the multi-pallet price / 4 per country; storage per pallet per month.
+- Holding stock per provider: W01, W02, W04 to W09, W11 and W13 and the handling per class, or "not quoted".
+- Helmond or regional stock: Option 1 against Option 2 per country and class, with the class from which regional
+  stock is cheaper for it and every larger class. Skipped, with the missing keys, while Option 2 is incomplete.
+- Answers Q1 to Q7: deterministic sentences from templates and the figures, then the data gaps and the follow-up
+  questions from Benchmarking (copy button). No AI calls.
+
+A blank or not-offered price shows "not quoted", never 0. Every figure's tooltip names its source: quoted, derived,
+extrapolated or assumption.
+
+Option 2 per order of a class = delivery (opt2_delivery_price_eur) + handling (W07 + W06 × order lines of the class +
+W08; order lines per class are a Quick Quote setting, 6 by default, "update from order history"; when a later RFQ
+version adds W15 pick per full carton and W16 outbound per pallet, W07 + W15 × cartons + W16 × pallets + W08) +
+replenishment share ((W11 or W13 + W05) / kg per pallet × class kg) + storage share ((W04 × average pallets × 12 +
+carrying cost) / annual kg through the warehouse × class kg) + fixed share (W09 × 12 / annual orders through the
+warehouse). The same functions price Option 2 on the Benchmarking tab, so the class breakdown sums to its total.
+
+Tests: `tests/test_rfq_v23.py` runs the Dashboard figures on `tests/fixtures/aramex_v23_values.json` (the values
+Benchmarking stored from the Aramex test fill): region totals per scenario, pallet costs, Saudi Arabia per class, the
+parcels not quoted, Option 2 incomplete, the warehouse card, key figures and answers, and the Option 2 breakdown
+summing to the Benchmarking total with test warehouse rates.
+
 ### Route Dashboard layout
 
 The tab answers six questions in order. One store (`RS` in `dashboard.html`: selected region, country,

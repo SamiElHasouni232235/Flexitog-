@@ -28,6 +28,16 @@
   const BANDS = ["B1", "B2", "B3", "B4", "B5"];
   const OPTIONS = [["opt1", "Option 1 from Helmond"], ["opt2", "Option 2 from regional stock"], ["opt3", "Option 3 other option"]];
   const OK_CHECK = "No problems found";
+  // Order classes: the test shipment sizes and weight bands. pallets: about how many pallets one order fills.
+  const CLASSES = [
+    {band: "B1", key: "parcel", label: "Parcel", size: "S", kg: 8, cartons: 1, pallets: 0},
+    {band: "B2", key: "small", label: "Small consignment", size: "M", kg: 52, cartons: 4, pallets: 0},
+    {band: "B3", key: "pallet", label: "Pallet", size: "L", kg: 261, cartons: 18, pallets: 1},
+    {band: "B4", key: "multi", label: "Multi-pallet", size: "XL", kg: 941, cartons: 64, pallets: 4},
+    {band: "B5", key: "full", label: "Full load", size: "XXL", kg: 2380, cartons: 160, pallets: 10},
+  ];
+  const classOf = band => CLASSES.find(c => c.band === band);
+  const REGIONS = [["GCC", ["L01", "L02", "L03", "L04"]], ["Türkiye", ["L05"]], ["North Africa", ["L06", "L07", "L08", "L09"]]];
 
   // ================================================================== settings (the old v1 Volumes sheet)
   const vol = rows => Object.fromEntries(Object.entries(rows).map(([L, a]) => [L, Object.fromEntries(BANDS.map((b, i) => [b, a[i]]))]));
@@ -38,7 +48,8 @@
     },
     avgKg: {B1: 8, B2: 52, B3: 261, B4: 941, B5: 2380},
     targetDays: {L01: 2, L02: 2, L03: 2, L04: 2, L05: 3, L06: 3, L07: 5, L08: 4, L09: 4},
-    orderLines: 6, kgPerPallet: 250,
+    orderLinesByClass: {B1: 6, B2: 6, B3: 6, B4: 6, B5: 6},   // update from order history
+    kgPerPallet: 250,
     avgPallets: null,                 // no default: the user enters it
     replenishment: "sea",             // sea (W11) or air (W13)
     carryingPct: 0, stockValue: null, // input from Finance
@@ -52,6 +63,8 @@
     return Object.assign(d, o, {
       volumes: {A: merge2(d.volumes.A, (o.volumes || {}).A), B: merge2(d.volumes.B, (o.volumes || {}).B)},
       avgKg: Object.assign(d.avgKg, o.avgKg || {}), targetDays: Object.assign(d.targetDays, o.targetDays || {}),
+      // settings saved before order lines were set per class carry one figure for every class
+      orderLinesByClass: Object.assign(d.orderLinesByClass, o.orderLines != null && !o.orderLinesByClass ? Object.fromEntries(BANDS.map(b => [b, o.orderLines])) : {}, o.orderLinesByClass || {}),
       weights: Object.assign(d.weights, o.weights || {}), rubric: o.rubric || null,
     });
   }
@@ -75,7 +88,7 @@
     return Number.isFinite(n) ? (pctSign ? n / 100 : n) : null;
   }
   // Keys whose value must be a number or blank. Text there is listed by key and left out.
-  const NUMERIC = [/^ship\.T\d+\.opt[123]_(delivery_)?price_eur$/, /^ship\.T\d+\.opt[123]_transit_days$/, /^wh\.W(0[4-9]|1[0-4])\.answer$/, /^q\.Q(08|11)\.answer$/];
+  const NUMERIC = [/^ship\.T\d+\.opt[123]_(delivery_)?price_eur$/, /^ship\.T\d+\.opt[123]_transit_days$/, /^wh\.W(0[4-9]|1[0-6])\.answer$/, /^q\.Q(08|11)\.answer$/];
   const PERCENT = [/^q\.Q(06|13|14|27)\.answer$/];
   const isNumericKey = k => NUMERIC.some(re => re.test(k));
   const isPercentKey = k => PERCENT.some(re => re.test(k));
@@ -141,7 +154,7 @@
       const ans = isNumericKey(k) || isPercentKey(k) ? numOf(k) : (isBlank(v[k]) ? null : v[k]);
       return [id, {answer: ans, comment: isBlank(v[k.replace(/answer$/, "comment")]) ? "" : String(v[k.replace(/answer$/, "comment")])}];
     }));
-    const q = block("Q", 28), wh = block("W", 14);
+    const q = block("Q", 28), wh = block("W", 16);   // W15 / W16: pick per full carton, outbound per pallet (a later RFQ version)
     const ic = v["meta.input_check"];
     return {version: String(v["meta.rfq_version"] || ""), shipmentCount: Number(v["meta.shipment_count"]) || ids.length, inputCheck: isBlank(ic) ? null : String(ic),
       shipments, q, wh, invalid, name: q.Q01.answer || "", contact: q.Q02.answer || "", email: q.Q03.answer || "", phone: q.Q04.answer || "", validUntil: q.Q05.answer || ""};
@@ -171,13 +184,46 @@
     const needs = [];
     if (!(Number(settings.avgPallets) >= 0) || isBlank(settings.avgPallets)) needs.push("average pallets in stock");
     if (Number(settings.carryingPct) > 0 && isBlank(settings.stockValue)) needs.push("stock value");
-    return {complete: !missing.length, missing, needs, rep,
-      W: {W04: num("W04"), W05: num("W05"), W06: num("W06"), W07: num("W07"), W08: num("W08") || 0, W09: num("W09"), rep: num(rep)}};
+    const started = Q.shipments.some(s => s.opt2.price != null) || ["W01", "W02", "W03", "W04", "W05", "W06", "W07", "W08", "W09", "W10", "W11", "W12", "W13", "W14"].some(id => !isBlank(w(id)));
+    // handling by order lines (W06), or by cartons and pallets when the file has W15 / W16 (planned for a later RFQ version)
+    const byUnits = num("W15") != null || num("W16") != null;
+    return {complete: !missing.length, missing, needs, rep, started, method: byUnits ? "cartons and pallets" : "order lines",
+      W: {W04: num("W04"), W05: num("W05"), W06: num("W06"), W07: num("W07"), W08: num("W08") || 0, W09: num("W09"), W15: num("W15") || 0, W16: num("W16") || 0, rep: num(rep)}};
+  }
+  /* Option 2 rates of one scenario: the shares that spread the warehouse's fixed costs over what goes through it.
+       storage per kg = (W04 x average pallets in stock x 12 + carrying % x stock value) / annual kg through the warehouse
+       fixed per order = W09 x 12 / annual orders through the warehouse
+     Annual orders and kg: the scenario's shipments on lanes and bands with an Option 2 delivery price. */
+  function opt2Rates(Q, settingsIn, scenario) {
+    const settings = withDefaults(settingsIn), inputs = opt2Inputs(Q, settings), V = settings.volumes[scenario] || {};
+    let orders = 0, kg = 0;
+    Object.keys(LANES).forEach(L => BANDS.forEach(b => {
+      const n = Number((V[L] || {})[b]) || 0; if (!(n > 0)) return;
+      if (cellPrice(Q, L, b, "opt2", settings).covered) { orders += n; kg += n * (Number(settings.avgKg[b]) || 0); }
+    }));
+    const state = inputs.complete && !inputs.needs.length && orders > 0 ? "ok" : inputs.started ? "incomplete" : "not_quoted";
+    if (state !== "ok") return {state, inputs, orders, kg};
+    const W = inputs.W, carrying = (Number(settings.carryingPct) || 0) / 100 * (Number(settings.stockValue) || 0);
+    return {state, inputs, orders, kg, storagePerKg: (W.W04 * Number(settings.avgPallets) * 12 + carrying) / kg, fixedPerOrder: W.W09 * 12 / orders};
+  }
+  /* Option 2 cost per order of one class on one lane = delivery + handling + storage share + replenishment share + fixed share.
+       delivery: opt2_delivery_price_eur of the matching test shipment (extrapolated per kg without one)
+       handling: W07 + W06 x order lines of the class + W08; or W07 + W15 x cartons + W16 x pallets + W08 (cartons and pallets)
+       replenishment share: (replenishment per pallet + W05) / kg per pallet x class kg
+       storage share: storage per kg x class kg; fixed share: fixed per order */
+  function opt2Order(Q, settingsIn, rates, lane, band) {
+    const settings = withDefaults(settingsIn), c = cellPrice(Q, lane, band, "opt2", settings);
+    if (!c.covered || !rates || rates.state !== "ok") return Object.assign({}, c, {price: c.covered ? null : undefined, state: rates ? rates.state : "not_quoted"});
+    const W = rates.inputs.W, cls = classOf(band), kg = Number(settings.avgKg[band]) || 0;
+    const ship = Q.shipments.find(s => s.lane === lane && s.band === band), cartons = (ship && ship.cartons) || cls.cartons;
+    const handling = rates.inputs.method === "cartons and pallets" ? W.W07 + W.W15 * cartons + W.W16 * cls.pallets + W.W08 : W.W07 + W.W06 * (Number(settings.orderLinesByClass[band]) || 0) + W.W08;
+    const parts = {delivery: c.price, handling, storage: rates.storagePerKg * kg, replenishment: (W.rep + W.W05) / Number(settings.kgPerPallet) * kg, fixed: rates.fixedPerOrder};
+    return Object.assign({}, c, {state: "ok", parts, method: rates.inputs.method, price: parts.delivery + parts.handling + parts.storage + parts.replenishment + parts.fixed,
+      tag: c.tag === "extrapolated" ? "extrapolated" : "assumption"});   // rests on the warehouse settings
   }
   /* One option in one scenario. Rows per lane and band with volume; totals in EUR.
-     opt1 / opt3: annual cost = shipments x test price. opt2: cost per order = delivery price + W07 + W06 x order lines
-     + W08 + (replenishment per pallet + W05) / kg per pallet x order kg + fixed share, where
-     fixed share = (W09 x 12 + W04 x average pallets x 12 + carrying % x stock value) / annual orders served from the warehouse. */
+     opt1 / opt3: annual cost = shipments x test price. opt2: shipments x cost per order of the class (opt2Order), so the
+     storage and fixed shares add up to the warehouse's annual storage and fixed fees. */
   function optionCost(Q, opt, scenario, settingsIn) {
     const settings = withDefaults(settingsIn), V = settings.volumes[scenario] || {};
     const cells = [];
@@ -187,20 +233,10 @@
       cells.push(Object.assign({lane: L, band: b, n, kg: Number(settings.avgKg[b]) || 0, target: Number(settings.targetDays[L])}, c));
     }));
     const total = cells.reduce((a, c) => a + c.n, 0);
-    let state = cells.some(c => c.covered) ? "ok" : "not_quoted", inputs = null, fixedShare = 0;
+    let state = cells.some(c => c.covered) ? "ok" : "not_quoted", inputs = null, rates = null;
     if (opt === "opt2") {
-      inputs = opt2Inputs(Q, settings);
-      if (state === "ok" && (!inputs.complete || inputs.needs.length)) state = "incomplete";
-      if (state === "ok") {
-        const served = cells.filter(c => c.covered).reduce((a, c) => a + c.n, 0), W = inputs.W;
-        fixedShare = (W.W09 * 12 + W.W04 * Number(settings.avgPallets) * 12 + (Number(settings.carryingPct) || 0) / 100 * (Number(settings.stockValue) || 0)) / served;
-        cells.forEach(c => {
-          if (!c.covered) return;
-          c.delivery = c.price;
-          c.price = c.delivery + W.W07 + W.W06 * Number(settings.orderLines) + W.W08 + (W.rep + W.W05) / Number(settings.kgPerPallet) * c.kg + fixedShare;
-          c.tag = c.tag === "extrapolated" ? "extrapolated" : "assumption";   // rests on the warehouse settings
-        });
-      }
+      rates = opt2Rates(Q, settings, scenario); inputs = rates.inputs; state = rates.state;
+      if (state === "ok") cells.forEach(c => { if (!c.covered) return; const o = opt2Order(Q, settings, rates, c.lane, c.band); c.delivery = o.parts.delivery; c.parts = o.parts; c.method = o.method; c.price = o.price; c.tag = o.tag; });
     }
     const priced = state === "ok" ? cells.filter(c => c.covered) : [];
     priced.forEach(c => { c.cost = c.n * c.price; c.onTime = c.transit != null && c.transit <= c.target; });
@@ -212,7 +248,7 @@
         perShipment: cv ? sum(ps, c => c.cost) / cv : null, transit: tr.length ? sum(tr, c => c.n * c.transit) / sum(tr, c => c.n) : null,
         onTime: sum(ps.filter(c => c.onTime), c => c.n), extrapolated: sum(ps.filter(c => c.tag === "extrapolated"), c => c.n)};
     });
-    return {opt, scenario, state, cells, lanes, inputs, fixedShare: opt === "opt2" && state === "ok" ? fixedShare : null,
+    return {opt, scenario, state, cells, lanes, inputs, rates, fixedShare: rates && state === "ok" ? rates.fixedPerOrder : null,
       shipments: total, covered, cost: state === "ok" ? cost : null, perShipment: covered ? cost / covered : null, perKg: kg ? cost / kg : null,
       onTime: sum(priced.filter(c => c.onTime), c => c.n), extrapolated: sum(priced.filter(c => c.tag === "extrapolated"), c => c.n),
       tag: state !== "ok" ? null : opt === "opt2" ? "assumption" : priced.some(c => c.tag === "extrapolated") ? "extrapolated" : "derived"};
@@ -401,6 +437,167 @@
     return out;
   }
 
+  // ================================================================== the Dashboard: one model from the Benchmarking results
+  /* list: the evaluated providers as Benchmarking ranks them, [{id, name, Q, A, S, flags, follow}] (A from analyse).
+     Every figure is read from optionCost, cellPrice and opt2Order, so the Dashboard and the Benchmarking tab show the
+     same totals. filters: {provider: "all" | id, scenario: "A" | "B", option: "opt1" | "opt2" | "opt3" | "cheapest"}. */
+  const OPT_IDS = ["opt1", "opt2", "opt3"];
+  const optsOf = f => (!f || f.option === "cheapest" || !f.option ? OPT_IDS : [f.option]);
+  const provsOf = (list, f) => (!f || f.provider === "all" || !f.provider ? list : list.filter(e => e.id === f.provider));
+  const shortOpt = o => ({opt1: "Option 1", opt2: "Option 2", opt3: "Option 3"})[o] || o;
+  const ratesOf = (e, settings, sc) => { e._rates = e._rates || {}; return e._rates[sc] || (e._rates[sc] = opt2Rates(e.Q, settings, sc)); };
+  const missingOf = r => r.inputs.missing.concat(r.inputs.needs.map(x => "setting: " + x));
+  /* Cost per order of one class on one lane, for one provider and option:
+     {state: "ok" | "not_quoted" | "incomplete" | "no_test", price, tag, transit, target, meets, service, ship, parts, missing}.
+     A band with no test shipment and no volume in the scenario is "no_test"; with volume it is extrapolated, as in the totals. */
+  function classCost(e, opt, scenario, lane, band, settingsIn) {
+    const settings = withDefaults(settingsIn), target = Number(settings.targetDays[lane]);
+    const n = Number(((settings.volumes[scenario] || {})[lane] || {})[band]) || 0;
+    const own = e.Q.shipments.some(s => s.lane === lane && s.band === band);
+    if (!own && !(n > 0)) return {state: "no_test", price: null, target, n};
+    let c;
+    if (opt === "opt2") {
+      const r = ratesOf(e, settings, scenario);
+      if (r.state !== "ok") return {state: r.state, price: null, target, n, missing: missingOf(r)};
+      c = opt2Order(e.Q, settings, r, lane, band);
+    } else c = cellPrice(e.Q, lane, band, opt, settings);
+    if (!c.covered || c.price == null) return {state: "not_quoted", price: null, target, n, ship: c.ship};
+    return Object.assign({}, c, {state: "ok", target, n, meets: c.transit != null && c.transit <= target});
+  }
+  // Annual cost, coverage and on-time share per region and in total (volume-weighted sums of the lanes).
+  function regionTotals(e, opt, scenario) {
+    const O = e.A[opt][scenario], sum = (ls, f) => ls.reduce((a, l) => a + f(l), 0);
+    const rows = REGIONS.map(([region, lanes]) => { const ls = O.lanes.filter(l => lanes.includes(l.lane));
+      return {region, lanes, state: O.state, cost: O.state === "ok" ? sum(ls, l => l.cost) : null, covered: sum(ls, l => l.covered), shipments: sum(ls, l => l.shipments), onTime: sum(ls, l => l.onTime)}; });
+    return {state: O.state, tag: O.tag, rows, total: {cost: O.cost, covered: O.covered, shipments: O.shipments, onTime: O.onTime}, missing: O.state === "incomplete" && O.inputs ? missingOf(O.rates) : []};
+  }
+  // Cost of shipping one pallet: the Pallet class price, and the Multi-pallet price / 4 (own test shipments only, never extrapolated).
+  function palletCost(e, opt, scenario, lane, settingsIn) {
+    const own = band => e.Q.shipments.some(s => s.lane === lane && s.band === band);
+    const one = own("B3") ? classCost(e, opt, scenario, lane, "B3", settingsIn) : {state: "no_test", price: null};
+    const m = own("B4") ? classCost(e, opt, scenario, lane, "B4", settingsIn) : {state: "no_test", price: null};
+    return {pallet: one, multi: Object.assign({}, m, {price: m.price == null ? null : m.price / 4})};
+  }
+  // Holding stock with a provider: every Q3 figure, or null ("not quoted").
+  function warehouse(e, settingsIn) {
+    const settings = withDefaults(settingsIn), w = id => (e.Q.wh[id] || {}).answer, inp = opt2Inputs(e.Q, settings), W = inp.W;
+    const handling = CLASSES.map(c => ({band: c.band, label: c.label, value: W.W07 == null || (inp.method === "order lines" && W.W06 == null) ? null
+      : inp.method === "cartons and pallets" ? W.W07 + W.W15 * c.cartons + W.W16 * c.pallets + W.W08 : W.W07 + W.W06 * (Number(settings.orderLinesByClass[c.band]) || 0) + W.W08}));
+    return {location: w("W01"), customs: w("W02"), countries: w("W03"), storage: W.W04, inbound: W.W05, pick: W.W06, pack: W.W07, clearance: w("W08"), fixed: W.W09,
+      seaPallet: typeof w("W11") === "number" ? w("W11") : null, seaDays: w("W12"), airPallet: typeof w("W13") === "number" ? w("W13") : null, airDays: w("W14"),
+      handling, method: inp.method, complete: inp.complete, missing: inp.missing};
+  }
+  // Option 1 against Option 2 per class on one lane, and the class from which regional stock is cheaper for it and every larger class.
+  function breakEven(e, scenario, lane, settingsIn) {
+    const r = ratesOf(e, withDefaults(settingsIn), scenario);
+    const rows = CLASSES.map(c => { const a = classCost(e, "opt1", scenario, lane, c.band, settingsIn), b = classCost(e, "opt2", scenario, lane, c.band, settingsIn);
+      return {band: c.band, label: c.label, opt1: a, opt2: b, diff: a.price != null && b.price != null ? b.price - a.price : null}; });
+    if (r.state !== "ok") return {state: r.state, missing: missingOf(r), rows, from: null};
+    const both = rows.filter(x => x.diff != null);
+    const i = both.findIndex((x, k) => both.slice(k).every(y => y.diff < 0));
+    return {state: "ok", rows, from: i >= 0 ? both[i].band : null};
+  }
+  // The red flags that concern one country: a test shipment comment on its lane, a lane with nothing offered, F5 on GCC lanes.
+  function countryFlags(e, lane) {
+    return e.flags.filter(f => f.key === `ship.${lane}` || (f.id === "F5" && LANES[lane].gcc) || (/^ship\.T\d+\./.test(f.key) && (e.Q.shipments.find(s => f.key.startsWith(`ship.${s.id}.`)) || {}).lane === lane));
+  }
+  // The cheapest quote for one cell over the providers and options the filters allow; or why there is none.
+  function cheapestCell(list, f, lane, band, settingsIn) {
+    const sc = (f && f.scenario) || "A", all = [];
+    provsOf(list, f).forEach(e => optsOf(f).forEach(o => all.push(Object.assign({provider: e.id, name: e.name, opt: o}, classCost(e, o, sc, lane, band, settingsIn)))));
+    const ok = all.filter(x => x.state === "ok").sort((a, b) => a.price - b.price);
+    // no price: "not quoted" (a provider left it blank) before "incomplete" (Option 2 inputs missing) before "no test shipment"
+    return ok[0] || all.find(x => x.state === "not_quoted") || all.find(x => x.state === "incomplete") || all[0] || {state: "not_quoted", price: null};
+  }
+  const coverageOf = O => (O.shipments ? O.covered / O.shipments : 0);
+  // Like for like: among entries, the highest coverage first, then the lowest cost.
+  const likeForLike = xs => xs.filter(x => x.cost != null).sort((a, b) => (b.covered / (b.shipments || 1)) - (a.covered / (a.shipments || 1)) || a.cost - b.cost)[0] || null;
+  function keyFigures(list, f, settingsIn) {
+    const settings = withDefaults(settingsIn), bar = rubricOf(settings).cost.coverageBelow, sc = (f && f.scenario) || "A", ps = provsOf(list, f);
+    const cands = [];
+    ps.forEach(e => optsOf(f).forEach(o => { const A = e.A[o].A; if (A.state === "ok") cands.push({e, opt: o, A, B: e.A[o].B, complete: coverageOf(A) >= bar - 1e-9}); }));
+    const pick = cands.filter(c => c.complete).sort((a, b) => a.A.cost - b.A.cost)[0] || cands.sort((a, b) => coverageOf(b.A) - coverageOf(a.A) || a.A.cost - b.A.cost)[0] || null;
+    const best = ps.slice().sort((a, b) => b.S.total - a.S.total)[0] || null;
+    let gcc = null;
+    if (pick) { const O = pick.e.A[pick.opt][sc], ls = O.lanes.filter(l => LANES[l.lane].gcc); gcc = {onTime: ls.reduce((a, l) => a + l.onTime, 0), shipments: ls.reduce((a, l) => a + l.shipments, 0)}; }
+    return {providers: list.length, best, pick: pick ? {provider: pick.e.id, name: pick.e.name, opt: pick.opt, complete: pick.complete, A: pick.A.cost, B: pick.B.cost,
+      tagA: pick.A.tag, tagB: pick.B.tag, coverage: {covered: pick.e.A[pick.opt][sc].covered, shipments: pick.e.A[pick.opt][sc].shipments}, gcc} : null};
+  }
+  // Region cards: per option the like-for-like cheapest provider's annual cost, coverage and on-time share; and the cheapest overall.
+  function regionCards(list, f, settingsIn) {
+    const sc = (f && f.scenario) || "A", ps = provsOf(list, f);
+    return REGIONS.map(([region, lanes]) => {
+      const per = OPT_IDS.map(o => {
+        const xs = ps.map(e => { const t = regionTotals(e, o, sc), r = t.rows.find(x => x.region === region); return Object.assign({provider: e.id, name: e.name, opt: o, state: t.state, tag: t.tag, missing: t.missing}, r); });
+        const best = likeForLike(xs.filter(x => x.state === "ok"));
+        return {opt: o, best, states: xs};
+      });
+      const overall = likeForLike(per.filter(p => optsOf(f).includes(p.opt)).map(p => p.best).filter(Boolean));
+      return {region, lanes, per, overall};
+    });
+  }
+
+  // ================================================================== answers to the management questions (templates, no AI)
+  const money0 = x => "EUR " + Math.round(x).toLocaleString("en-GB");
+  const moneyS = x => "EUR " + fmt2(x);
+  const listAnd = xs => (xs.length <= 1 ? xs.join("") : xs.slice(0, -1).join(", ") + " and " + xs[xs.length - 1]);
+  const lname = L => (L === "L02" ? "the UAE" : LANES[L].name);
+  function answers(list, f, settingsIn) {
+    const settings = withDefaults(settingsIn), sc = (f && f.scenario) || "A", ps = provsOf(list, f), out = [];
+    if (!ps.length) return {answers: [{q: "Q1", text: "No Quick Quote v2.3 answers yet, so there is nothing to compare."}], gaps: [], followUps: []};
+    const oname = o => (f && f.option !== "cheapest" ? shortOpt(o) : shortOpt(o));
+    const L9 = Object.keys(LANES);
+    // Q1: cost per class per country
+    const cells = L9.flatMap(L => CLASSES.map(c => Object.assign({lane: L, cls: c}, cheapestCell(list, f, L, c.band, settings))));
+    const ok = cells.filter(x => x.state === "ok"), lo = ok.slice().sort((a, b) => a.price - b.price)[0], hi = ok.slice().sort((a, b) => b.price - a.price)[0];
+    const nq = cells.filter(x => x.state === "not_quoted" && x.n > 0);
+    const byCls = {}; nq.forEach(x => { (byCls[x.cls.label] = byCls[x.cls.label] || []).push(lname(x.lane)); });
+    out.push({q: "Q1", text: ok.length ? `Per order, quotes run from ${moneyS(lo.price)} (${lo.cls.label} to ${lname(lo.lane)}, ${oname(lo.opt)}, ${lo.name}) to ${moneyS(hi.price)} (${hi.cls.label} to ${lname(hi.lane)}, ${oname(hi.opt)}, ${hi.name}).` +
+      (Object.keys(byCls).length ? ` Not quoted although they have volume: ${Object.entries(byCls).map(([k, v]) => `${k.toLowerCase()}s to ${listAnd(v)}`).join("; ")}.` : " Every class with volume is quoted.") : "No class is quoted for the options and providers selected."});
+    // Q2: one pallet
+    const pal = L9.map(L => ({L, c: cheapestCell(list, f, L, "B3", settings)})).filter(x => x.c.state === "ok");
+    if (pal.length) {
+      const s = pal.slice().sort((a, b) => a.c.price - b.c.price), big = pal.slice().sort((a, b) => (Number(settings.volumes[sc][b.L].B3) || 0) - (Number(settings.volumes[sc][a.L].B3) || 0))[0];
+      const svc = big.c.service ? ` ${String(big.c.service).replace(/^./, ch => ch.toLowerCase())}` : "";
+      out.push({q: "Q2", text: `Shipping one pallet costs ${moneyS(s[0].c.price)} to ${lname(s[0].L)} up to ${moneyS(s[s.length - 1].c.price)} to ${lname(s[s.length - 1].L)}. Shipping one pallet to ${lname(big.L)} costs ${moneyS(big.c.price)} with ${big.c.name}${svc}${big.c.opt === "opt2" ? " from regional stock" : big.c.opt === "opt1" ? " from Helmond" : ""}${big.c.transit != null ? `, in ${fmt2(big.c.transit).replace(/\.00$/, "")} days against a target of ${big.c.target}` : ""}.`});
+    } else out.push({q: "Q2", text: "No pallet shipment is quoted for the options and providers selected."});
+    // Q3: holding stock
+    out.push({q: "Q3", text: ps.map(e => { const w = warehouse(e, settings), rates = [["storage", w.storage, "per pallet per month"], ["inbound", w.inbound, "per pallet"], ["fixed fee", w.fixed, "per month"], ["sea replenishment", w.seaPallet, "per pallet"], ["air replenishment", w.airPallet, "per pallet"]];
+      const q = rates.filter(r => r[1] != null), loc = w.location ? `warehouse in ${w.location}${w.customs ? ` (${String(w.customs).toLowerCase()})` : ""}` : "no warehouse location";
+      return `${e.name}: ${loc}; ${q.length ? q.map(r => `${r[0]} ${moneyS(r[1])} ${r[2]}`).join(", ") + (q.length < rates.length ? `; not quoted: ${rates.filter(r => r[1] == null).map(r => r[0]).join(", ")}` : "") : "storage, inbound, handling, fixed fee and replenishment are not quoted"}.`; }).join(" ")});
+    // Q4: Helmond against regional stock
+    out.push({q: "Q4", text: ps.map(e => {
+      const r = ratesOf(e, settings, sc);
+      if (r.state !== "ok") return `${e.name}: Option 2 is ${r.state === "incomplete" ? "incomplete" : "not quoted"}${r.state === "incomplete" ? ` (missing ${missingOf(r).join(", ")})` : ""}, so Helmond and regional stock cannot be compared.`;
+      const bes = L9.map(L => ({L, b: breakEven(e, sc, L, settings)})).filter(x => x.b.rows.some(y => y.diff != null));
+      if (!bes.length) return `${e.name}: no class has both an Option 1 and an Option 2 price.`;
+      const pays = bes.filter(x => x.b.from), never = bes.filter(x => !x.b.from);
+      return `${e.name}: regional stock pays off ${pays.length ? pays.map(x => { const row = x.b.rows.find(y => y.band === x.b.from); return `in ${lname(x.L)} from ${classOf(x.b.from).label.toLowerCase()} on (saves ${moneyS(-row.diff)} per order)`; }).join("; ") : "in no country"}${never.length ? `; Helmond stays cheaper in ${listAnd(never.map(x => lname(x.L)))}` : ""}.`; }).join(" ")});
+    // Q5: delivery target
+    const meets = L9.map(L => ({L, opts: OPT_IDS.filter(o => optsOf(f).includes(o)).map(o => { const cs = ps.flatMap(e => CLASSES.map(c => classCost(e, o, sc, L, c.band, settings))).filter(c => c.state === "ok");
+      return {o, n: cs.length, met: cs.filter(c => c.meets).length, fastest: cs.filter(c => c.transit != null).reduce((m, c) => Math.min(m, c.transit), Infinity)}; })}));
+    const meetAll = meets.filter(x => x.opts.some(o => o.n && o.met === o.n)).map(x => lname(x.L));
+    const gccFast = meets.filter(x => LANES[x.L].gcc).flatMap(x => x.opts).filter(o => o.n).reduce((m, o) => Math.min(m, o.fastest), Infinity);
+    out.push({q: "Q5", text: `${meetAll.length ? `An option meets the delivery target on every quoted class in ${listAnd(meetAll)}` : "No option meets the delivery target on every quoted class in any country"}. In the GCC (target 2 working days) ${Number.isFinite(gccFast) ? (gccFast <= 2 ? "at least one quoted class reaches 2 days" : `no quoted option reaches 2 days; the fastest takes ${fmt2(gccFast).replace(/\.00$/, "")}`) : "nothing is quoted"}.`});
+    // Q6: annual cost per region and in total
+    out.push({q: "Q6", text: ps.map(e => OPT_IDS.filter(o => optsOf(f).includes(o)).map(o => { const t = regionTotals(e, o, sc);
+      return t.state !== "ok" ? `${e.name}, ${shortOpt(o)}, Scenario ${sc}: ${t.state === "incomplete" ? "incomplete" : "not quoted"}.`
+        : `${e.name}, ${shortOpt(o)}, Scenario ${sc}: ${money0(t.total.cost)} a year (${t.rows.map(r => `${r.region} ${r.cost == null ? "n/a" : money0(r.cost)}`).join(", ")}), ${t.total.covered} of ${t.total.shipments} shipments covered, ${t.total.onTime} on time.`; }).join(" ")).join(" ")});
+    // Q7: best provider, why, and the gaps
+    const best = ps.slice().sort((a, b) => b.S.total - a.S.total)[0], ar = best.S.areas.slice().sort((a, b) => b.score - a.score);
+    const gaps = [];
+    ps.forEach(e => {
+      if (e.S.missing.length) gaps.push(`${e.name}: no answer to ${listAnd(e.S.missing)}, scored 0.`);
+      const nqv = L9.flatMap(L => CLASSES.filter(c => (Number(settings.volumes[sc][L][c.band]) || 0) > 0 && classCost(e, "opt1", sc, L, c.band, settings).state === "not_quoted").map(c => `${c.label.toLowerCase()} to ${lname(L)}`));
+      if (nqv.length) gaps.push(`${e.name}: Option 1 not quoted for ${listAnd(nqv)}, which have volume in Scenario ${sc}.`);
+      const r = ratesOf(e, settings, sc); if (r.state === "incomplete") gaps.push(`${e.name}: Option 2 incomplete, missing ${missingOf(r).join(", ")}.`);
+      if (e.Q.invalid.length) gaps.push(`${e.name}: text where a number belongs in ${e.Q.invalid.map(x => x.key).join(", ")}, left out.`);
+    });
+    if (list.length < 2) gaps.unshift(`Only ${list.length} provider has a Quick Quote v2.3 answer, so the cost score has nothing to compare against.`);
+    out.push({q: "Q7", text: `${best.name} scores best with ${best.S.total.toFixed(2)} of 4: strongest on ${ar[0].label.toLowerCase()} (${ar[0].score.toFixed(2)})${ar[1] ? ` and ${ar[1].label.toLowerCase()} (${ar[1].score.toFixed(2)})` : ""}, weakest on ${ar[ar.length - 1].label.toLowerCase()} (${ar[ar.length - 1].score.toFixed(2)}). ${gaps.length ? `${gaps.length} data gap${gaps.length === 1 ? " limits" : "s limit"} this conclusion (listed below).` : "No data gaps limit this conclusion."}`});
+    return {answers: out, gaps, followUps: ps.map(e => ({provider: e.name, items: e.follow || []}))};
+  }
+
   // ================================================================== one call for a provider
   /* evaluate(values, settings) -> {Q, A, flags}. Scores need every provider at once: scoreAll. */
   function evaluate(values, settings) {
@@ -413,6 +610,7 @@
   const priceFor = (Q, lane, band, opt) => { const s = Q.shipments.find(x => x.lane === lane && x.band === band); const o = s && s[opt || "opt1"]; return o && o.price != null ? {price: o.price, transit: o.transit, service: o.service, ship: s.id, kg: s.kg} : null; };
 
   const api = {VERSION, LEGACY_VERSIONS, LANES, BANDS, OPTIONS, OK_CHECK, DEFAULT_SETTINGS, withDefaults, RUBRIC, rubricOf, strictNumber, convert, valuesOf, versionKind,
-    quote, cellPrice, opt2Inputs, optionCost, analyse, bestOption, scoreAll, scoreAnswer, flags, followUps, evaluate, lanesCovered, priceFor, labelOf, r2};
+    quote, cellPrice, opt2Inputs, opt2Rates, opt2Order, optionCost, analyse, bestOption, scoreAll, scoreAnswer, flags, followUps, evaluate, lanesCovered, priceFor, labelOf, r2,
+    CLASSES, REGIONS, classOf, classCost, regionTotals, palletCost, warehouse, breakEven, countryFlags, cheapestCell, keyFigures, regionCards, answers, shortOpt};
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.FlexiRFQ23 = api;
 })(typeof window !== "undefined" ? window : globalThis);

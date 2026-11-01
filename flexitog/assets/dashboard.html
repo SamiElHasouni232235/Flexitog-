@@ -248,7 +248,7 @@ details.grp .gbody{padding:0 12px 12px;display:flex;flex-direction:column;gap:8p
 .toggle small{display:block;color:var(--muted)}
 .gcount{font:500 11px var(--mono);color:var(--accent-text)}
 .scrim{position:fixed;inset:0;background:var(--scrim);z-index:19}
-#tip{position:fixed;pointer-events:none;background:var(--ink);color:var(--ground);font:12px/1.4 var(--mono);padding:6px 9px;border-radius:4px;z-index:30;max-width:280px}
+#tip{position:fixed;pointer-events:none;background:var(--ink);color:var(--ground);font:12px/1.4 var(--mono);padding:6px 9px;border-radius:4px;z-index:30;max-width:380px;white-space:pre-line}
 #copyout{width:100%;min-height:90px;font:11px var(--mono)}
 @media (max-width:1100px){.maprow{grid-template-columns:minmax(0,1fr)}.explorer,.bottom{grid-template-columns:minmax(0,1fr)}}
 @media (max-width:760px){.regions{grid-template-columns:minmax(0,1fr)}.sm{grid-template-columns:minmax(0,1fr);gap:0}.sm .ch.first,.sm .rh.sp{display:none}}
@@ -307,6 +307,34 @@ body[data-view="md"] .top>.controls,body[data-view="report"] .top>.controls,body
 .mdgrid td .bad{border-color:var(--st-critical);background:color-mix(in srgb,var(--st-critical) 8%,transparent)}
 .mdgrid .rn{color:var(--faint);font:11px var(--mono);text-align:right;width:1%}
 [data-roll]{font-variant-numeric:tabular-nums}
+/* Logistics benchmark block (dash_rfq.js): Benchmarking's Quick Quote results on the Dashboard */
+.rfqdash{display:flex;flex-direction:column;gap:var(--gap,16px)}
+.rfqdash:empty{display:none}
+.rqkpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin-top:12px}
+.rqk{background:var(--surface-2);border-radius:var(--radius-field);padding:10px 12px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.rqk span{font-size:12px;color:var(--muted)}.rqk b{font:700 18px/1.25 var(--body);color:var(--ink);overflow-wrap:anywhere}.rqk small{font-size:11.5px;color:var(--muted)}
+.rqregions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--gap,16px)}
+.rqreg h3{font-size:15px;margin:0}.rqreg table{width:100%;font-size:13px}.rqreg td{padding:5px 4px}.rqreg tr.best td{font-weight:700;background:var(--ice-soft)}
+.rqnote{font-size:12px;margin:8px 0 0}
+.rqv{font-variant-numeric:tabular-nums;white-space:nowrap}.rqv.late{color:var(--st-critical)}
+.rqna{color:var(--muted);font-style:italic;white-space:nowrap}
+.rqmatrix th.grp{text-align:center;border-bottom:1px solid var(--rule)}.rqmatrix th.cls{text-align:left;white-space:nowrap}
+.rqmatrix td{white-space:nowrap;vertical-align:top}.rqmatrix td small{display:block;font-size:11px;color:var(--muted)}
+.rqpair{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:var(--gap,16px)}
+.rqh3{font-size:13px;margin:14px 0 6px}.rqh3 .btn{width:auto;display:inline-flex;margin-left:8px;vertical-align:middle}.rqlist{margin:0;padding-left:18px;font-size:13px;line-height:1.5}
+.rqwh{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}.rqwhc h3{font-size:14px;margin:0 0 6px}
+.rqlegend{display:flex;gap:14px;font-size:12px;color:var(--muted);margin-bottom:6px}
+.rqvs td{min-width:120px;vertical-align:top}.rqvs td.from{box-shadow:inset 0 0 0 2px var(--lc3);border-radius:8px}
+.rqvs th{text-align:left;white-space:nowrap;font-size:12.5px}
+.rqbar{position:relative;height:18px;margin:3px 0;background:var(--surface-2);border-radius:4px;overflow:hidden}
+.rqbar i{position:absolute;inset:0 auto 0 0;border-radius:4px;opacity:.85}.rqbar span{position:relative;font:600 11px/18px var(--mono);padding-left:5px;color:var(--ink)}
+.rqbar.na span{color:var(--muted);font-weight:400;font-style:italic}
+.rqvs small{display:block;font-size:11px;color:var(--muted)}.rqvs small.save{color:var(--green)}.rqvs small.pay{color:var(--ink);font-weight:600}
+.rqq{margin:0;padding-left:0;list-style:none;display:flex;flex-direction:column;gap:8px;font-size:13.5px;line-height:1.5}
+.rqq b{display:inline-block;min-width:28px;color:var(--accent-text)}.rqfu{margin:8px 0 2px;font-size:13px}
+@media (max-width:1080px){.rqkpis{grid-template-columns:repeat(3,minmax(0,1fr))}.rqregions,.rqpair{grid-template-columns:1fr}}
+@media (max-width:640px){.rqkpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
 .iconbtn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--rule);background:var(--surface);color:var(--ink);border-radius:var(--radius-pill);padding:5px 10px;font:600 12px var(--body);cursor:pointer}
 .iconbtn:hover{background:var(--surface-2)}.iconbtn:focus-visible{outline:2px solid var(--ice);outline-offset:2px}
 .sessl{display:flex;align-items:center;gap:6px}
@@ -529,15 +557,8 @@ details.custom .iact{display:flex;gap:6px;margin-top:8px}
   </div>
 
   <div id="viewDash" class="view">
-  <!-- 1. Which scenario serves each region best? The cards are the region selector. -->
-  <section class="dsec" aria-labelledby="s1h">
-    <div class="sechead"><h2 id="s1h">Best option per region</h2>
-      <label class="swtoggle"><input type="checkbox" id="inclCand" checked> Include partners not yet signed</label></div>
-    <div class="regions" id="regions"></div>
-  </section>
-
-  <!-- 2. How do the scenarios compare? -->
-  <section class="card" id="cmpCard" aria-labelledby="s2h"></section>
+  <!-- Logistics benchmark: the Benchmarking tab's Quick Quote results per country, region and order class (dash_rfq.js) -->
+  <section class="rfqdash" id="rfqTop" aria-labelledby="rqh"></section>
 
   <!-- 3. Where on the map? -->
   <section class="maprow">
@@ -576,6 +597,20 @@ details.custom .iact{display:flex;gap:6px;margin-top:8px}
     </div>
     <aside class="card" id="countryPanel" aria-live="polite"></aside>
   </section>
+
+  <section class="rfqdash" id="rfqBody" aria-label="Benchmark results per region, order class and provider"></section>
+
+  <!-- Route engine views (Master Data and parameters) -->
+  <!-- Which scenario serves each region best? The cards are the region selector. -->
+  <section class="dsec" aria-labelledby="s1h">
+    <div class="sechead"><h2 id="s1h">Best option per region</h2>
+      <label class="swtoggle"><input type="checkbox" id="inclCand" checked> Include partners not yet signed</label></div>
+    <div class="regions" id="regions"></div>
+  </section>
+
+  <!-- How do the scenarios compare? -->
+  <section class="card" id="cmpCard" aria-labelledby="s2h"></section>
+
 
   <!-- 4. For which orders? Order explorer and route steps in one section. -->
   <section class="card" aria-labelledby="s4h">
@@ -990,6 +1025,7 @@ let selected = null;   // {kind, id}
 
 function metricDefs(){
   return [
+    {key: "rfq", label: "Cheapest RFQ option (Benchmarking)", kind: "rfq"},
     {key: "best", label: "Best scenario", kind: "cat"},
     {key: "cost_per_unit_eur", label: "Cost to serve per unit (€)", kind: "seq", dp: 2},
     {key: "customer_cost_per_unit_eur", label: "Customer pays per unit (€)", kind: "seq", dp: 2},
@@ -1046,6 +1082,7 @@ function countryValues(){
   const metric = metricDefs().find(m => m.key === ui.mapMetric);
   const issueCount = {}; issuesAll().forEach(i => (i.countries || []).forEach(c => issueCount[c] = (issueCount[c] || 0) + 1));
   let values = {}, cats = {};
+  if (metric.kind === "rfq") return {metric, values, cats};   // colours and tooltips come from dash_rfq.js
   if (metric.kind === "cat") {
     // best scenario per country under the current switch (route_core bestScenario); no orders = neutral
     Object.entries(VM.bestC).forEach(([c, b]) => { if (b.scenario) cats[c] = b.scenario; });
@@ -1068,9 +1105,11 @@ function drawCountries(){
     let fill = study ? "var(--land-study)" : sup ? "var(--supplier-land)" : "var(--land)";
     if (study && metric.kind === "cat" && cats[c.iso]) fill = `var(--s-${cats[c.iso]})`;
     if (study && metric.kind === "seq" && values[c.iso] != null) fill = `var(--q${bin(values[c.iso])})`;
+    const rq = study && metric.kind === "rfq" && window.DashRFQ ? DashRFQ.country(c.iso) : null;
+    if (rq && rq.fill) fill = rq.fill;
     const tipv = metric.kind === "cat" ? (cats[c.iso] ? E.LABELS[cats[c.iso]] + (VM.bestC[c.iso].missesTarget ? " (misses target)" : "") : VM.byC[c.iso] ? "nothing in scope" : "no orders") : (values[c.iso] != null ? fmt(values[c.iso], metric.dp) : "no data");
     h += `<path class="country${study ? " study" : sup ? " supc" : ""}" d="${c.d}" style="fill:${fill}"` +
-         (study ? ` data-kind="country" data-id="${c.iso}" data-tip="${esc(CNAME(c.iso))}: ${esc(metric.label)} ${esc(tipv)} · click for detail"` :
+         (study ? ` data-kind="country" data-id="${c.iso}" data-tip="${esc(rq ? rq.tip : `${CNAME(c.iso)}: ${metric.label} ${tipv} · click for detail`)}"` :
           sup ? ` data-kind="supc" data-id="${c.iso}" data-tip="${esc(CNAME(c.iso))}: supplier country · ${sup.map(x => esc(x.name)).join(", ")} · click for detail"` : "") + `/>`;
   });
   $("gCountries").innerHTML = h;
@@ -1211,9 +1250,10 @@ function markSelection(){ $("gCountries").querySelectorAll(".country.study, .cou
 function drawLegend(){
   const metric = metricDefs().find(m => m.key === ui.mapMetric) || metricDefs()[0];
   let lg = "";
-  if (metric.kind === "cat") lg += SC.map(s => `<span><i class="sw" style="background:var(--s-${s})"></i>${esc(SHORT[s])}</span>`).join("");
+  if (metric.kind === "rfq") lg += window.DashRFQ ? DashRFQ.legend() : "";
+  else if (metric.kind === "cat") lg += SC.map(s => `<span><i class="sw" style="background:var(--s-${s})"></i>${esc(SHORT[s])}</span>`).join("");
   else lg += `<span>${esc(metric.label)} <span class="ramp">${[1,2,3,4,5].map(i => `<i style="background:var(--q${i})"></i>`).join("")}</span> <span class="num">${fmt(legendRange[0], metric.dp)} → ${fmt(legendRange[1], metric.dp)}</span></span>`;
-  lg += `<span><i class="sw" style="background:var(--land-study)"></i>no orders</span>`;
+  if (metric.kind !== "rfq") lg += `<span><i class="sw" style="background:var(--land-study)"></i>no orders</span>`;
   lg += `<span><svg width="14" height="14"><path d="${star(7, 7, 6.5)}" style="fill:var(--ink)"/></svg>Helmond</span>`;
   lg += `<span><svg width="12" height="12"><circle cx="6" cy="6" r="5" style="fill:var(--muted)"/></svg>distributor</span><span><svg width="12" height="12"><rect x="1" y="1" width="10" height="10" style="fill:var(--muted)"/></svg>3PL</span><span><svg width="14" height="14"><path d="M7,0L14,7L7,14L0,7Z" style="fill:var(--muted)"/></svg>owned</span><span class="faint">faded = not yet signed</span>`;
   if (mapState.routes) {
@@ -1455,7 +1495,7 @@ function bindTips(root){
     el.addEventListener("mouseleave", () => { tip.hidden = true; });
   });
 }
-function move(e){ tip.style.left = Math.min(e.clientX + 12, innerWidth - 290) + "px"; tip.style.top = (e.clientY + 14) + "px"; }
+function move(e){ tip.style.left = Math.min(e.clientX + 12, innerWidth - 390) + "px"; tip.style.top = (e.clientY + 14) + "px"; }
 
 // ============================================================ Route Dashboard: shared state
 // One store every section reads. selectedRegion, selectedCountry, selectedOrder and selectedOption live in `ui`
@@ -1769,7 +1809,7 @@ function initControls(){
   $("mapMetric").innerHTML = metricDefs().map(m => `<option value="${m.key}">${esc(m.label)}</option>`).join("");
   $("method").innerHTML = [["customer_first","Customer-first paperwork"],["customs_touchpoints","Customs touchpoints"],["handoffs","Handoffs"],["doc_steps","Documentation steps"]].map(([k,l]) => `<option value="${k}">${l}</option>`).join("");
   $("mapScenario").addEventListener("change", e => { ui.mapScenario = e.target.value; drawCountries(); drawOverlay(); renderInfo(); });
-  $("mapMetric").addEventListener("change", e => { ui.mapMetric = e.target.value; drawCountries(); });
+  $("mapMetric").addEventListener("change", e => { ui.mapMetric = e.target.value; ui.mapMetricPicked = true; drawCountries(); });
   $("modeSeg").innerHTML = [["sea", "Sea"], ["road", "Road"], ["air", "Air"]].map(([k, l]) => `<button type="button" data-m="${k}" aria-pressed="true">${l}</button>`).join("");
   $("modeSeg").querySelectorAll("button").forEach(b => b.addEventListener("click", () => {
     const m = b.dataset.m; ui.modes.has(m) ? ui.modes.delete(m) : ui.modes.add(m);
@@ -1906,7 +1946,9 @@ function renderView(){
   document.querySelectorAll("#regionSegFs button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.r === ui.region)));
   renderSupplierFilter();
   VM = buildVM();
-  // sections in reading order: best option, comparison, map + country, orders, risks + coverage, data readiness
+  // sections in reading order: benchmark key figures, map + country, benchmark detail, best option, comparison, orders,
+  // risks + coverage, data readiness
+  if (window.DashRFQ) DashRFQ.render();
   renderChips(); renderRegions(); renderCompare(); renderOrder(); drawMap(); renderCountry(); renderIssues(); renderReadiness();
 }
 // Benchmarking's Helmond baseline for one test order: DAP from Helmond with the engine on Master Data and the
@@ -1932,6 +1974,7 @@ load(); initControls(); compute(); renderView();
 <script>/*RFQCORE*/</script>
 <script>/*RFQV23*/</script>
 <script>/*BENCHMARK*/</script>
+<script>/*DASHRFQ*/</script>
 <script>/*FORECASTCORE*/</script>
 <script>/*FORECAST*/</script>
 <script>/*LANDED*/</script>

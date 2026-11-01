@@ -203,6 +203,7 @@ def build_html(ws, sales_orders: str | Path | None = None) -> str:
         "/*BENCHCORE*/": (ASSETS / "bench_core.js").read_text(encoding="utf-8"),
         "/*RFQCORE*/": (ASSETS / "rfq_core.js").read_text(encoding="utf-8"),
         "/*RFQV23*/": (ASSETS / "rfq_v23.js").read_text(encoding="utf-8"),
+        "/*DASHRFQ*/": (ASSETS / "dash_rfq.js").read_text(encoding="utf-8"),
         "/*BENCHMARK*/": (ASSETS / "benchmark.js").read_text(encoding="utf-8"),
         "/*CHARTS*/": (ASSETS / "charts.js").read_text(encoding="utf-8"),
         "/*FORECASTCORE*/": (ASSETS / "forecast_core.js").read_text(encoding="utf-8"),

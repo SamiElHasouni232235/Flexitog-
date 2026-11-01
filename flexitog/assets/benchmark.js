@@ -800,7 +800,7 @@ const S23 = () => B.settings.rfq23;
 function v23All(){
   const list = B.providers.filter(p => !p.baseline).map(p => ({p, up: activeUp(p)})).filter(x => isV23(x.up));
   return FlexiCalc.memo("rfq23", JSON.stringify([list.map(x => x.up.ref || x.up.uploadedAt), S23()]), () => {
-    const ev = list.map(x => Object.assign({id: x.p.id, p: x.p, up: x.up}, V.evaluate(x.up.values, S23())));
+    const ev = list.map(x => Object.assign({id: x.p.id, name: x.p.name, p: x.p, up: x.up}, V.evaluate(x.up.values, S23())));
     const scores = V.scoreAll(ev.map(e => ({id: e.id, Q: e.Q, A: e.A})), S23());
     ev.forEach((e, i) => { e.S = scores[i]; e.follow = V.followUps(e.Q, e.A, e.S, e.flags, S23()); });
     return ev.sort((a, b) => b.S.total - a.S.total || a.p.name.localeCompare(b.p.name, "en"));
@@ -945,7 +945,8 @@ function rfqSettingsHtml(){
       <div class="setcol"><h3>Average gross kg per band</h3><div class="setrow">${V.BANDS.map(b => `<label>${b}${num(`avgKg.${b}`, s.avgKg[b], `Average kg ${b}`)}</label>`).join("")}</div>
         <h3>Target transit, working days</h3><div class="setrow">${L.map(l => `<label title="${esc(V.LANES[l].name)}">${l}${num(`targetDays.${l}`, s.targetDays[l], `Target days ${l}`)}</label>`).join("")}</div>
         <h3>Option 2 warehouse</h3><div class="setrow">
-          <label>Order lines per order${num("orderLines", s.orderLines, "Order lines per order")}</label><label>Kg per pallet${num("kgPerPallet", s.kgPerPallet, "Kg per pallet")}</label>
+          ${V.CLASSES.map(c => `<label title="${esc(c.label)} (${c.size}, ${c.kg} kg)">Order lines, ${esc(c.label.toLowerCase())} <span class="faint">update from order history</span>${num(`orderLinesByClass.${c.band}`, s.orderLinesByClass[c.band], `Order lines per ${c.label} order`)}</label>`).join("")}
+          <label>Kg per pallet${num("kgPerPallet", s.kgPerPallet, "Kg per pallet")}</label>
           <label>Average pallets in stock${num("avgPallets", s.avgPallets, "Average pallets in stock", ' placeholder="enter"')}</label>
           <label>Replenishment${seg2("bxRep", [["sea", "Sea (W11)"], ["air", "Air (W13)"]], s.replenishment)}</label>
           <label>Carrying cost % <span class="faint">input from Finance</span>${num("carryingPct", s.carryingPct, "Carrying cost percent")}</label>
@@ -1044,7 +1045,7 @@ function detailBody23(p, r, T){
     return banner + `<div class="tablewrap"><table><thead><tr><th>Option</th><th>Scenario</th><th>Annual cost</th><th>Per shipment</th><th>Per kg</th><th>Coverage</th><th>On time</th><th>Extrapolated</th><th>Source</th></tr></thead><tbody>
       ${["opt1", "opt2", "opt3"].flatMap(o => ["A", "B"].map(s => sumRow(o, s))).join("")}</tbody></table></div>
       <div class="iact" style="margin:12px 0 6px">${seg2("bxDetOpt", V.OPTIONS.map(([k, l]) => [k, l]), opt)}${seg2("bxDetScen", [["A", "Scenario A"], ["B", "Scenario B"]], sc)}</div>
-      ${opt === "opt2" ? `<p class="faint bnote">Option 2 per order = delivery price + W07 + W06 × ${S23().orderLines} order lines + W08 + (${inp.rep} + W05) / ${S23().kgPerPallet} kg per pallet × order kg + fixed share${O.fixedShare != null ? ` (EUR ${fmt(O.fixedShare, 2)} per order: W09 × 12 + W04 × ${S23().avgPallets} pallets × 12 + ${S23().carryingPct}% × stock value, over ${O.covered} orders)` : ""}.${O.state === "incomplete" ? ` Incomplete: ${esc(inp.missing.concat(inp.needs.map(x => "setting: " + x)).join(", "))}.` : ""}</p>` : ""}
+      ${opt === "opt2" ? `<p class="faint bnote">Option 2 per order of a class = delivery + handling (${inp.method === "cartons and pallets" ? "W07 + W15 × cartons + W16 × pallets + W08" : `W07 + W06 × order lines of the class (${V.CLASSES.map(c => `${c.label} ${S23().orderLinesByClass[c.band]}`).join(", ")}) + W08`}) + storage share (W04 × ${S23().avgPallets ?? "?"} pallets × 12 + carrying cost, per kg through the warehouse) + replenishment share ((${inp.rep} + W05) / ${S23().kgPerPallet} kg per pallet × class kg) + fixed share (W09 × 12 per order through the warehouse)${O.rates && O.rates.state === "ok" ? `: EUR ${fmt(O.rates.storagePerKg, 4)} per kg and EUR ${fmt(O.rates.fixedPerOrder, 2)} per order over ${fmt(O.rates.orders)} orders and ${fmt(O.rates.kg)} kg` : ""}.${O.state === "incomplete" ? ` Incomplete: ${esc(inp.missing.concat(inp.needs.map(x => "setting: " + x)).join(", "))}.` : ""}</p>` : ""}
       <div class="tablewrap btable" style="max-height:44vh"><table><thead><tr><th>Lane</th><th>Band</th><th>Shipments</th><th>Avg kg</th><th>Price per shipment</th><th>Annual cost</th><th>Transit</th><th>Source</th></tr></thead><tbody>${cells}</tbody></table></div>`;
   }
   if (T === "scores") {
@@ -1838,7 +1839,9 @@ async function init(){
 }
 // getComparableMetrics(provider or id): the latest RFQ response in comparable form, for the scorecard.
 const getComparableMetrics = p => R.getComparableMetrics(typeof p === "string" ? B.providers.find(x => x.id === p) : p);
-window.BenchUI = {show(){ render(); }, state: B, getComparableMetrics, syncProviders, comparison, comparisonReportModel, providerReportModel,
+// The Quick Quote results for the Dashboard: the same evaluated, scored list and settings this tab shows (one source of truth).
+const rfq23 = {ready: () => B.ready, list: () => (B.ready ? (syncProviders(), v23All()) : []), settings: () => S23(), legacy: () => (B.ready ? legacyList().map(p => ({id: p.id, name: p.name})) : [])};
+window.BenchUI = {show(){ render(); }, state: B, getComparableMetrics, rfq23, syncProviders, comparison, comparisonReportModel, providerReportModel,
   rfq: {tmpl, uploadRfq, openDetail, removeUpload, downloadPrefilled, files: DataStore.files}, schema: {goals: GOAL_FIELDS}, reportModel, packageOf, templateBook, buildPdf, buildDocx, chartImages, currentTest};
 init();
 })();

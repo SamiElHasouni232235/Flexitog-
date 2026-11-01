@@ -210,9 +210,11 @@ def test_option2_cost_per_order_by_hand(tmp_path):
       const none = V.optionCost(Q, 'opt2', 'A', {volumes: {A: vol}});
       out = {state: o2.state, fixed: o2.fixedShare, b1: o2.cells.find(c => c.band === 'B1').price, b4: o2.cells.find(c => c.band === 'B4'),
         o1b4: o1.cells.find(c => c.band === 'B4'), none: [none.state, none.inputs.needs], noPrices: V.opt2Inputs(V.quote(Object.assign({}, v, {'ship.T01.opt2_delivery_price_eur': '', 'ship.T02.opt2_delivery_price_eur': '', 'ship.T03.opt2_delivery_price_eur': '', 'wh.W05.answer': ''})), {}).missing};""", tmp_path)
-    fixed = (250 * 12 + 12 * 20 * 12) / 18                       # W09 x 12 + W04 x pallets x 12, over 18 orders a year
+    fixed = 250 * 12 / 18                                         # W09 x 12, over 18 orders a year
+    storage_kg = 12 * 20 * 12 / (10 * 8 + 5 * 52 + 2 * 261 + 1 * 941)   # W04 x pallets x 12, over the kg through the warehouse
     assert out["state"] == "ok" and out["fixed"] == pytest.approx(fixed)
-    assert out["b1"] == pytest.approx(10 + 3 + 0.5 * 6 + 0 + (180 + 8) / 250 * 8 + fixed)
+    # delivery + handling (W07 + W06 x 6 lines + W08) + storage share + replenishment share + fixed share
+    assert out["b1"] == pytest.approx(10 + 3 + 0.5 * 6 + 0 + storage_kg * 8 + (180 + 8) / 250 * 8 + fixed)
     # B4 has no test shipment: the B3 delivery price per kg x 941 kg, tagged extrapolated
     assert out["b4"]["tag"] == "extrapolated" and out["b4"]["delivery"] == pytest.approx(10 / 261 * 941)
     assert out["o1b4"]["price"] == pytest.approx(522 / 261 * 941) and out["o1b4"]["tag"] == "extrapolated"
@@ -232,3 +234,86 @@ def test_option2_complete_in_a_filled_file(tmp_path):
       out = {o2: optOut(E.A.opt2.A), item: E.S.areas.find(a => a.key === 'options').items.find(i => i.id === 'opt2').points};""",
               tmp_path, fill(tmp_path / "w.xlsx", warehouse=True))
     assert out["o2"]["state"] == "ok" and out["o2"]["covered"] == 36 and out["o2"]["tag"] == "assumption" and out["item"] == 4
+
+
+# ------------------------------------------------------------------ the Aramex test fill, as Benchmarking stored it
+# tests/fixtures/aramex_v23_values.json: the values Benchmarking parsed from "FlexiTog RFQ Quick Quote MENA-TR v2.3 -
+# Aramex test fill.xlsx" when it was uploaded (the shared database's rfqvalues), so these tests run without the file.
+ARAMEX_VALUES = FIX / "aramex_v23_values.json"
+ARX = """const v = JSON.parse(fs.readFileSync(F[0], 'utf8')), set = typeof SET === 'undefined' ? null : SET;
+  const E = V.evaluate(v, set), S = V.scoreAll([{id: 'ARX', Q: E.Q, A: E.A}], set)[0];
+  const e = Object.assign({id: 'ARX', name: 'Aramex Dubai', S, follow: V.followUps(E.Q, E.A, S, E.flags, set)}, E), list = [e];"""
+
+
+def test_1_aramex_values_benchmark(tmp_path):
+    s = run(ARX + "out = summary(Object.assign(E, {S, follow: e.follow}));", tmp_path, ARAMEX_VALUES)
+    o1A, o1B = s["opt"]["opt1"]["A"], s["opt"]["opt1"]["B"]
+    assert o1A["cost"] == pytest.approx(188208.28, abs=0.01) and (o1A["covered"], o1A["shipments"], o1A["extrapolated"], o1A["onTime"]) == (129, 141, 0, 2)
+    assert o1B["cost"] == pytest.approx(446261.23, abs=0.01) and (o1B["covered"], o1B["shipments"], o1B["onTime"]) == (301, 329, 4)
+    assert s["ship"]["T05"]["opt1"]["price"] == pytest.approx(17894.40) and s["ship"]["T16"]["opt1"]["status"] == "not_offered"
+    assert s["opt"]["opt2"]["A"]["state"] == "incomplete" and s["opt"]["opt3"]["A"]["state"] == "not_quoted"
+    a = s["areas"]
+    assert [round(a[k], 2) for k in ("cost", "service", "quality", "options")] == [4.00, 1.60, 3.41, 1.56] and round(s["total"], 2) == 2.64
+    assert sorted(set(s["flags"])) == ["F1", "F2", "F3", "F4", "F5", "F8"]
+
+
+def test_dashboard_aramex_regions_pallets_classes(tmp_path):
+    out = run(ARX + """
+      const reg = sc => V.regionTotals(e, 'opt1', sc);
+      out = {A: reg('A').rows.map(r => [r.region, r.cost, r.covered, r.shipments, r.onTime]), totalA: reg('A').total.cost, B: reg('B').rows.map(r => [r.region, r.cost]),
+        pallet: Object.keys(V.LANES).map(L => { const p = V.palletCost(e, 'opt1', 'A', L); return [L, p.pallet.price, p.multi.price]; }),
+        sa: V.CLASSES.map(c => V.classCost(e, 'opt1', 'A', 'L01', c.band).price),
+        parcels: ['L05', 'L06', 'L07', 'L09'].map(L => V.classCost(e, 'opt1', 'A', L, 'B1').state),
+        opt2: [V.regionTotals(e, 'opt2', 'A').state, V.classCost(e, 'opt2', 'A', 'L01', 'B3').state, V.breakEven(e, 'A', 'L01').state,
+               V.cheapestCell(list, {provider: 'all', scenario: 'A', option: 'opt2'}, 'L01', 'B3').state],
+        noTest: V.cheapestCell(list, {provider: 'all', scenario: 'A', option: 'cheapest'}, 'L02', 'B4').state,
+        wh: V.warehouse(e), key: (k => [k.providers, k.best.name, k.pick.opt, k.pick.A, k.pick.B, k.pick.coverage, k.pick.gcc])(V.keyFigures(list, {provider: 'all', scenario: 'A', option: 'cheapest'})),
+        answers: V.answers(list, {provider: 'all', scenario: 'A', option: 'cheapest'}).answers.map(a => a.text)};""", tmp_path, ARAMEX_VALUES)
+    A = {r[0]: r[1:] for r in out["A"]}
+    assert A["GCC"][0] == pytest.approx(164113.96, abs=0.01) and A["GCC"][1:] == [108, 108, 0]
+    assert A["Türkiye"][0] == pytest.approx(10085.12, abs=0.01) and A["Türkiye"][1:] == [10, 16, 0]
+    assert A["North Africa"][0] == pytest.approx(14009.20, abs=0.01) and A["North Africa"][1:] == [11, 17, 2]
+    assert out["totalA"] == pytest.approx(188208.28, abs=0.01) and sum(r[1] for r in out["A"]) == pytest.approx(out["totalA"], abs=0.005)
+    B = dict(out["B"])
+    assert B["GCC"] == pytest.approx(392441.47, abs=0.01) and B["Türkiye"] == pytest.approx(23299.20, abs=0.01) and B["North Africa"] == pytest.approx(30520.56, abs=0.01)
+    pallet = {L: (p, m) for L, p, m in out["pallet"]}
+    for L, v in {"L01": 2318.40, "L02": 1215.36, "L03": 1454.40, "L04": 1581.12, "L05": 1215.36, "L06": 1552.32, "L07": 1526.40, "L08": 1264.32, "L09": 1730.88}.items():
+        assert pallet[L][0] == pytest.approx(v, abs=0.005), L
+    for L, v in {"L01": 1840.64, "L03": 1093.12, "L06": 788.48, "L07": 1039.36, "L08": 849.92}.items():
+        assert pallet[L][1] == pytest.approx(v, abs=0.005), L
+    assert all(pallet[L][1] is None for L in ("L02", "L04", "L05", "L09"))      # no multi-pallet test shipment there
+    assert out["sa"] == pytest.approx([143.75, 944.64, 2318.40, 7362.56, 17894.40], abs=0.005)
+    assert out["parcels"] == ["not_quoted"] * 4
+    assert out["opt2"] == ["incomplete"] * 4 and out["noTest"] == "no_test"
+    wh = out["wh"]
+    assert (wh["location"], wh["customs"]) == ("Dubai, UAE", "Free zone")
+    assert all(wh[k] is None for k in ("storage", "inbound", "pick", "pack", "fixed", "seaPallet", "airPallet")) and all(h["value"] is None for h in wh["handling"])
+    assert out["key"][:3] == [1, "Aramex Dubai", "opt1"] and out["key"][3] == pytest.approx(188208.28) and out["key"][4] == pytest.approx(446261.23)
+    assert out["key"][5] == {"covered": 129, "shipments": 141} and out["key"][6] == {"onTime": 0, "shipments": 108}
+    q = out["answers"]
+    assert "Not quoted although they have volume: parcels to Türkiye, Morocco, Algeria and Tunisia." in q[0]
+    assert "Shipping one pallet to Saudi Arabia costs EUR 2,318.40 with Aramex Dubai air freight via AMS from Helmond, in 5 days against a target of 2." in q[1]
+    assert q[2].startswith("Aramex Dubai: warehouse in Dubai, UAE (free zone); storage, inbound, handling, fixed fee and replenishment are not quoted")
+    assert "Option 2 is incomplete" in q[3] and "EUR 188,208 a year (GCC EUR 164,114, Türkiye EUR 10,085, North Africa EUR 14,009), 129 of 141" in q[5]
+    assert q[6].startswith("Aramex Dubai scores best with 2.64 of 4")
+
+
+def test_option2_class_breakdown_sums_to_benchmarking_total(tmp_path):
+    out = run("""const SET = {avgPallets: 40, carryingPct: 8, stockValue: 150000, orderLinesByClass: {B1: 2, B2: 4, B3: 10, B4: 25, B5: 40}};
+      const v0 = JSON.parse(fs.readFileSync(F[0], 'utf8')), v = Object.assign({}, v0);
+      // test warehouse rates in a copy of the Aramex answer: Option 2 delivery at 40% of Option 1 on the GCC lanes, W04 to W13
+      Object.keys(v).filter(k => /^ship\\.T\\d+\\.lane$/.test(k) && ['L01', 'L02', 'L03', 'L04'].includes(v[k])).forEach(k => { const t = k.replace(/lane$/, ''), p = v[t + 'opt1_price_eur'];
+        if (typeof p === 'number') { v[t + 'opt2_delivery_price_eur'] = Math.round(p * 40) / 100; v[t + 'opt2_transit_days'] = 1; } });
+      Object.assign(v, {'wh.W04.answer': 14, 'wh.W05.answer': 9.5, 'wh.W06.answer': 0.6, 'wh.W07.answer': 3.25, 'wh.W08.answer': 12, 'wh.W09.answer': 400, 'wh.W11.answer': 210, 'wh.W13.answer': 520});
+      const E = V.evaluate(v, SET), e = Object.assign({id: 'ARX', name: 'Aramex Dubai', S: V.scoreAll([{id: 'ARX', Q: E.Q, A: E.A}], SET)[0]}, E), vol = V.withDefaults(SET).volumes;
+      out = ['A', 'B'].map(sc => { let sum = 0, storage = 0, fixed = 0;
+        Object.keys(V.LANES).forEach(L => V.CLASSES.forEach(c => { const n = Number(vol[sc][L][c.band]) || 0, x = V.classCost(e, 'opt2', sc, L, c.band, SET);
+          if (n && x.state === 'ok') { sum += n * x.price; storage += n * x.parts.storage; fixed += n * x.parts.fixed; } }));
+        return {state: E.A.opt2[sc].state, total: E.A.opt2[sc].cost, sum, regions: V.regionTotals(e, 'opt2', sc).rows.reduce((a, r) => a + r.cost, 0), storage, fixed}; });
+      out.push(V.breakEven(e, 'A', 'L01', SET).from);""", tmp_path, ARAMEX_VALUES)
+    for sc in out[:2]:
+        assert sc["state"] == "ok"
+        assert sc["sum"] == pytest.approx(sc["total"], abs=0.01) and sc["regions"] == pytest.approx(sc["total"], abs=0.01)
+        assert sc["storage"] == pytest.approx(14 * 40 * 12 + 0.08 * 150000, abs=0.01)    # W04 x pallets x 12 + carrying cost
+        assert sc["fixed"] == pytest.approx(400 * 12, abs=0.01)                          # W09 x 12
+    assert out[2] == "B1"
