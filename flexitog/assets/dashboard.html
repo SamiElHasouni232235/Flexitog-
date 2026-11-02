@@ -327,7 +327,15 @@ body[data-view="md"] .top>.controls,body[data-view="report"] .top>.controls,body
 .rqtbl tr.best td,.rqtbl tr.best th,.rqtbl td.best{background:color-mix(in srgb,var(--green) 13%,transparent);font-weight:700}
 .rqtbl tr.ind td,.rqtbl tr.ind th{color:var(--muted)}.rqtbl tr.sel th{color:var(--accent-text)}
 .rqrev{color:var(--ink);font-weight:600}.rqpct,.rqcov{display:block;font-size:10.5px;color:var(--muted);font-weight:400}
-.revsw{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--ink);cursor:pointer;margin-left:auto;margin-right:12px}.rqbv small{display:block;font-size:10.5px;color:var(--muted)}
+.revsw{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--ink);cursor:pointer}
+.rqhead{align-items:flex-start;gap:12px;flex-wrap:wrap}.rqhead h2{margin:0 0 2px}
+.rqrevbox{margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+.rqrevf{display:flex;flex-direction:column;align-items:flex-end;gap:4px;padding:8px 10px;border-radius:var(--radius-field);background:var(--surface-2);box-shadow:inset 0 0 0 1px var(--rule)}
+.rqrevrow{display:grid;grid-template-columns:auto 110px 118px;gap:8px;align-items:center;font-size:12.5px;color:var(--muted)}
+.rqrevrow.on span{color:var(--ink);font-weight:700}.rqrevrow b{font-size:12.5px;color:var(--ink);text-align:right}
+.rqrevrow input{width:110px;padding:3px 6px;font:500 12.5px var(--mono);border:1px solid var(--rule);border-radius:6px;background:var(--surface);color:var(--ink);text-align:right}
+.rqrevrow small{font-size:11.5px;color:var(--ink);white-space:nowrap}.rqrevf>small{font-size:11px;text-align:right;line-height:1.4}
+@media (max-width:640px){.rqrevbox{margin-left:0;align-items:stretch;width:100%}.rqrevf{align-items:stretch}.rqrevrow{grid-template-columns:1fr 110px}.rqrevrow small{grid-column:2}}.rqbv small{display:block;font-size:10.5px;color:var(--muted)}
 .rqsave{color:var(--green)}.rqmore{color:var(--st-critical)}
 .rqnote{font-size:12px;margin:8px 0 0}
 .rqv{font-variant-numeric:tabular-nums;white-space:nowrap}

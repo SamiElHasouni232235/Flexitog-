@@ -83,6 +83,23 @@ function stateLine(R){
 }
 const missingText = R => (R.state === "incomplete" ? `Missing ${R.missing.slice(0, 6).join(", ")}${R.missing.length > 6 ? ` and ${R.missing.length - 6} more` : ""}.` : R.state === "not_configured" ? R.notes.join(" ") : "");
 
+// ---- revenue per volume case, top right of the block: editable, hidden while "Hide revenue" is on
+function revBoxHtml(){
+  const sw = `<label class="revsw" title="Keep revenue off the screen while sharing it with providers"><input type="checkbox" id="rqHideRev"${hidden() ? " checked" : ""}> Hide revenue</label>`;
+  const B = window.BenchUI && BenchUI.rfq30;
+  if (hidden() || !M || !B) return `<div class="rqrevbox">${sw}</div>`;
+  const rv = V.revenueSettings(B.revenue()), byC = sc => V.revenueByCountry(B.revenue(), M.S, sc);
+  // the case total is editable while it feeds any country; with all nine countries set it is their sum
+  const row = sc => { const b = byC(sc), own = !b.allocated.length;
+    return `<label class="rqrevrow${RQ.vc === sc ? " on" : ""}"><span>Volume case ${sc}, USD</span>
+      ${own ? `<b class="num" title="Sum of the per-country revenue on Benchmarking">USD ${fmt(b.usd, 0)}</b>` : `<input type="number" min="0" step="1000" data-rev="total.${sc}" value="${esc(rv.total[sc])}" aria-label="Net revenue volume case ${sc}, USD">`}
+      <small class="num">= ${eur(b.usd * rv.fx)}</small></label>`; };
+  return `<div class="rqrevbox">${sw}<div class="rqrevf" aria-label="Net revenue excl. VAT, internal only">
+      ${row("A")}${row("B")}
+      <label class="rqrevrow"><span>USD to EUR</span><input type="number" min="0" step="0.0001" data-rev="fx" value="${esc(rv.fx)}" aria-label="Exchange rate USD to EUR" title="Confirm with Anna Murphy"><small></small></label>
+      <small class="faint">Net revenue excl. VAT in USD, internal only · rate: confirm with Anna Murphy<br>Per country: Benchmarking > internal settings${byC("A").allocated.length ? " (now allocated by shipments)" : ""}</small></div></div>`;
+}
+
 // ---- 1. filters and scenario cards (above the map)
 function filtersHtml(){
   const seg = (id, items, v) => `<div class="seg" id="${id}" role="group">${items.map(([k, l]) => `<button type="button" data-v="${esc(k)}" aria-pressed="${v === k}">${esc(l)}</button>`).join("")}</div>`;
@@ -117,7 +134,7 @@ function cardHtml(id, best){
     ${prov ? `<small class="rqprovs" title="${esc(prov)}">${esc(prov)}</small>` : ""}</div>`;
 }
 function topHtml(){
-  const head = `<div class="cardhead"><h2 id="rqh">Logistics scenarios</h2><label class="revsw" title="Keep revenue off the screen while sharing it with providers"><input type="checkbox" id="rqHideRev"${hidden() ? " checked" : ""}> Hide revenue</label><span class="faint" style="font-size:12px">Modular RFQ v3.0 answers from Benchmarking > Logistics Providers${M && M.legacy.length ? ` · ${M.legacy.length} legacy v1 answer${M.legacy.length === 1 ? "" : "s"} not compared` : ""}</span></div>`;
+  const head = `<div class="cardhead rqhead"><div><h2 id="rqh">Logistics scenarios</h2><span class="faint" style="font-size:12px">Modular RFQ v3.0 answers from Benchmarking > Logistics Providers${M && M.legacy.length ? ` · ${M.legacy.length} legacy v1 answer${M.legacy.length === 1 ? "" : "s"} not compared` : ""}</span></div>${revBoxHtml()}</div>`;
   if (!M) return `<div class="card">${head}<p class="muted">Loading the Benchmarking results…</p></div>`;
   if (!M.list.length) return `<div class="card">${head}<p class="empty">No RFQ v3.0 or v2.3 answers yet. Upload them on Benchmarking > Logistics Providers; this block fills in by itself.</p></div>`;
   const best = cheapestIn();
@@ -248,6 +265,10 @@ const legend = () => RANKED.map(id => `<span><i class="sw" style="background:${C
 
 function wire(){
   const top = $("rfqTop"), body = $("rfqBody");
+  top.querySelectorAll("input[data-rev]").forEach(inp => inp.addEventListener("change", () => {
+    const B = window.BenchUI && BenchUI.rfq30; if (!B || !B.editRevenue) return;
+    if (B.editRevenue(inp.dataset.rev, inp.value)) setTimeout(refresh, 0);   // after the event: the field is redrawn
+  }));
   const hr = top.querySelector("#rqHideRev");
   if (hr) hr.addEventListener("change", () => { window.FlexiRevenue = Object.assign(window.FlexiRevenue || {}, {hidden: hr.checked}); window.dispatchEvent(new Event("flexirevenue")); refresh(); });
   top.querySelectorAll("#rqVc button").forEach(b => b.addEventListener("click", () => { RQ.vc = b.dataset.v; remember(); refresh(); }));

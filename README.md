@@ -196,6 +196,9 @@ It updates when an answer is uploaded or removed, or a setting changes.
   in Colour countries by). The tooltip lists each scenario's annual cost and cost per order per class.
 - Country detail: cost per order by class and scenario (`classCost`) and a stacked bar of the annual cost per cost
   type (transport to region, customs, warehouse handling, storage, delivery, fixed, direct from Helmond, commercial).
+- Revenue per volume case at the top right of the block, editable: net revenue A and B in USD with their EUR value
+  and the USD to EUR rate (the same values as Benchmarking > internal settings > Revenue, internal only; pending until
+  Save). With all nine countries set on Benchmarking, the case shows their sum.
 - Internal revenue (hidden until "Hide revenue" in the block header is turned off; it is on each time the tool
   opens, for screen sharing with providers): cost % of revenue and contribution on the cards; Revenue (EUR),
   Logistics cost % of revenue (lowest among complete scenarios in green) and Contribution after logistics in the

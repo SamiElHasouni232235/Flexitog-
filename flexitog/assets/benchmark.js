@@ -1036,17 +1036,24 @@ function wireRevenueSet(el, changed){
   const hide = el.querySelector('.revset [data-a="rev-hide"]');
   if (hide) hide.addEventListener("change", () => { window.FlexiRevenue.hidden = hide.checked; window.dispatchEvent(new Event("flexirevenue")); if (window.DashRFQ) DashRFQ.refresh(); });
   el.querySelectorAll(".revset input[data-r]").forEach(inp => inp.addEventListener("change", () => {
-    const v = inp.value.trim() === "" ? null : Number(inp.value);
-    if (v != null && !(v >= 0)) { toast("Enter a number of 0 or more", "bad"); return; }
-    if (inp.dataset.r.startsWith("discount.") && v != null && v > 100) { toast("A discount is at most 100%", "bad"); return; }
-    if (inp.dataset.r === "fx" && !(v > 0)) { toast("Enter an exchange rate above 0", "bad"); return; }
-    const next = JSON.parse(JSON.stringify(revSettings())), ks = inp.dataset.r.split("."), last = ks.pop();
-    const def = V.REVENUE_DEFAULTS(), fallback = inp.dataset.r === "last12" ? def.last12 : ks[0] === "total" ? def.total[last] : null;   // a blank total goes back to its default
-    ks.reduce((o, k) => o[k], next)[last] = v == null ? fallback : v;
-    setRevenue(next); renderCompare();   // revenue is not part of the provider settings: no settings write
-    // redraw only this section, after the event, so the field that lost focus is not removed inside its own handler
-    setTimeout(() => { const sec = el.querySelector(".revset"); if (sec && sec.isConnected) { sec.outerHTML = revenueSetHtml(); wireRevenueSet(el, changed); } }, 0);
+    if (!editRevenue(inp.dataset.r, inp.value)) return;
+    if (window.DashRFQ) DashRFQ.refresh();
   }));
+}
+/* One revenue field changed (path like "total.A", "fx", "byCountry.B.L01", "discount.L01"; raw text from an input).
+   Shared by the settings panel and the Dashboard header. Pending until Save. Returns false when the value is refused. */
+function editRevenue(path, raw){
+  const v = String(raw == null ? "" : raw).trim() === "" ? null : Number(raw);
+  if (v != null && !(v >= 0)) { toast("Enter a number of 0 or more", "bad"); return false; }
+  if (path.startsWith("discount.") && v != null && v > 100) { toast("A discount is at most 100%", "bad"); return false; }
+  if (path === "fx" && !(v > 0)) { toast("Enter an exchange rate above 0", "bad"); return false; }
+  const next = JSON.parse(JSON.stringify(revSettings())), ks = path.split("."), last = ks.pop();
+  const def = V.REVENUE_DEFAULTS(), fallback = path === "last12" ? def.last12 : ks[0] === "total" ? def.total[last] : null;   // a blank total goes back to its default
+  ks.reduce((o, k) => o[k], next)[last] = v == null ? fallback : v;
+  setRevenue(next); renderCompare();   // revenue is not part of the provider settings: no settings write
+  // redraw the settings section after the event, so a field that lost focus is not removed inside its own handler
+  setTimeout(() => { const el = $("bxRfqSet"), sec = el && el.querySelector(".revset"); if (sec && sec.isConnected) { sec.outerHTML = revenueSetHtml(); wireRevenueSet(el); } }, 0);
+  return true;
 }
 function setPath(path, v){
   const ks = path.split("."), last = ks.pop();
@@ -1924,7 +1931,7 @@ async function init(){
 // getComparableMetrics(provider or id): the latest RFQ response in comparable form, for the scorecard.
 const getComparableMetrics = p => R.getComparableMetrics(typeof p === "string" ? B.providers.find(x => x.id === p) : p);
 // The Quick Quote results for the Dashboard: the same evaluated, scored list and settings this tab shows (one source of truth).
-const rfq30 = {ready: () => B.ready, list: () => (B.ready ? (syncProviders(), modAll()) : []), settings: () => S30(), revenue: () => REV.data, legacy: () => (B.ready ? legacyList().map(p => ({id: p.id, name: p.name})) : [])};
+const rfq30 = {ready: () => B.ready, list: () => (B.ready ? (syncProviders(), modAll()) : []), settings: () => S30(), revenue: () => REV.data, editRevenue, legacy: () => (B.ready ? legacyList().map(p => ({id: p.id, name: p.name})) : [])};
 window.BenchUI = {show(){ render(); }, state: B, getComparableMetrics, rfq30, syncProviders, comparison, comparisonReportModel, providerReportModel,
   rfq: {tmpl, uploadRfq, openDetail, removeUpload, downloadPrefilled, files: DataStore.files}, schema: {goals: GOAL_FIELDS}, reportModel, packageOf, templateBook, buildPdf, buildDocx, chartImages, currentTest};
 init();
