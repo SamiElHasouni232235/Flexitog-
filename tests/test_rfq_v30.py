@@ -244,23 +244,59 @@ def test_module_flags_and_choice(tmp_path):
     assert r["caseB"] > r["best"]
 
 
-# ---------------------------------------------------------------- revenue per scenario
-def test_revenue_per_scenario(tmp_path):
-    aov = {f"L0{i}": 2000 for i in range(1, 10)}
-    disc = dict(T1_SETTINGS, revenuePerOrder=aov, s2={"L01": {"on": True, "loads": {"C20": 2, "P5": 4}, "discountPct": 20}})
-    r = run("""const Q = quoteOf(F[0]), list = [{id: 'P', name: 'Dummy', Q}];
-  const pick = o => Object.fromEntries(['S1', 'S2', 'S3', 'S4'].map(k => [k, {total: r2(o[k].total), revenue: r2(o[k].revenue), after: r2(o[k].revenueAfter), missing: o[k].revenueMissing,
-    countries: r2(Object.values(o[k].countries).reduce((a, c) => a + (c.revenueAfter || 0), 0))}]));
-  out = {none: pick(V.scenarios(list, %s, 'A', 'best')), aov: pick(V.scenarios(list, %s, 'A', 'best')), disc: pick(V.scenarios(list, %s, 'A', 'best')),
-    answer: V.answers(V.scenarios(list, %s, 'A', 'best'), null, list).find(a => /Revenue after/.test(a))};""" % (
-        json.dumps(T1_SETTINGS), json.dumps(dict(T1_SETTINGS, revenuePerOrder=aov)), json.dumps(disc), json.dumps(disc)), tmp_path, DUMMY)
-    # without revenue per order: no revenue, the countries are listed
-    assert r["none"]["S1"]["revenue"] is None and len(r["none"]["S1"]["missing"]) == 9
-    # 141 orders x EUR 2,000 in every scenario; after cost = revenue - cost
-    for k, x in r["aov"].items():
-        assert x["revenue"] == 282000 and x["after"] == pytest.approx(282000 - x["total"], abs=0.01) and x["countries"] == pytest.approx(x["after"], abs=0.05), k
-    # S2 with a 20% discount in L01 (50 orders x EUR 2,000 = EUR 100,000): revenue drops by EUR 20,000, counted once
-    s2 = r["disc"]["S2"]
-    assert s2["total"] == 76800 and s2["revenue"] == 262000 and s2["after"] == 205200 == 282000 - 76800
-    assert r["disc"]["S1"]["revenue"] == 282000
-    assert "S2 Distributor holds stock" in r["answer"]
+# ---------------------------------------------------------------- internal revenue (cost against revenue)
+REV_JS = """const pick = (v, id) => ({pct: v.scenarios[id].total.pct, coveredOnly: v.scenarios[id].total.coveredOnly, net: v.scenarios[id].total.netUsd,
+    contribution: v.scenarios[id].total.contribution, per1000: v.scenarios[id].total.per1000});"""
+
+
+def aramex_quote_js():
+    if ARAMEX_V30.exists():
+        return "const Q = quoteOf(F[0]);", (ARAMEX_V30,)
+    # the v2.3 Aramex answer gives the same S1 as the v3.0 Aramex test fill (Test 5)
+    return f"const Q = V.quote(JSON.parse(fs.readFileSync({json.dumps(str(ARAMEX_V23_VALUES))}, 'utf8')));", ()
+
+
+def test_revenue_defaults_aramex(tmp_path):
+    body, files = aramex_quote_js()
+    r = run(body + REV_JS + """ const list = [{id: 'ARX', name: 'Aramex', Q}];
+  out = Object.fromEntries(['A', 'B'].map(sc => { const o = V.scenarios(list, null, sc, 'best'), v = V.revenueView(o, null, null);
+    return [sc, {eur: r2(v.eur), perShipmentUsd: r2(v.perShipmentUsd), s1: pick(v, 'S1'), sa: r2(v.countries.L01.usd), gcc: r2(v.regions.GCC.eur),
+      gccPct: v.scenarios.S1.regions.GCC.pct, allocated: v.allocated, answers: V.revenueAnswers(v)}]; }));""", tmp_path, *files)
+    a, b = r["A"], r["B"]
+    assert a["eur"] == 886521.00 and b["eur"] == 2065680.00
+    assert round(a["s1"]["pct"] * 100, 2) == 21.23 and round(b["s1"]["pct"] * 100, 2) == 21.60
+    assert a["s1"]["coveredOnly"] and b["s1"]["coveredOnly"]   # 12 shipments not covered: "covered shipments only"
+    assert a["perShipmentUsd"] == 7304.96 and b["perShipmentUsd"] == 7294.83
+    assert a["sa"] == 365248.23
+    assert a["gcc"] == 679037.36 and round(a["gccPct"] * 100, 2) == 24.17 and round(b["gccPct"] * 100, 2) == 24.71
+    assert len(a["allocated"]) == 9   # defaults in use: the warning shows
+    assert a["answers"][0].startswith("In the GCC, shipping from Helmond costs 24.2% of revenue.")
+    assert a["s1"]["per1000"] == pytest.approx(188208.28 / 1030, abs=0.01) and a["s1"]["contribution"] == pytest.approx(886521 - 188208.28, abs=0.01)
+
+
+def test_revenue_dummy_and_distributor_discount(tmp_path):
+    r = run(REV_JS + """ const Q = quoteOf(F[0]), list = [{id: 'P', name: 'Dummy', Q}], S = %s, o = V.scenarios(list, S, 'A', 'best');
+  const v0 = V.revenueView(o, null, S), v20 = V.revenueView(o, {discount: {L01: 20}}, S);
+  const own = V.revenueView(o, {byCountry: {A: {L01: 400000}}}, S);
+  out = {s1: pick(v0, 'S1'), s3: pick(v0, 'S3'), s2: pick(v0, 'S2'), s2d: pick(v20, 'S2'), s1d: pick(v20, 'S1'), l01: v0.scenarios.S2.countries.L01.netUsd,
+    l01d: v20.scenarios.S2.countries.L01.netUsd, s2cost: o.S2.total, lowest: v0.lowest, own: {usd: own.usd, allocated: own.allocated}};""" % json.dumps(T1_SETTINGS), tmp_path, DUMMY)
+    assert round(r["s1"]["pct"] * 100, 2) == 10.94 and round(r["s3"]["pct"] * 100, 2) == 11.08
+    assert not r["s1"]["coveredOnly"]
+    assert r["l01d"] == pytest.approx(r["l01"] * 0.8)                 # net revenue in L01 drops by 20%
+    assert r["s2d"]["net"] == pytest.approx(r["s2"]["net"] - 0.2 * r["l01"])
+    assert r["s2d"]["pct"] == pytest.approx(r["s2cost"] / (r["s2d"]["net"] * 0.8607))   # the S2 % rises accordingly
+    assert r["s2d"]["pct"] > r["s2"]["pct"] and r["s1d"]["pct"] == r["s1"]["pct"]       # only S2 distributor countries change
+    assert r["lowest"] == "S2"
+    assert "L01" not in r["own"]["allocated"] and r["own"]["usd"] == pytest.approx(1030000 - r["l01"] + 400000)
+
+
+def test_revenue_stays_out_of_templates_and_settings(tmp_path):
+    secrets = ("1030000", "2400000", "0.8607", "Revenue, internal")
+    for f in (RFQ_TEMPLATE, DUMMY):
+        z = __import__("zipfile").ZipFile(f)
+        text = " ".join(z.read(n).decode("utf8", "ignore") for n in z.namelist() if n.endswith(".xml"))
+        assert not any(s in text for s in secrets), f.name
+    r = run("""out = {s: V.withDefaults({revenuePerOrder: {L01: 1}, revenue: {fx: 1}, s2: {L01: {on: true, discountPct: 20, salesValue: 5}}}), types: V.TYPES.map(t => t[0])};""", tmp_path)
+    assert "revenuePerOrder" not in r["s"] and "revenue" not in r["s"]
+    assert r["s"]["s2"]["L01"] == {"on": True, "loads": {"P1": 0, "P5": 0, "C20": 0, "C40": 0}}
+    assert "commercial" not in r["types"]

@@ -168,3 +168,4 @@ tr.noans td{opacity:.55}
 .mtab td{vertical-align:top;padding:4px 6px;border-top:1px solid var(--rule)}.mtab td .rqv{font-variant-numeric:tabular-nums}
 .pcmp{white-space:nowrap;line-height:1.45}.pcmp .faint{font-size:11px}
 .m6{border-top:1px solid var(--rule);padding-top:8px;margin-top:8px}.m6:first-child{border-top:0;margin-top:0}.m6 h3{font-size:14px;margin:0 0 4px}.m6 p{font-size:13px;margin:4px 0}
+.revset .setgrid input{width:120px}.revset .setrow input{width:120px}

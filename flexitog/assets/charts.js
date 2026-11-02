@@ -48,8 +48,9 @@ const labelStep = (n, w) => Math.max(1, Math.ceil(n * 46 / Math.max(200, w - 70)
 // band {lo: [], hi: [], color} (shaded range), marker (index of a vertical divider, e.g. forecast start).
 function lineChart(o){
   const pal = o.pal || PAL.screen, w = o.w || 980;
-  const leg = o.legend ? legendSvg(pal, o.series.map(se => ({name: se.name, color: se.color, line: true, dash: se.dash})), 54, 14, w - 70) : {svg: "", height: 0};
-  const m = {l: 54, r: 14, t: 14 + leg.height + (o.yLabel ? 16 : 0), b: 26}, h = (o.h || 250) + leg.height;
+  const rs = o.right ? o.right.series : [];   // optional second axis on the right: {label, fmt, tip, series}
+  const leg = o.legend ? legendSvg(pal, o.series.concat(rs).map(se => ({name: se.name, color: se.color, line: true, dash: se.dash})), 54, 14, w - 70) : {svg: "", height: 0};
+  const m = {l: 54, r: o.right ? 54 : 14, t: 14 + leg.height + (o.yLabel || o.right ? 16 : 0), b: 26}, h = (o.h || 250) + leg.height;
   const vals = o.series.flatMap(se => se.values.filter(v => v != null)).concat(o.band ? o.band.hi.filter(v => v != null) : []);
   const F = frame(pal, o, Math.max(o.ref || 0, ...vals, 0) * 1.06, m, w, h), n = o.labels.length, iw = w - m.l - m.r;
   const x = i => m.l + iw * (i + 0.5) / n, k = labelStep(n, w);
@@ -67,6 +68,18 @@ function lineChart(o){
     s += `<path d="${d}" fill="none" stroke-linejoin="round" stroke-linecap="round"${se.dash ? ` stroke-dasharray="${se.dash}"` : ""} style="stroke:${se.color};stroke-width:${se.width || 2}"/>`;
     if (se.dots !== false) se.values.forEach((v, i) => { if (v != null) s += `<circle cx="${x(i).toFixed(1)}" cy="${F.y(v).toFixed(1)}" r="${se.width > 2 ? 3.2 : 2.6}" style="fill:${se.color}"><title>${esc(se.name)} · ${esc(o.labels[i])}: ${esc(o.tip ? o.tip(v) : fmt(v))}</title></circle>`; });
   });
+  if (o.right && rs.length) {
+    const rv = rs.flatMap(se => se.values.filter(v => v != null)), t = axis(Math.max(...rv, 0) * 1.06 || 1, 4), ih = h - m.t - m.b;
+    const ry = v => m.t + ih - ih * (v - t.min) / (t.max - t.min), rf = o.right.fmt || sfmt;
+    t.list.forEach(v => { s += tx(pal, w - m.r + 6, ry(v) + 3.5, rf(v)); });
+    if (o.right.label) s += tx(pal, w - 4, m.t - 12, o.right.label, {a: "end", size: 10});
+    rs.forEach(se => {
+      let d = "", pen = false;
+      se.values.forEach((v, i) => { if (v == null) { pen = false; return; } d += (pen ? "L" : "M") + x(i).toFixed(1) + "," + ry(v).toFixed(1); pen = true; });
+      s += `<path d="${d}" fill="none" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="${se.dash || "5 4"}" style="stroke:${se.color};stroke-width:${se.width || 1.6}"/>`;
+      se.values.forEach((v, i) => { if (v != null) s += `<rect x="${(x(i) - 2.4).toFixed(1)}" y="${(ry(v) - 2.4).toFixed(1)}" width="4.8" height="4.8" style="fill:${se.color}"><title>${esc(se.name)} · ${esc(o.labels[i])}: ${esc(o.right.tip ? o.right.tip(v) : rf(v))}</title></rect>`; });
+    });
+  }
   return s + "</svg>";
 }
 // Vertical bars, grouped or stacked. Negative values draw below the zero line.

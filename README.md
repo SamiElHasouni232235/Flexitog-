@@ -196,10 +196,14 @@ It updates when an answer is uploaded or removed, or a setting changes.
   in Colour countries by). The tooltip lists each scenario's annual cost and cost per order per class.
 - Country detail: cost per order by class and scenario (`classCost`) and a stacked bar of the annual cost per cost
   type (transport to region, customs, warehouse handling, storage, delivery, fixed, direct from Helmond, commercial).
-- Revenue per scenario: on the cards, the comparison table (revenue, revenue after cost, cost % of revenue, the
-  highest revenue after cost in green), the map tooltip, the country bars and the answers.
-- Unit cost: per order, per kg and per pallet (per kg × kg per pallet), revenue and revenue after cost per order, per
-  scenario for the scope.
+- Internal revenue (hidden until "Hide revenue" in the block header is turned off; it is on each time the tool
+  opens, for screen sharing with providers): cost % of revenue and contribution on the cards; Revenue (EUR),
+  Logistics cost % of revenue (lowest among complete scenarios in green) and Contribution after logistics in the
+  comparison table; the % under each cost in the region matrix and the country bars; revenue and % in the map
+  tooltip; logistics cost per USD 1,000 of revenue in the unit cost table; a second axis with cost as % of revenue
+  on the break-even chart; one sentence per region in the answers. A warning shows while countries use the default
+  allocation.
+- Unit cost: per order, per kg and per pallet (per kg × kg per pallet) per scenario for the scope.
 - Break-even volume: S1, S3 and S4 at 0.5, 1, 1.5, 2 and 3 times the volume case, with the multiplier from which S3
   or S4 becomes cheaper than S1.
 - Answers: deterministic sentences from templates and the figures, then the follow-up questions per provider
@@ -609,10 +613,8 @@ same data store as every Benchmarking change):
 - Average kg per band, cartons and pallets per class S, M, L, order lines per class (6, update from order history),
   kg per pallet 250, target transit per lane (L01 to L04 2, L05 and L06 3, L07 5, L08 and L09 4 working days),
   volume year 2027.
-- Revenue per order per country (EUR excl. VAT that FlexiTog invoices per customer order), from order history or
-  "Fill from the Sales Forecast" (2027 revenue / orders per country, converted to EUR at the forecast's rate).
-- S2 per country: distributor on or off, loads per year (P1, P5, C20, C40), discount % and sales value (commercial
-  input from Tarek).
+- Revenue, internal only (see below).
+- S2 per country: distributor on or off, loads per year (P1, P5, C20, C40).
 - S3: provider, warehouse A or B, warehouse country (from W01, editable), countries served (blank: every country
   with an M5 price from that warehouse), share from stock per country (100%), average pallets in stock (required),
   replenishment load (C20), labelling (No), amortisation 3 years, carrying cost % and stock value (input from
@@ -628,10 +630,10 @@ Scenarios (`flexitog/assets/rfq_v30.js`, `window.FlexiRFQ30`), per volume case. 
 - M1 price of a lane and band: the quoted price; a band with volume and no test shipment row takes the price per kg
   of the next lower band × the band's average kg (extrapolated). A row that exists but is blank is not covered.
 - S1 direct from Helmond: shipments × M1 price per lane and band. Not covered volume lowers coverage only.
-- S2 distributor holds stock: in each distributor country, loads per year × M2 price (bulk) + discount % × sales
-  value (commercial; a blank sales value uses revenue per order × the country's orders); the distributor serves
-  every order there. Other countries go direct (S1). Without a discount
-  the result is tagged "excludes distributor margin". M2 alternative-mode prices are not used as a fallback.
+- S2 distributor holds stock: in each distributor country, loads per year × M2 price (bulk); the distributor serves
+  every order there. Other countries go direct (S1). The cost is tagged "excludes distributor margin": the
+  distributor's discount lowers net revenue instead (internal revenue). M2 alternative-mode prices are not used as a
+  fallback.
 - S3 3PL holds stock: orders of sizes S, M and L in served countries × the share from stock go through the
   warehouse; XL, XXL and the rest go direct (S1).
   - delivery = stock orders × M5 price of the lane and size from the chosen warehouse
@@ -652,14 +654,27 @@ Scenarios (`flexitog/assets/rfq_v30.js`, `window.FlexiRFQ30`), per volume case. 
   amortisation years + equipment × 12 + WMS × 12 + insurance and utilities + carrying cost. The rest goes direct.
 - S5 other: each M6 line priced per shipment or order (× shipments) or per kg (× kg) on the countries in O03. The
   lowest estimate is shown, indicative and never ranked.
-- Revenue per scenario: revenue per order × customer orders per country; in an S2 distributor country the
-  distributor pays the sales value less its discount. Revenue after cost = revenue − (annual cost − distributor
-  discount), so the discount counts once and revenue after cost equals gross sales minus the annual cost. Revenue
-  is n/a while a country with orders has no revenue per order.
 - Volume sensitivity: S1, S3 and S4 at 0.5, 1, 1.5, 2 and 3 times the volume case (S2 loads stay as set); break-even
   is the lowest multiplier between 0.25 and 5 (steps of 0.05) where S3 or S4 costs less than S1.
 - The provider filter is "best" (cheapest price per lane, band or load over all providers), one provider for every
   module, or one per module.
+
+Internal revenue (`revenueSettings`, `revenueByCountry`, `revenueView`, `revenueAnswers` in `rfq_v30.js`, used by
+both tabs). Confidential: never in a downloadable RFQ template, a provider file or follow-up question text; the JSON
+export leaves it out unless "Include internal revenue data" is ticked in the export dialog (the file name then ends in
+`_INTERNAL`); stored in this browser under its own key `flexitog-internal-revenue-v1`, apart from the provider data,
+and written on Save.
+- Settings ("Revenue, internal only" on the internal settings panel): currency USD; USD to EUR 0.8607 (confirm with
+  Anna Murphy); net revenue excl. VAT for volume case A USD 1,030,000 (2 x last 12 months, rounded) and B USD
+  2,400,000 (2027 target midpoint); last 12 months USD 514,000 (reference only); revenue per country per case
+  (blank: the case total × the country's share of shipments in that case, with a warning to replace it from the
+  internal scenario file, net revenue column on the Scenario_A and Scenario_B sheets); distributor discount % on
+  sales per country (from Tarek, default 0).
+- Per scenario, volume case, region and country: revenue EUR = USD × rate; net revenue = revenue, and in S2
+  distributor countries revenue × (1 − discount); logistics cost % of revenue = cost / net revenue EUR; cost per USD
+  1,000 of net revenue; contribution after logistics = net revenue EUR − cost (before product cost and other
+  overheads). A scenario that leaves shipments without a price shows its % as "covered shipments only".
+- Volume sensitivity: revenue scales with the volume multiplier.
 
 Scores 0 to 4, two roles per provider:
 - Forwarder: cost = 4 × lowest / this provider's, on the M1 lane-bands with volume that every forwarder prices
@@ -705,6 +720,11 @@ Tests: `tests/test_rfq_v30.py`.
 - Test 3 (blank template), Test 4 (`tests/fixtures/rfq_v30_input_errors.xlsx`, and the Aramex copy when present),
   Test 5 (the v2.3 Aramex file, or its saved Export values `aramex_v23_values.json`, as "v2.3, M1 only" with the same
   S1; the v1 dummy as legacy), module flags and the provider filter always run.
+- Internal revenue: with the defaults, revenue A EUR 886,521.00 and B EUR 2,065,680.00, S1 21.23% and 21.60% of
+  revenue (covered shipments only), USD 7,304.96 and 7,294.83 per shipment, Saudi Arabia A USD 365,248.23, GCC A
+  EUR 679,037.36 at 24.17% and B 24.71% (on the Aramex v3.0 file when present, else the v2.3 Aramex values with the
+  same S1); the dummy at S1 10.94% and S3 11.08%; a 20% discount in L01 lowers its net revenue by 20% and raises the
+  S2 %; templates and settings carry no revenue.
 
 Old lists: a Benchmarking provider list saved before this change moves into Master Data once, with its
 uploads (old types: 3PL / contract logistics to 3PL; freight forwarder, carrier, courier, customs broker

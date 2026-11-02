@@ -795,6 +795,19 @@ const isModular = up => !!up && (up.rfqVersion === V.VERSION || up.rfqVersion ==
 const srcOf = kind => (kind === "v30" ? (PAYLOAD.rfq_template || {}).sources : kind === "v23" ? (PAYLOAD.rfq_v23 || {}).sources : (PAYLOAD.rfq_legacy || {}).sources) || {};
 const legacySources = () => srcOf("legacy");
 const S30 = () => B.settings.rfq30;
+/* Internal revenue: confidential, kept in this browser under its own key (never with the provider data in the data
+   store), written on Save. Never in an RFQ template, a provider file, follow-up text or a default JSON export. Shown
+   only while "Hide revenue" is off (window.FlexiRevenue.hidden, on each time the tool opens). */
+const REV_KEY = "flexitog-internal-revenue-v1";
+const REV = {data: (() => { try { return JSON.parse(localStorage.getItem(REV_KEY) || "null"); } catch (e) { return null; } })()};
+const revSettings = () => V.revenueSettings(REV.data);
+function setRevenue(next){
+  REV.data = next;
+  Saver.later("revenue", () => { try { localStorage.setItem(REV_KEY, JSON.stringify(REV.data)); } catch (e) { throw new Error("This browser blocks local storage, so internal revenue cannot be saved"); } });
+  FlexiCalc.invalidate();
+}
+window.FlexiRevenue = window.FlexiRevenue || {hidden: true};
+window.addEventListener("flexirevenue", () => { if ($("bxRfqSetHost")) renderRfqSettings(); });
 // Every provider with an active v3.0 or v2.3 answer: parsed, scored, flagged, with follow-up questions. Cached per uploads and settings.
 function modAll(){
   const rows = B.providers.filter(p => !p.baseline).map(p => ({p, up: activeUp(p)})).filter(x => isModular(x.up));
@@ -968,13 +981,10 @@ function rfqSettingsHtml(){
         <div class="setrow">${V.CLASSES.map(c => `<label>Order lines, ${esc(c.size)} <span class="faint">update from order history</span>${num(`orderLines.${c.band}`, s.orderLines[c.band], `Order lines ${c.size}`)}</label>`).join("")}</div>
         <div class="setrow">${L9.map(L => `<label title="${esc(V.LANES[L].name)}">Target ${L}${num(`targetDays.${L}`, s.targetDays[L], `Target days ${L}`)}</label>`).join("")}
           <label>Kg per pallet${num("kgPerPallet", s.kgPerPallet, "Kg per pallet")}</label><label>Volume year${num("volumeYear", s.volumeYear, "Volume year", ' step="1"')}</label></div></div>
-      <div class="setcol wide"><h3>Revenue per order <span class="faint">EUR excl. VAT that FlexiTog invoices per customer order, per country; for the revenue per scenario</span></h3>
-        <div class="setrow">${L9.map(L => `<label title="${esc(V.LANES[L].name)}">${L} ${esc(laneName(L))}${num(`revenuePerOrder.${L}`, s.revenuePerOrder[L], `Revenue per order ${L}`)}</label>`).join("")}</div>
-        <div class="iact"><button type="button" class="btn ghost sm" data-a="rev-fc">Fill from the Sales Forecast</button><span class="faint">${s.revenueSource ? esc(s.revenueSource) : "Source: order history, or the Sales Forecast (revenue / orders per country)."}</span></div></div>
-      <div class="setcol wide"><h3>S2 distributor holds stock <span class="faint">bulk loads per year; discount and sales value: commercial input from Tarek; a blank sales value uses revenue per order x orders</span></h3>
-        <div class="tablewrap"><table class="setgrid"><thead><tr><th>Country</th><th>Distributor</th><th>P1</th><th>P5</th><th>C20</th><th>C40</th><th>Discount %</th><th>Sales value EUR</th></tr></thead><tbody>
-        ${L9.map(L => `<tr><td>${L} <span class="faint">${esc(laneName(L))}</span></td><td>${chk(`s2.${L}.on`, s.s2[L].on, `Distributor in ${L}`)}</td>${["P1", "P5", "C20", "C40"].map(ld => `<td>${num(`s2.${L}.loads.${ld}`, s.s2[L].loads[ld], `${ld} loads to ${L}`)}</td>`).join("")}
-          <td>${num(`s2.${L}.discountPct`, s.s2[L].discountPct, `Discount ${L}`)}</td><td>${num(`s2.${L}.salesValue`, s.s2[L].salesValue, `Sales value ${L}`)}</td></tr>`).join("")}</tbody></table></div></div>
+      ${revenueSetHtml()}
+      <div class="setcol wide"><h3>S2 distributor holds stock <span class="faint">bulk loads per year; the distributor discount is under Revenue, internal only</span></h3>
+        <div class="tablewrap"><table class="setgrid"><thead><tr><th>Country</th><th>Distributor</th><th>P1</th><th>P5</th><th>C20</th><th>C40</th></tr></thead><tbody>
+        ${L9.map(L => `<tr><td>${L} <span class="faint">${esc(laneName(L))}</span></td><td>${chk(`s2.${L}.on`, s.s2[L].on, `Distributor in ${L}`)}</td>${["P1", "P5", "C20", "C40"].map(ld => `<td>${num(`s2.${L}.loads.${ld}`, s.s2[L].loads[ld], `${ld} loads to ${L}`)}</td>`).join("")}</tr>`).join("")}</tbody></table></div></div>
       <div class="setcol wide"><h3>S3 3PL holds stock</h3><div class="setrow">
         <label>Provider${sel("s3.provider", s.s3.provider, [["", "first with warehouse data"]].concat(ev.map(e => [e.id, e.name])), "S3 provider")}</label>
         <label>Warehouse${sel("s3.warehouse", s.s3.warehouse, [["A", "A"], ["B", "B"]], "S3 warehouse")}</label>
@@ -998,15 +1008,45 @@ function rfqSettingsHtml(){
           <div class="iact"><button type="button" class="btn ghost sm" data-a="rubric-reset">Reset rubric</button></div></details>
         <div class="iact"><button type="button" class="btn ghost sm" data-a="set-reset">Reset all settings to the defaults</button></div></div></div></details>`;
 }
-// Revenue per order per country from the Sales Forecast: 2027 revenue / orders per country, converted to EUR.
-function revenueFromForecast(){
-  const F = window.ForecastUI; if (!F || !F.ready()) return null;
-  const rows = F.demandRows() || [], set = F.settings() || {}, fx = Number((set.fx || {})[set.reporting]) || 1;
-  const values = Object.fromEntries(V.LANE_IDS.map(L => {
-    const rs = rows.filter(x => x.country === V.LANES[L].country), rev = rs.reduce((a, x) => a + (Number(x.revenue) || 0), 0), n = rs.reduce((a, x) => a + (Number(x.orders) || 0), 0);
-    return [L, n > 0 && rev > 0 ? Math.round(rev * fx / n * 100) / 100 : null];
+// ---- Revenue, internal only (its own browser key; hidden while "Hide revenue" is on)
+function revenueSetHtml(){
+  const L9 = V.LANE_IDS, rv = revSettings(), hidden = window.FlexiRevenue.hidden;
+  const head = `<h3>Revenue, internal only <span class="faint">confidential: kept in this browser only, never in an RFQ template, a provider file or a default export</span></h3>`;
+  const sw = `<label class="revsw"><input type="checkbox" data-a="rev-hide"${hidden ? " checked" : ""}> Hide revenue</label>`;
+  if (hidden) return `<div class="setcol wide revset">${head}<p class="faint bnote">Revenue is hidden. ${sw}</p></div>`;
+  const inp = (path, v, label, ph) => `<input type="number" step="any" min="0" data-r="${path}" value="${v == null ? "" : esc(v)}" aria-label="${esc(label)}"${ph != null ? ` placeholder="${esc(ph)}"` : ""}>`;
+  const base = sc => V.revenueByCountry(REV.data, S30(), sc);
+  const bA = base("A"), bB = base("B"), alloc = [...new Set(bA.allocated.concat(bB.allocated))];
+  return `<div class="setcol wide revset">${head}<p class="faint bnote">${sw}</p>
+    <div class="setrow">
+      <label>Currency<input type="text" value="USD" disabled aria-label="Currency"></label>
+      <label>USD to EUR <span class="faint">confirm with Anna Murphy</span>${inp("fx", rv.fx, "Exchange rate USD to EUR")}</label>
+      <label>Net revenue, volume case A, USD excl. VAT <span class="faint">2 x last 12 months, rounded</span>${inp("total.A", rv.total.A, "Net revenue volume case A")}</label>
+      <label>Net revenue, volume case B, USD excl. VAT <span class="faint">2027 target midpoint</span>${inp("total.B", rv.total.B, "Net revenue volume case B")}</label>
+      <label>Last 12 months, USD <span class="faint">reference only</span>${inp("last12", rv.last12, "Last 12 months revenue")}</label></div>
+    ${alloc.length ? `<p class="warnbox">⚠ Revenue per country uses the default for ${esc(alloc.join(", "))}: allocated by shipments. Replace with per-country revenue from the internal scenario file (net revenue column on the Scenario_A and Scenario_B sheets).</p>` : ""}
+    <div class="tablewrap"><table class="setgrid"><thead><tr><th>Country</th><th>Case A, USD</th><th>Case B, USD</th><th>Distributor discount % on sales <span class="faint">from Tarek, S2</span></th></tr></thead><tbody>
+    ${L9.map(L => `<tr><td>${L} <span class="faint">${esc(laneName(L))}</span></td>
+      <td>${inp(`byCountry.A.${L}`, rv.byCountry.A[L], `Revenue case A ${L}`, Math.round(bA.countries[L].usd))}</td>
+      <td>${inp(`byCountry.B.${L}`, rv.byCountry.B[L], `Revenue case B ${L}`, Math.round(bB.countries[L].usd))}</td>
+      <td>${inp(`discount.${L}`, rv.discount[L], `Distributor discount ${L}`)}</td></tr>`).join("")}</tbody></table></div>
+    <p class="faint bnote">A blank country takes the case total split by its share of shipments in that case (shown greyed). Case revenue = the sum of the countries. In S2, net revenue in a distributor country = revenue x (1 - discount).</p></div>`;
+}
+function wireRevenueSet(el, changed){
+  const hide = el.querySelector('.revset [data-a="rev-hide"]');
+  if (hide) hide.addEventListener("change", () => { window.FlexiRevenue.hidden = hide.checked; window.dispatchEvent(new Event("flexirevenue")); if (window.DashRFQ) DashRFQ.refresh(); });
+  el.querySelectorAll(".revset input[data-r]").forEach(inp => inp.addEventListener("change", () => {
+    const v = inp.value.trim() === "" ? null : Number(inp.value);
+    if (v != null && !(v >= 0)) { toast("Enter a number of 0 or more", "bad"); return; }
+    if (inp.dataset.r.startsWith("discount.") && v != null && v > 100) { toast("A discount is at most 100%", "bad"); return; }
+    if (inp.dataset.r === "fx" && !(v > 0)) { toast("Enter an exchange rate above 0", "bad"); return; }
+    const next = JSON.parse(JSON.stringify(revSettings())), ks = inp.dataset.r.split("."), last = ks.pop();
+    const def = V.REVENUE_DEFAULTS(), fallback = inp.dataset.r === "last12" ? def.last12 : ks[0] === "total" ? def.total[last] : null;   // a blank total goes back to its default
+    ks.reduce((o, k) => o[k], next)[last] = v == null ? fallback : v;
+    setRevenue(next); renderCompare();   // revenue is not part of the provider settings: no settings write
+    // redraw only this section, after the event, so the field that lost focus is not removed inside its own handler
+    setTimeout(() => { const sec = el.querySelector(".revset"); if (sec && sec.isConnected) { sec.outerHTML = revenueSetHtml(); wireRevenueSet(el, changed); } }, 0);
   }));
-  return {values, label: `the Sales Forecast ${set.forecastYear || 2027} (${set.scenario || "base"}, ${set.reporting || "EUR"} to EUR at ${fx})`};
 }
 function setPath(path, v){
   const ks = path.split("."), last = ks.pop();
@@ -1039,17 +1079,7 @@ function wireRfqSettings(){
     S30().rubric = r; changed(); toast("Rubric updated. " + PENDING_NOTE);
   });
   el.querySelector('[data-a="rubric-reset"]').addEventListener("click", () => { S30().rubric = null; $("bxRubric").value = JSON.stringify(V.RUBRIC, null, 1); changed(); });
-  el.querySelector('[data-a="rev-fc"]').addEventListener("click", () => {
-    const f = revenueFromForecast();
-    if (!f) { toast("The Sales Forecast has no 2027 forecast yet. Open the Sales Forecast tab or enter the values by hand.", "bad"); return; }
-    const got = V.LANE_IDS.filter(L => f.values[L] != null);
-    if (!got.length) { toast("The Sales Forecast has no orders in these nine countries.", "bad"); return; }
-    got.forEach(L => { S30().revenuePerOrder[L] = f.values[L]; });
-    S30().revenueSource = `Filled ${today()} from ${f.label}.`;
-    changed(true);
-    const left = V.LANE_IDS.filter(L => f.values[L] == null);
-    toast(`Revenue per order filled for ${got.length} countries${left.length ? `; no forecast orders for ${left.join(", ")}` : ""}. ${PENDING_NOTE}`);
-  });
+  wireRevenueSet(el, changed);
   el.querySelector('[data-a="set-reset"]').addEventListener("click", e => {
     if (!confirmInline(e.target, "Click again to reset the internal settings to the defaults")) return;
     B.settings.rfq30 = V.DEFAULT_SETTINGS(); changed(true);
@@ -1058,16 +1088,24 @@ function wireRfqSettings(){
 function renderRfqSettings(){ const host = $("bxRfqSetHost"); if (!host) return; host.innerHTML = rfqSettingsHtml(); wireRfqSettings(); }
 
 // ---- JSON export and import of the RFQ answers, the results and the settings
-function exportJson(){
-  const list = modAll(), sum = R0 => ({state: R0.state, total: R0.total, parts: R0.parts, types: R0.types, missing: R0.missing, tags: R0.tags, coverage: [R0.covered, R0.shipments],
-    revenue: R0.revenue == null ? null : R0.revenue, revenueAfterCost: R0.revenueAfter == null ? null : R0.revenueAfter});
-  const scen = sc => { const o = V.scenarios(list, S30(), sc, "best"); return Object.fromEntries(["S1", "S2", "S3", "S3b", "S4"].map(k => [k, sum(o[k])]).concat([["S5", {state: o.S5.state, solutions: o.S5.solutions}]])); };
-  const data = {kind: "flexitog-benchmarking-rfq", format: 3, exported: nowIso(), rfqVersion: V.VERSION, settings: {rfq30: S30()}, rfq: B.rfq,
+async function exportJson(){
+  const inc = await ask("Export JSON", `<p class="muted">RFQ state, answers, scenario costs for volume cases A and B, scores and settings.</p>
+    <label class="revsw"><input type="checkbox" id="bxIncRev"> Include internal revenue data <span class="faint">(confidential; off by default)</span></label>`,
+    [{label: "Cancel", value: null}, {label: "Export", value: dlg => !!dlg.querySelector("#bxIncRev").checked, primary: true}]);
+  if (inc == null) return;
+  const list = modAll(), sum = R0 => ({state: R0.state, total: R0.total, parts: R0.parts, types: R0.types, missing: R0.missing, tags: R0.tags, coverage: [R0.covered, R0.shipments]});
+  const outs = {}, scen = sc => { const o = outs[sc] = V.scenarios(list, S30(), sc, "best"); return Object.fromEntries(["S1", "S2", "S3", "S3b", "S4"].map(k => [k, sum(o[k])]).concat([["S5", {state: o.S5.state, solutions: o.S5.solutions}]])); };
+  const data = {kind: "flexitog-benchmarking-rfq", format: 3, exported: nowIso(), rfqVersion: V.VERSION, settings: {rfq30: V.withDefaults(S30())}, rfq: B.rfq,
     providers: list.map(e => ({providerId: e.id, name: e.name, tag: e.Q.tag, modules: e.Q.modules, completeness: e.comp, invalid: e.Q.invalid, inputCheck: e.Q.inputCheck,
       forwarder: e.S.forwarder.total, threepl: e.S.threepl.total, flags: e.flags, followUps: e.follow})),
     scenarios: list.length ? {A: scen("A"), B: scen("B")} : null,
     legacy: legacyList().map(p => ({providerId: p.id, name: p.name, rfqVersion: activeUp(p).rfqVersion, note: "Legacy v1, not comparable"}))};
-  saveFile(`FlexiTog_benchmarking_RFQ_${today()}.json`, new Blob([JSON.stringify(data, null, 1)], {type: "application/json"}));
+  if (inc) {
+    const view = sc => { if (!outs[sc]) return null; const v = V.revenueView(outs[sc], REV.data, S30());
+      return {eur: v.eur, usd: v.usd, allocated: v.allocated, scenarios: Object.fromEntries(Object.entries(v.scenarios).map(([k, x]) => [k, {revenueEur: x.total.netEur, pct: x.total.pct, per1000Usd: x.total.per1000, contribution: x.total.contribution, coveredOnly: x.total.coveredOnly}]))}; };
+    data.internalRevenue = {note: "Confidential. Internal revenue data, not for providers.", settings: revSettings(), A: view("A"), B: view("B")};
+  }
+  saveFile(`FlexiTog_benchmarking_RFQ_${today()}${inc ? "_INTERNAL" : ""}.json`, new Blob([JSON.stringify(data, null, 1)], {type: "application/json"}));
 }
 async function importJson(file){
   let d; try { d = JSON.parse(await file.text()); } catch (e) { toast("This file is not valid JSON", "bad"); return; }
@@ -1078,6 +1116,7 @@ async function importJson(file){
   if (!go) return;
   ids.forEach(id => { B.rfq[id] = d.rfq[id]; });
   if (d.settings && d.settings.rfq30) { B.settings.rfq30 = V.withDefaults(d.settings.rfq30); saveSettingsSoon(); }
+  if (d.internalRevenue && d.internalRevenue.settings) setRevenue(V.revenueSettings(d.internalRevenue.settings));
   B.respDirty = true; await saveRfq(`Imported ${ids.length} provider${ids.length === 1 ? "" : "s"}`);
   syncProviders(); for (const id of known) await syncRfqQuotes(id);
   FlexiCalc.invalidate(); renderProviders(); renderTabs(); renderChips();
@@ -1885,7 +1924,7 @@ async function init(){
 // getComparableMetrics(provider or id): the latest RFQ response in comparable form, for the scorecard.
 const getComparableMetrics = p => R.getComparableMetrics(typeof p === "string" ? B.providers.find(x => x.id === p) : p);
 // The Quick Quote results for the Dashboard: the same evaluated, scored list and settings this tab shows (one source of truth).
-const rfq30 = {ready: () => B.ready, list: () => (B.ready ? (syncProviders(), modAll()) : []), settings: () => S30(), legacy: () => (B.ready ? legacyList().map(p => ({id: p.id, name: p.name})) : [])};
+const rfq30 = {ready: () => B.ready, list: () => (B.ready ? (syncProviders(), modAll()) : []), settings: () => S30(), revenue: () => REV.data, legacy: () => (B.ready ? legacyList().map(p => ({id: p.id, name: p.name})) : [])};
 window.BenchUI = {show(){ render(); }, state: B, getComparableMetrics, rfq30, syncProviders, comparison, comparisonReportModel, providerReportModel,
   rfq: {tmpl, uploadRfq, openDetail, removeUpload, downloadPrefilled, files: DataStore.files}, schema: {goals: GOAL_FIELDS}, reportModel, packageOf, templateBook, buildPdf, buildDocx, chartImages, currentTest};
 init();

@@ -47,7 +47,7 @@
     {id: "S5", label: "Other", line: "A solution a provider advises (M6). Indicative, not ranked."},
   ];
   const TYPES = [["transport", "Transport to region"], ["customs", "Customs"], ["handling", "Warehouse handling"], ["storage", "Storage"],
-    ["delivery", "Delivery to customer"], ["fixed", "Fixed"], ["direct", "Direct from Helmond"], ["commercial", "Commercial"]];
+    ["delivery", "Delivery to customer"], ["fixed", "Fixed"], ["direct", "Direct from Helmond"]];
 
   // ================================================================== settings (internal, never sent to providers)
   const vol = rows => Object.fromEntries(Object.entries(rows).map(([L, a]) => [L, Object.fromEntries(BANDS.map((b, i) => [b, a[i]]))]));
@@ -66,9 +66,7 @@
     kgPerPallet: 250,
     targetDays: {L01: 2, L02: 2, L03: 2, L04: 2, L05: 3, L06: 3, L07: 5, L08: 4, L09: 4},
     volumeYear: 2027,
-    // revenue FlexiTog invoices per customer order, per country (EUR, excl. VAT): from order history or the Sales Forecast
-    revenuePerOrder: Object.fromEntries(LANE_IDS.map(L => [L, null])), revenueSource: "",
-    s2: Object.fromEntries(LANE_IDS.map(L => [L, {on: false, loads: zeroLoads(), discountPct: null, salesValue: null}])),   // discount and sales: commercial input from Tarek
+    s2: Object.fromEntries(LANE_IDS.map(L => [L, {on: false, loads: zeroLoads()}])),   // the distributor discount is internal revenue data (revenueSettings)
     s3: {provider: "", warehouse: "A", country: null, served: null, share: Object.fromEntries(LANE_IDS.map(L => [L, 100])), avgPallets: null, load: "C20",
       labelling: false, amortYears: 3, carryingPct: 0, stockValue: 0, moduleSource: "same"},   // carrying cost and stock value: input from Finance
     s4: {sites: [], moduleSource: "same"},   // per site; sources: free-zone authority quotes, Benten (warehouse), Anna Murphy (finance)
@@ -78,12 +76,12 @@
   function withDefaults(s) {
     const d = DEFAULT_SETTINGS(), o = s || {};
     const m2 = (a, b) => Object.fromEntries(Object.keys(a).map(k => [k, Object.assign({}, a[k], (b || {})[k] || {})]));
-    const s2 = Object.fromEntries(LANE_IDS.map(L => { const x = ((o.s2 || {})[L]) || {}; return [L, Object.assign({}, d.s2[L], x, {loads: Object.assign(zeroLoads(), x.loads || {})})]; }));
-    return Object.assign(d, o, {
+    const s2 = Object.fromEntries(LANE_IDS.map(L => { const x = ((o.s2 || {})[L]) || {}; return [L, {on: !!x.on, loads: Object.assign(zeroLoads(), x.loads || {})}]; }));
+    const o2 = Object.assign({}, o); ["revenuePerOrder", "revenueSource", "revenue"].forEach(k => delete o2[k]);   // revenue never rides in these settings
+    return Object.assign(d, o2, {
       volumes: {A: m2(d.volumes.A, (o.volumes || {}).A), B: m2(d.volumes.B, (o.volumes || {}).B)},
       avgKg: Object.assign(d.avgKg, o.avgKg || {}), cartons: Object.assign(d.cartons, o.cartons || {}), pallets: Object.assign(d.pallets, o.pallets || {}),
       orderLines: Object.assign(d.orderLines, o.orderLines || {}), targetDays: Object.assign(d.targetDays, o.targetDays || {}),
-      revenuePerOrder: Object.assign(d.revenuePerOrder, o.revenuePerOrder || {}),
       s2, s3: Object.assign(d.s3, o.s3 || {}, {share: Object.assign(d.s3.share, (o.s3 || {}).share || {})}),
       s4: Object.assign(d.s4, o.s4 || {}, {sites: ((o.s4 || {}).sites || []).map(x => Object.assign(newSite(), x))}),
       weights: {forwarder: Object.assign(roleWeights(), ((o.weights || {}).forwarder) || {}), threepl: Object.assign(roleWeights(), ((o.weights || {}).threepl) || {})},
@@ -301,7 +299,6 @@
   function s2(ctx, sc) {
     const R = result("S2", ctx.S, sc), on = LANE_IDS.filter(L => ctx.S.s2[L] && ctx.S.s2[L].on);
     if (!on.length) { R.state = "not_configured"; R.notes.push("No distributor country is set (S2 settings)."); return finish(R, ctx); }
-    let anyDiscount = false;
     LANE_IDS.forEach(L => {
       if (!on.includes(L)) { BANDS.forEach(b => direct(R, ctx, L, b, volume(ctx.S, sc, L, b))); return; }
       const cfg = ctx.S.s2[L], c = R.countries[L];
@@ -313,12 +310,8 @@
         used(R, "M2", x.name);
         add(R, L, "bulk", "transport", Number(count) * x.price);
       });
-      // discount on the distributor's purchases: the sales value set for S2, else revenue per order x the country's orders
-      const base = Number(cfg.salesValue) > 0 ? Number(cfg.salesValue) : (Number(ctx.S.revenuePerOrder[L]) > 0 ? Number(ctx.S.revenuePerOrder[L]) * c.shipments : 0);
-      if (Number(cfg.discountPct) > 0 && base > 0) { anyDiscount = true; add(R, L, "commercial", "commercial", cfg.discountPct / 100 * base); }
-      c.salesBase = base;
     });
-    if (!anyDiscount) tag(R, "excludes distributor margin");
+    tag(R, "excludes distributor margin");   // the distributor discount lowers net revenue (revenueView), not the cost
     R.distributors = on;
     tag(R, "quoted");
     return finish(R, ctx);
@@ -512,31 +505,9 @@
     const allN = sum(LANE_IDS, L => sum(BANDS, b => volume(ctx.S, R.sc, L, b))), allKg = sum(LANE_IDS, L => sum(BANDS, b => volume(ctx.S, R.sc, L, b) * (Number(ctx.S.avgKg[b]) || 0)));
     R.perOrder = R.total != null && allN ? R.total / allN : null; R.perKg = R.total != null && allKg ? R.total / allKg : null;
     R.completeness = R.required ? R.filled / R.required : 1;
-    revenueOf(R, ctx);
     R.regions = REGIONS.map(([region, lanes]) => ({region, lanes, cost: R.total == null ? null : sum(lanes, L => R.countries[L].cost),
       state: lanes.every(L => R.countries[L].state === "complete") ? "complete" : "incomplete"}));
     return R;
-  }
-  /* Revenue FlexiTog invoices per country: revenue per order x customer orders; in an S2 distributor country the
-     distributor pays the sales value (S2 setting, else revenue per order x orders) less its discount. Null where a country
-     with orders has no revenue per order. revenueAfter = revenue - logistics cost, with the distributor discount counted
-     once (as lower revenue, so the commercial cost is left out of the cost here): it equals gross sales - total cost. */
-  function revenueOf(R, ctx) {
-    const missing = [];
-    LANE_IDS.forEach(L => {
-      const c = R.countries[L], aov = Number(ctx.S.revenuePerOrder[L]), dist = R.id === "S2" && R.distributors && R.distributors.includes(L);
-      c.revenue = null; c.revenueAfter = null;
-      if (!(c.shipments > 0)) { c.revenue = 0; c.revenueAfter = R.total != null ? -(c.cost - c.types.commercial) : null; return; }
-      const gross = dist && c.salesBase > 0 ? c.salesBase : aov > 0 ? aov * c.shipments : null;
-      if (gross == null) { missing.push(L); return; }
-      c.revenue = gross - c.types.commercial;
-      c.revenueAfter = R.total != null ? c.revenue - (c.cost - c.types.commercial) : null;
-    });
-    R.revenueMissing = missing;
-    const cs = Object.values(R.countries);
-    R.revenue = missing.length ? null : sum(cs, c => c.revenue);
-    R.revenueAfter = missing.length || R.total == null ? null : R.revenue - (R.total - R.types.commercial);
-    R.revenueTag = missing.length ? null : R.id === "S2" && !R.tags.includes("excludes distributor margin") ? "derived" : "assumption";
   }
   /* Cost per order of a class in a country for one scenario result: the M1 price for direct volume; for stock volume the
      delivery and handling of the class plus the country's share of the warehouse-wide costs per stock order; for a
@@ -718,6 +689,67 @@
     return out;
   }
 
+  // ================================================================== internal revenue
+  /* Confidential: revenue lives only inside the tool (its own browser key), never in an RFQ template, a provider file,
+     follow-up question text or a default export. Settings: USD, the exchange rate to EUR, net revenue excl. VAT per
+     volume case, revenue per country per case (blank: the case total split by the country's share of shipments) and the
+     distributor discount % on sales per country (S2). */
+  const nulls = () => Object.fromEntries(LANE_IDS.map(L => [L, null]));
+  const REVENUE_DEFAULTS = () => ({currency: "USD", fx: 0.8607, total: {A: 1030000, B: 2400000}, last12: 514000,
+    byCountry: {A: nulls(), B: nulls()}, discount: Object.fromEntries(LANE_IDS.map(L => [L, 0]))});
+  const numOr = (v, d) => (v === null || v === undefined || v === "" || !Number.isFinite(Number(v)) ? d : Number(v));
+  function revenueSettings(r) {
+    const d = REVENUE_DEFAULTS(), o = r || {}, bc = o.byCountry || {};
+    return {currency: "USD", fx: numOr(o.fx, d.fx), total: {A: numOr((o.total || {}).A, d.total.A), B: numOr((o.total || {}).B, d.total.B)}, last12: numOr(o.last12, d.last12),
+      byCountry: {A: Object.fromEntries(LANE_IDS.map(L => [L, numOr((bc.A || {})[L], null)])), B: Object.fromEntries(LANE_IDS.map(L => [L, numOr((bc.B || {})[L], null)]))},
+      discount: Object.fromEntries(LANE_IDS.map(L => [L, Math.max(0, Math.min(100, numOr((o.discount || {})[L], 0)))]))};
+  }
+  // Revenue per country of a volume case in USD: the value set, else the case total x the country's share of shipments.
+  function revenueByCountry(revIn, settingsIn, sc) {
+    const rv = revenueSettings(revIn), S = withDefaults(settingsIn), n = L => sum(BANDS, b => volume(S, sc, L, b)), all = sum(LANE_IDS, n);
+    const countries = Object.fromEntries(LANE_IDS.map(L => { const v = rv.byCountry[sc][L];
+      return [L, v != null ? {usd: v, allocated: false, shipments: n(L)} : {usd: all ? rv.total[sc] * n(L) / all : 0, allocated: true, shipments: n(L)}]; }));
+    return {sc, countries, allocated: LANE_IDS.filter(L => countries[L].allocated), usd: sum(LANE_IDS, L => countries[L].usd), shipments: all, fx: rv.fx};
+  }
+  /* Cost against revenue for each ranked scenario of a scenarios() result, in total, per region and per country.
+     revenue EUR = USD x rate; net = revenue less the distributor discount in S2 distributor countries;
+     pct = cost / net revenue EUR; per1000 = cost EUR per USD 1,000 of net revenue; contribution = net revenue EUR - cost
+     (before product cost and other overheads). coveredOnly: the scenario does not cover every shipment, so its cost and %
+     cover the covered shipments only. mult scales revenue with the volumes (sensitivity). */
+  function revenueView(out, revIn, settingsIn, mult) {
+    const sc = out.S1.sc, base = revenueByCountry(revIn, settingsIn, sc), rv = revenueSettings(revIn), m = mult == null ? 1 : mult, fx = rv.fx;
+    const block = (R, lanes, whole) => {
+      const dist = L => R.id === "S2" && R.distributors && R.distributors.includes(L);
+      const usd = sum(lanes, L => base.countries[L].usd * m), netUsd = sum(lanes, L => base.countries[L].usd * m * (dist(L) ? 1 - rv.discount[L] / 100 : 1));
+      const cost = R.state === "complete" ? (whole ? R.total : sum(lanes, L => R.countries[L].cost)) : null;
+      const sh = sum(lanes, L => R.countries[L].shipments), cov = sum(lanes, L => R.countries[L].covered);
+      return {usd, eur: usd * fx, netUsd, netEur: netUsd * fx, discountEur: (usd - netUsd) * fx, cost,
+        pct: cost != null && netUsd > 0 ? cost / (netUsd * fx) : null, per1000: cost != null && netUsd > 0 ? cost / (netUsd / 1000) : null,
+        contribution: cost != null ? netUsd * fx - cost : null, coverage: sh ? cov / sh : 1, coveredOnly: sh > 0 && cov < sh - 1e-9};
+    };
+    const scen = {};
+    ["S1", "S2", "S3", "S3b", "S4"].forEach(id => { const R = out[id];
+      scen[id] = {total: block(R, LANE_IDS, true), regions: Object.fromEntries(REGIONS.map(([rg, ls]) => [rg, block(R, ls)])), countries: Object.fromEntries(LANE_IDS.map(L => [L, block(R, [L])]))}; });
+    const ok = Object.keys(scen).filter(id => scen[id].total.pct != null).sort((a, b) => scen[a].total.pct - scen[b].total.pct);
+    return {sc, fx, mult: m, usd: base.usd * m, eur: base.usd * m * fx, perShipmentUsd: base.shipments ? base.usd / base.shipments : null,
+      countries: Object.fromEntries(LANE_IDS.map(L => [L, {usd: base.countries[L].usd * m, eur: base.countries[L].usd * m * fx, allocated: base.countries[L].allocated, discount: rv.discount[L]}])),
+      regions: Object.fromEntries(REGIONS.map(([rg, ls]) => [rg, {usd: sum(ls, L => base.countries[L].usd * m), eur: sum(ls, L => base.countries[L].usd * m) * fx}])),
+      allocated: base.allocated, scenarios: scen, lowest: ok[0] || null};
+  }
+  const PHRASE = {S1: "shipping from Helmond", S2: "a distributor holding stock", S3: "holding stock at a 3PL", S3b: "a dedicated 3PL site", S4: "an own warehouse"};
+  const pct1 = x => `${(Math.round(x * 1000) / 10).toLocaleString("en-GB", {minimumFractionDigits: 1, maximumFractionDigits: 1})}%`;
+  // One sentence per region: logistics cost as % of revenue per complete scenario.
+  function revenueAnswers(view) {
+    return REGIONS.map(([rg]) => {
+      const ids = ["S1", "S2", "S3", "S3b", "S4"].filter(id => view.scenarios[id].regions[rg].pct != null);
+      const where = rg === "GCC" ? "the GCC" : rg;
+      if (!ids.length) return `In ${where}, no complete scenario to set against revenue yet.`;
+      const part = (id, first) => { const b = view.scenarios[id].regions[rg], ph = PHRASE[id];
+        return `${first ? ph : ph.charAt(0).toUpperCase() + ph.slice(1)} costs ${pct1(b.pct)} of ${id === "S2" ? "net revenue" : "revenue"}${b.coveredOnly ? " (covered shipments only)" : ""}.`; };
+      return `In ${where}, ${ids.map((id, i) => part(id, i === 0)).join(" ")}`;
+    });
+  }
+
   // ================================================================== answers (templates, no AI)
   const money0 = x => "EUR " + Math.round(x).toLocaleString("en-GB");
   const sname = id => (SCENARIOS.find(s => s.id === id) || {label: id}).label;
@@ -728,11 +760,6 @@
       const save = r.s1 != null && r.best !== "S1" ? ` It saves ${money0(r.s1 - r.cost)} a year against S1 direct from Helmond (${money0(r.s1)}).` : r.best === "S1" ? " Direct from Helmond is the cheapest complete option here." : "";
       res.push(`${r.region}: the cheapest complete scenario is ${r.best} ${sname(r.best)} at ${money0(r.cost)} a year.${save}`);
     });
-    const withRev = ["S1", "S2", "S3", "S3b", "S4"].filter(k => out[k].state === "complete" && out[k].revenueAfter != null);
-    if (withRev.length) {
-      const top = withRev.slice().sort((a, b) => out[b].revenueAfter - out[a].revenueAfter)[0], R0 = out[top];
-      res.push(`Revenue after logistics cost is highest in ${top} ${sname(top)}: ${money0(R0.revenue)} revenue, ${money0(R0.revenueAfter)} after cost (logistics ${Math.round((R0.revenue - R0.revenueAfter) / R0.revenue * 1000) / 10}% of revenue).${withRev.length > 1 ? " " + withRev.filter(k => k !== top).map(k => `${k} ${money0(out[k].revenueAfter)}`).join(", ") + "." : ""}`);
-    } else if (["S1", "S2", "S3", "S3b", "S4"].some(k => out[k].state === "complete")) res.push("Revenue per scenario needs the revenue per order per country (internal settings on Benchmarking).");
     const be = sens ? Object.entries(sens.breakEven).filter(([, m]) => m != null) : [];
     res.push(be.length ? be.map(([k, m]) => `${k} ${sname(k)} becomes cheaper than S1 from about ${m} times volume case ${out.S1.sc}.`).join(" ")
       : `Neither S3 nor S4 becomes cheaper than S1 between 0.25 and 5 times the volumes${["S3", "S4"].some(k => out[k].state !== "complete") ? " (S3 or S4 is not complete yet)" : ""}.`);
@@ -747,6 +774,6 @@
 
   const api = {VERSION, V23, LEGACY_VERSIONS, OK_CHECK, LANES, LANE_IDS, BANDS, CLASSES, STOCK_BANDS, LOADS, REGIONS, SCENARIOS, TYPES, MULTS,
     DEFAULT_SETTINGS, withDefaults, newSite, strictNumber, convert, valuesOf, versionKind, laneOfText, lanesOfText, quote, completeness,
-    m1Own, m2Own, m5Own, classCost, scenarios, sensitivity, RUBRIC, rubricOf, scoreAnswer, scoreAll, flags, followUps, answers, sname};
+    m1Own, m2Own, m5Own, classCost, scenarios, sensitivity, REVENUE_DEFAULTS, revenueSettings, revenueByCountry, revenueView, revenueAnswers, RUBRIC, rubricOf, scoreAnswer, scoreAll, flags, followUps, answers, sname};
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.FlexiRFQ30 = api;
 })(typeof window !== "undefined" ? window : globalThis);
