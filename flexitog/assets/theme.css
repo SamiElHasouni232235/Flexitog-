@@ -1,0 +1,80 @@
+/* FlexiTog theme: every colour, font, shape and motion token of the dashboard. Components use var(--...) only;
+ * no hex value lives outside this file. Light follows the system, dark follows prefers-color-scheme, and a manual
+ * choice sets data-theme="light" or "dark" on <html> (the theme toggle in the top bar).
+ * Font: Manrope 400 to 800 when the device has it, system-ui otherwise (no font file is bundled yet). */
+:root{
+  color-scheme:light;
+  /* brand tokens */
+  --bg:#EDF1F6; --wash:#D3E5F3; --surface:#FFFFFF; --surface-2:#F2F5F9; --text:#0F1B2D; --muted:#7B8597; --line:#E4E9F0;
+  --navy:#13294B; --navy-2:#24477A; --ice:#2F8FD0; --ice-soft:#E0EFFA; --warn:#B88600; --warn-soft:#FBF0CF;
+  --green:#1C9E6C; --green-soft:#DCF4EA; --bar:#DDE3EC;
+  /* text on strong fills */
+  --on-navy:#FFFFFF; --on-strong:#FFFFFF; --on-light:#0F1B2D;
+  --accent-text:var(--navy-2);
+  /* status (issues, risks, validation) */
+  --st-critical:#C8333B; --st-serious:#E07A4F; --st-warning:var(--warn); --st-info:var(--muted); --ok:var(--green);
+  /* data colours: scenarios, payers, cost parts, regions, suppliers, sequential ramp (validated palettes) */
+  --s-cif_baseline:#8a8984; --s-distributor:#b8329b; --s-3pl:#eb6834; --s-owned_warehouse:#1baf7a;
+  --p-flexitog:#4a3aa7; --p-partner:#eda100; --p-customer:#e87ba4;
+  --lc1:#2a78d6; --lc2:#eb6834; --lc3:#1baf7a; --lc4:#eda100; --lc5:#e87ba4; --lc6:#008300;
+  --r-TR:#2a78d6; --r-NAF:#eb6834; --r-GCC:#1baf7a; --r-OTH:#8a8984;
+  --supplier:#2a78d6; --supplier-land:#86b6ef; --supplier-mark:#0d366b;
+  --q1:#8070d6; --q2:#6553c7; --q3:#4f3db0; --q4:#3b2c8f; --q5:#281d66;
+  /* map */
+  --sea:var(--wash); --land:var(--bar); --land-edge:var(--surface); --land-study:#C9D2DE;
+  --marker-fill:#FFFFFF; --marker-edge:var(--text);
+  /* names the existing views use, mapped onto the brand tokens */
+  --ground:var(--bg); --ink:var(--text); --faint:var(--muted); --rule:var(--line);
+  --accent:var(--navy); --accent-ink:var(--on-navy); --accent-soft:var(--ice-soft); --band:var(--warn-soft); --band-edge:var(--warn);
+  /* type */
+  --font:"Manrope",system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+  --display:var(--font); --body:var(--font); --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  /* shape and motion */
+  --radius-card:24px; --pad-card:20px; --radius-pill:999px; --radius-field:12px;
+  --shadow-card:0 1px 2px rgb(15 27 45 / .04),0 10px 28px rgb(15 27 45 / .07);
+  --shadow-lift:0 2px 4px rgb(15 27 45 / .05),0 18px 40px rgb(15 27 45 / .12);
+  --shadow-pop:0 8px 24px rgb(15 27 45 / .18); --shadow-drawer:-12px 0 32px rgb(15 27 45 / .18); --scrim:rgb(12 18 32 / .38);
+  --lift:-5px; --ease:cubic-bezier(.2,.7,.2,1); --dur:.18s;
+  /* print and export documents (PDF, Word, HTML report): always light */
+  --print-ink:#0F1B2D; --print-muted:#5B6678; --print-rule:#D5DCE6; --print-bg:#FFFFFF; --print-head:#EDF1F6;
+  --print-accent:#13294B; --print-band:#E0EFFA; --print-warn-bg:#FBF0CF; --print-warn:#B88600;
+  --print-critical:#C8333B; --print-serious:#E07A4F; --print-warning:#E8B321; --print-info:#7B8597;
+  --print-r-TR:#2a78d6; --print-r-NAF:#eb6834; --print-r-GCC:#1baf7a; --print-r-OTH:#8a8984;
+  --print-q1:#b9b0ea; --print-q2:#8070d6; --print-q3:#6553c7; --print-q4:#4f3db0; --print-q5:#281d66;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  color-scheme:dark;
+  --bg:#0C1220; --wash:#15263E; --surface:#141D2C; --surface-2:#1B2637; --text:#EDF2F8; --muted:#8B96A8; --line:#243146;
+  --navy:#1D3B68; --navy-2:#2C5590; --ice:#5DB4EC; --ice-soft:#16324A; --warn:#F0C23A; --warn-soft:#3A3013;
+  --green:#3CC98F; --green-soft:#153A2B; --bar:#2A3548;
+  --on-navy:#EDF2F8; --accent-text:var(--ice);
+  --s-cif_baseline:#8f8e89; --s-distributor:#c94fb0; --s-3pl:#d95926; --s-owned_warehouse:#199e70;
+  --p-flexitog:#9085e9; --p-partner:#c98500; --p-customer:#d55181;
+  --lc1:#3987e5; --lc2:#d95926; --lc3:#199e70; --lc4:#c98500; --lc5:#d55181; --lc6:#008300;
+  --r-TR:#3987e5; --r-NAF:#d95926; --r-GCC:#199e70; --r-OTH:#8f8e89;
+  --supplier:#3987e5; --supplier-land:#104281; --supplier-mark:#cde2fb;
+  --q1:#6e5fd0; --q2:#8d80e2; --q3:#aaa0ee; --q4:#c6bff5; --q5:#e2defb;
+  --land-study:#34425A; --marker-edge:var(--bg);
+  --shadow-card:0 1px 2px rgb(0 0 0 / .3),0 10px 28px rgb(0 0 0 / .28);
+  --shadow-lift:0 2px 4px rgb(0 0 0 / .35),0 18px 40px rgb(0 0 0 / .4);
+}}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#0C1220; --wash:#15263E; --surface:#141D2C; --surface-2:#1B2637; --text:#EDF2F8; --muted:#8B96A8; --line:#243146;
+  --navy:#1D3B68; --navy-2:#2C5590; --ice:#5DB4EC; --ice-soft:#16324A; --warn:#F0C23A; --warn-soft:#3A3013;
+  --green:#3CC98F; --green-soft:#153A2B; --bar:#2A3548;
+  --on-navy:#EDF2F8; --accent-text:var(--ice);
+  --s-cif_baseline:#8f8e89; --s-distributor:#c94fb0; --s-3pl:#d95926; --s-owned_warehouse:#199e70;
+  --p-flexitog:#9085e9; --p-partner:#c98500; --p-customer:#d55181;
+  --lc1:#3987e5; --lc2:#d95926; --lc3:#199e70; --lc4:#c98500; --lc5:#d55181; --lc6:#008300;
+  --r-TR:#3987e5; --r-NAF:#d95926; --r-GCC:#199e70; --r-OTH:#8f8e89;
+  --supplier:#3987e5; --supplier-land:#104281; --supplier-mark:#cde2fb;
+  --q1:#6e5fd0; --q2:#8d80e2; --q3:#aaa0ee; --q4:#c6bff5; --q5:#e2defb;
+  --land-study:#34425A; --marker-edge:var(--bg);
+  --shadow-card:0 1px 2px rgb(0 0 0 / .3),0 10px 28px rgb(0 0 0 / .28);
+  --shadow-lift:0 2px 4px rgb(0 0 0 / .35),0 18px 40px rgb(0 0 0 / .4);
+}
+@media (prefers-reduced-motion:reduce){
+  :root{--dur:0s;--lift:0px}
+  *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}
+}
