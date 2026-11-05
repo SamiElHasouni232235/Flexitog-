@@ -576,8 +576,21 @@ dummy badge). Rows without a provider type (distributors, owned warehouses) stay
 RFQ status per provider: Not sent, Sent (set by hand, or by Prefilled RFQ), Answered (after a confirmed
 upload).
 
-The RFQ is the modular RFQ MENA-TR v3.0 (`meta.rfq_version` "RFQ-MENA-TR-MODULAR v3.0",
-`flexitog/assets/rfq/FlexiTog_RFQ_MENA-TR_v3.0.xlsx`). A provider answers the modules it offers
+The RFQ is the modular RFQ MENA-TR v3.1 (`meta.rfq_version` "RFQ-MENA-TR-MODULAR v3.1",
+`flexitog/assets/rfq/FlexiTog_RFQ_MENA-TR_v3.1.xlsx`, served by Download latest RFQ). v3.0 answers
+("RFQ-MENA-TR-MODULAR v3.0") still import with the same parser; v3.1 only adds keys. Each version keeps its own cell map
+(`rfq_v30` and `rfq_template` in the payload), because v3.1 moved the M4 cells; a warehouse-only v3.1 template is bundled
+when `flexitog/assets/rfq/FlexiTog_RFQ_MENA-TR_v3.1_Warehouse_only.xlsx` exists (`rfq_v31w`).
+
+v3.1 additions:
+- `meta.variant` "full" or "warehouse". A warehouse file holds M3, M4, M5 and the questions; M1, M2 and M6 show as "not
+  part of this file" (chips "M1 –", detail tabs, preview), never as missing, and raise no F6, no F9 and no follow-up
+  question. The forwarder score shows n/a.
+- `meta.stock.S01` to `S07`: the stock profile FlexiTog sent (articles and SKUs, average stock, inbound, outbound,
+  process, delivery target, system), shown as "Stock profile sent" in the provider detail, with an info note when the
+  pallet number in S02 differs from the setting "average pallets in stock" (the S3 storage cost uses the setting).
+- `m4.A/B.W24` order cut-off for same-day dispatch (Excel time fraction or HH:MM, 0.625 = 15:00), `W25` quality check
+  per order (EUR), `W26` how orders reach the 3PL (API, EDI, Portal upload, E-mail). A provider answers the modules it offers
 (`module.M1.offered` to `module.M6.offered`):
 - M1 direct from Helmond: 33 test shipments T01 to T33 (lane L01 to L09, band B1 to B5, size S 8 kg, M 52 kg,
   L 261 kg, XL 941 kg, XXL 2,380 kg), service, all-in DAP price, transit.
@@ -641,7 +654,11 @@ Scenarios (`flexitog/assets/rfq_v30.js`, `window.FlexiRFQ30`), per volume case. 
   warehouse; XL, XXL and the rest go direct (S1).
   - delivery = stock orders × M5 price of the lane and size from the chosen warehouse
   - handling per order = W11 + (W10 × cartons, else W09 × order lines) + W12 × pallets (+ W13 × cartons with
-    labelling)
+    labelling) + W25 quality check (0 when blank)
+  - next-day GCC from stock (v3.1): counts only when M5 next_day is Yes and W24 is at or after the setting "FlexiTog
+    order release time" (12:00); W24 blank shows "unconfirmed". v3.0 files, which do not ask W24, follow the M5 flag
+  - replenishment M2: when the 3PL has no M2 price for the warehouse country and load (a warehouse-only file), the
+    cheapest M2 provider for them, named on the S3 card; without any M2 price S3 is incomplete: "no replenishment price"
   - free-zone exit = stock orders × M3 free-zone exit of the warehouse country (free zone or bonded)
   - loads = ceil(stock kg / load kg); replenishment = loads × (M2 price + M3 clearance + free-zone entry)
   - devanning = loads × W07 (C20) or W08 (C40); inbound = loads × pallets × W06 (P1, P5)
@@ -684,7 +701,9 @@ Scores 0 to 4, two roles per provider:
   (shipments × price) plus one of each M2 lane-load every forwarder prices. Service: on-time share of its S1, Q10,
   Q09, Q11, Q12.
 - 3PL: cost = 4 × lowest / this provider's S3 stock cost (total minus direct) on the countries every 3PL serves.
-  Service: on-time share of its M5 deliveries, then the same items. Options add M4 and M5 completeness.
+  Service: on-time share of its M5 deliveries, then the same items. Options add M4 and M5 completeness and, for
+  v3.1 files, ease of working: W26 (API or EDI 4, Portal upload 2, E-mail 1, blank 0) and W24 (15:00 or later 4,
+  14:00 3, 12:00 2, earlier 1, blank 0), read from the S3 warehouse.
 - Both: quality Q13, Q14 (self-reported, × 0.75), Q15, Q16, Q17 (counted twice), Q18, Q19; options Q20 to Q26.
   A missing answer scores 0 and is listed. Total = weighted average of cost, service, quality and options.
 
@@ -723,6 +742,13 @@ Tests: `tests/test_rfq_v30.py`.
 - Test 3 (blank template), Test 4 (`tests/fixtures/rfq_v30_input_errors.xlsx`, and the Aramex copy when present),
   Test 5 (the v2.3 Aramex file, or its saved Export values `aramex_v23_values.json`, as "v2.3, M1 only" with the same
   S1; the v1 dummy as legacy), module flags and the provider filter always run.
+- RFQ v3.1: `rfq_v31_dummy_reconstructed.xlsx` (the dummy on the v3.1 template with W24 15:00, W25 EUR 0.50, W26 API):
+  S3 EUR 98,210 unchanged with handling 800 and minimum top-up 7,900, next-day yes (no at a 16:00 release time), S1,
+  S2 and S4 unchanged; `rfq_v31_warehouse_reconstructed.xlsx` (warehouse only, Aramex identity): no M1, M2 or M6 flags
+  or follow-ups, m3.L01 EUR 103.20, warehouse A Dubai, UAE, free zone, B Saudi Arabia, free zone, S3 incomplete with M4
+  rates and M5 prices missing, next-day unconfirmed; the blank v3.1 files import without errors; the M2 fallback; v3.0
+  files keep their next-day and scores. The provider's own v3.1 files run when they sit in `tests/fixtures/` under
+  their names.
 - Internal revenue: with the defaults, revenue A EUR 886,521.00 and B EUR 2,065,680.00, S1 21.23% and 21.60% of
   revenue (covered shipments only), USD 7,304.96 and 7,294.83 per shipment, Saudi Arabia A USD 365,248.23, GCC A
   EUR 679,037.36 at 24.17% and B 24.71% (on the Aramex v3.0 file when present, else the v2.3 Aramex values with the

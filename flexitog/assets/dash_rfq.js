@@ -127,6 +127,8 @@ function cardHtml(id, best){
     sub = `${eur(x.perOrder, 2)} per order${id !== "S1" && s1 != null ? ` · ${x.cost <= s1 ? "saves" : "costs"} ${eur(Math.abs(s1 - x.cost))} against S1` : ""}`;
     if (x.rv && x.rv.pct != null) sub += `<br><span class="rqrev" title="${esc(`Internal revenue ${eur(x.rv.netEur)}${id === "S2" ? " net of the distributor discount" : ""}; contribution after logistics, before product cost and other overheads`)}">${ofRev(x.rv, id)} · contribution ${eur(x.rv.contribution)}</span>`;
   } else { main = stateLine(R); sub = esc(missingText(R)); }
+  if ((id === "S3" || id === "S3b") && R.nextDayState && R.state !== "not_configured") sub += `<br><span title="${esc(`M5 next day = Yes and the 3PL order cut-off (W24${R.cutoff ? ` ${R.cutoff}` : ", not given"}) at or after the FlexiTog release time ${R.releaseTime}`)}">Next-day GCC: <b>${R.nextDayState}</b>${R.cutoff ? ` · cut-off ${esc(R.cutoff)}` : ""}</span>`;
+  if ((id === "S3" || id === "S3b") && R.m2Fallback && R.state !== "not_configured") sub += `<br><span class="faint">M2 from ${esc(R.m2Fallback)} (cheapest; the 3PL quotes no M2)</span>`;
   return `<div class="rqcard${best === id ? " best" : ""}${R.state === "complete" || R.state === "indicative" ? "" : " off"}" style="--sc:${COLOR[id]}">
     <div class="rqch"><b>${id}</b><span>${esc(s.label)}</span>${best === id ? '<em class="rqbest">cheapest</em>' : ""}</div>
     <div class="rqcv">${main}</div><small>${sub}</small>

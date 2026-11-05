@@ -16,7 +16,7 @@
 (function (root) {
   "use strict";
 
-  const VERSION = "RFQ-MENA-TR-MODULAR v3.0", V23 = "RFQ-MENA-TR-QUICK v2.3", LEGACY_VERSIONS = ["RFQ-MENA-TR v1.0"];
+  const VERSION = "RFQ-MENA-TR-MODULAR v3.0", V31 = "RFQ-MENA-TR-MODULAR v3.1", MODULAR = [VERSION, V31], V23 = "RFQ-MENA-TR-QUICK v2.3", LEGACY_VERSIONS = ["RFQ-MENA-TR v1.0"];
   const OK_CHECK = "No problems found";
   const LANES = {
     L01: {country: "SA", name: "Saudi Arabia", region: "GCC", gcc: true, alias: ["saudi", "ksa", "riyadh", "jeddah", "dammam"]},
@@ -66,6 +66,7 @@
     kgPerPallet: 250,
     targetDays: {L01: 2, L02: 2, L03: 2, L04: 2, L05: 3, L06: 3, L07: 5, L08: 4, L09: 4},
     volumeYear: 2027,
+    releaseTime: "12:00",   // FlexiTog order release time: S3 next-day needs the 3PL's cut-off (W24) at or after it
     s2: Object.fromEntries(LANE_IDS.map(L => [L, {on: false, loads: zeroLoads()}])),   // the distributor discount is internal revenue data (revenueSettings)
     s3: {provider: "", warehouse: "A", country: null, served: null, share: Object.fromEntries(LANE_IDS.map(L => [L, 100])), avgPallets: null, load: "C20",
       labelling: false, amortYears: 3, carryingPct: 0, stockValue: 0, moduleSource: "same"},   // carrying cost and stock value: input from Finance
@@ -108,12 +109,14 @@
   }
   // Keys that must hold a number or stay blank; text there is invalid, listed by key and left out of every sum.
   const NUMERIC = [/^m1\.T\d+\.(price_eur|transit_days)$/, /^m2\.B\d+\.(price_eur|transit_days|alt_price_eur|alt_transit_days)$/,
-    /^m3\.L\d+\.(clearance_eur|fz_entry_eur|fz_exit_eur|clearance_days)$/, /^m4\.[AB]\.W(0[5-9]|1\d|2[013])$/, /^m5\.D\d+\.(price_eur|transit_days)$/,
+    /^m3\.L\d+\.(clearance_eur|fz_entry_eur|fz_exit_eur|clearance_days)$/, /^m4\.[AB]\.W(0[5-9]|1\d|2[0135])$/, /^m5\.D\d+\.(price_eur|transit_days)$/,
     /^m6\.O04$/, /^m6\.P\d\.price_eur$/, /^q\.Q(08|11)\.answer$/, /^ship\.T\d+\.opt[123]_(delivery_)?price_eur$/, /^ship\.T\d+\.opt[123]_transit_days$/];
   const PERCENT = [/^q\.Q(06|13|14|27)\.answer$/, /^m4\.[AB]\.W22$/];
-  const isNumericKey = k => NUMERIC.some(re => re.test(k)), isPercentKey = k => PERCENT.some(re => re.test(k));
+  const TIME = [/^m4\.[AB]\.W24$/];   // Excel time fraction (0.625 = 15:00) or "15:00"
+  const isNumericKey = k => NUMERIC.some(re => re.test(k)), isPercentKey = k => PERCENT.some(re => re.test(k)), isTimeKey = k => TIME.some(re => re.test(k));
   function convert(raw, type, key) {
     if (isBlank(raw)) return "";
+    if (key && isTimeKey(key)) return convert(raw, "time");
     if (key && (isNumericKey(key) || isPercentKey(key))) {
       const n = strictNumber(raw); if (n === null) return String(raw).trim();
       if (isPercentKey(key)) return typeof raw === "string" && raw.includes("%") ? n : n > 1.5 ? n / 100 : n;   // fractions; 95 written whole becomes 0.95
@@ -146,7 +149,8 @@
     Object.keys(P.rawValues || P.values || {}).forEach(k => { out[k] = convert((P.rawValues || {})[k] !== undefined ? P.rawValues[k] : P.values[k], (P.types || {})[k], k); });
     return out;
   }
-  const versionKind = v => (v === VERSION ? "v30" : v === V23 ? "v23" : LEGACY_VERSIONS.includes(v) ? "legacy" : "unknown");
+  // v3.0 and v3.1 share one parser ("v30"): v3.1 only adds keys
+  const versionKind = v => (MODULAR.includes(v) ? "v30" : v === V23 ? "v23" : LEGACY_VERSIONS.includes(v) ? "legacy" : "unknown");
   const minutes = t => { const m = String(t || "").match(/^(\d{1,2}):(\d{2})$/); return m ? Number(m[1]) * 60 + Number(m[2]) : null; };
   // The lane a free text names ("Dubai, UAE" -> L02), or null.
   function laneOfText(t) {
@@ -185,8 +189,9 @@
         altMode: txt(`m2.${id}.alt_mode`), altPrice: num(`m2.${id}.alt_price_eur`), altTransit: num(`m2.${id}.alt_transit_days`), comment: txt(`m2.${id}.comment`)}));
       ids(/^m3\.(L\d+)\.clearance_eur$/).forEach(L => { m3[L] = {clearance: num(`m3.${L}.clearance_eur`), fzEntry: num(`m3.${L}.fz_entry_eur`), fzExit: num(`m3.${L}.fz_exit_eur`),
         deposit: txt(`m3.${L}.deposit`), days: num(`m3.${L}.clearance_days`), comment: txt(`m3.${L}.comment`)}; });
-      ["A", "B"].forEach(w => { for (let i = 1; i <= 23; i++) { const id = "W" + pad(i), k = `m4.${w}.${id}`; m4[w][id] = i <= 4 ? (txt(k) || null) : num(k); } });
-      for (let i = 1; i <= 23; i++) m4.comments["W" + pad(i)] = txt(`m4.W${pad(i)}.comment`);
+      // W01 to W04 and W26 (order intake) are text, W24 a cut-off time "HH:MM", the rest numbers
+      ["A", "B"].forEach(w => { for (let i = 1; i <= 26; i++) { const id = "W" + pad(i), k = `m4.${w}.${id}`; m4[w][id] = i <= 4 || i === 24 || i === 26 ? (txt(k) || null) : num(k); } });
+      for (let i = 1; i <= 26; i++) m4.comments["W" + pad(i)] = txt(`m4.W${pad(i)}.comment`);
       m5 = ids(/^m5\.(D\d+)\.lane$/).map(id => ({id, lane: txt(`m5.${id}.lane`), band: txt(`m5.${id}.band`), size: txt(`m5.${id}.size`), kg: Number(v[`m5.${id}.gross_kg`]) || null,
         cartons: Number(v[`m5.${id}.cartons`]) || null, warehouse: txt(`m5.${id}.warehouse`).toUpperCase(), price: num(`m5.${id}.price_eur`), transit: num(`m5.${id}.transit_days`),
         nextDay: txt(`m5.${id}.next_day`), comment: txt(`m5.${id}.comment`)}));
@@ -194,16 +199,32 @@
         lines: ids(/^m6\.(P\d)\.desc$/).map(id => ({id, desc: txt(`m6.${id}.desc`), unit: txt(`m6.${id}.unit`).toLowerCase(), price: num(`m6.${id}.price_eur`)})).filter(l => l.desc || l.price != null)};
       ["M1", "M2", "M3", "M4", "M5", "M6"].forEach(M => { const x = txt(`module.${M}.offered`); modules[M] = /^y/i.test(x) ? "Yes" : /^n/i.test(x) ? "No" : ""; });
     }
-    const Q = {version, kind, tag: kind === "v23" ? "v2.3, M1 only" : kind === "v30" ? "v3.0" : kind, inputCheck: isBlank(v["meta.input_check"]) ? null : String(v["meta.input_check"]),
+    // v3.1: a warehouse-only file holds M3, M4, M5 and the questions; M1, M2 and M6 are not part of it (never "missing")
+    const minor = version === V31 ? "3.1" : kind === "v30" ? "3.0" : null;
+    const variant = minor === "3.1" && /^warehouse/i.test(txt("meta.variant")) ? "warehouse" : "full";
+    const inFile = Object.fromEntries(["M1", "M2", "M3", "M4", "M5", "M6"].map(M => [M, variant !== "warehouse" || ["M3", "M4", "M5"].includes(M)]));
+    if (variant === "warehouse") ["M1", "M2", "M6"].forEach(M => { modules[M] = ""; });
+    const stock = Object.fromEntries(STOCK_FIELDS.map(([id]) => [id, txt(`meta.stock.${id}`)]));
+    const Q = {version, kind, minor, variant, inFile, stock, tag: kind === "v23" ? "v2.3, M1 only" : minor === "3.1" ? (variant === "warehouse" ? "v3.1, warehouse only" : "v3.1") : kind === "v30" ? "v3.0" : kind, inputCheck: isBlank(v["meta.input_check"]) ? null : String(v["meta.input_check"]),
       contact: txt("meta.contact"), deadline: txt("meta.deadline"), modules, m1, m2, m3, m4, m5, m6, q, invalid,
       name: q.Q01.answer || "", validUntil: q.Q05.answer || ""};
     Q.priced = pricedModules(Q);
     // offered but not priced, or marked No but holding prices (prices used)
-    Q.moduleNotes = ["M1", "M2", "M3", "M4", "M5", "M6"].flatMap(M => (Q.modules[M] === "Yes" && !Q.priced[M] ? [{module: M, note: "offered but not priced"}]
+    Q.moduleNotes = ["M1", "M2", "M3", "M4", "M5", "M6"].filter(M => inFile[M]).flatMap(M => (Q.modules[M] === "Yes" && !Q.priced[M] ? [{module: M, note: "offered but not priced"}]
       : Q.modules[M] === "No" && Q.priced[M] ? [{module: M, note: "marked No but holds prices; the prices are used"}] : []));
     return Q;
   }
-  const W_RATES = Array.from({length: 19}, (_, i) => "W" + pad(i + 5));
+  const W_RATES = Array.from({length: 19}, (_, i) => "W" + pad(i + 5)).concat("W25");
+  // the stock profile FlexiTog sent with a v3.1 file (meta.stock.S01 to S07)
+  const STOCK_FIELDS = [["S01", "Articles and SKUs"], ["S02", "Average stock"], ["S03", "Inbound"], ["S04", "Outbound"], ["S05", "Process"], ["S06", "Delivery target"], ["S07", "System"]];
+  const firstNumber = t => { const m = String(t == null ? "" : t).replace(/(\d),(\d{3})/g, "$1$2").match(/-?\d+(\.\d+)?/); return m ? Number(m[0]) : null; };
+  // Info note when the pallets in the stock profile sent (S02) differ from the internal setting "average pallets in stock".
+  function stockNote(Q, settingsIn) {
+    if (!Q.stock || !Q.stock.S02) return null;
+    const sent = firstNumber(Q.stock.S02), set = withDefaults(settingsIn).s3.avgPallets;
+    if (sent == null || set == null || Number(sent) === Number(set)) return null;
+    return `The stock profile sent says ${Q.stock.S02} (S02); the internal setting "average pallets in stock" is ${set}.`;
+  }
   function pricedModules(Q) {
     return {M1: Q.m1.some(r => r.price != null), M2: Q.m2.some(r => r.price != null || r.altPrice != null),
       M3: Object.values(Q.m3).some(x => x.clearance != null || x.fzEntry != null || x.fzExit != null),
@@ -326,9 +347,10 @@
   // Transport and customs into the warehouse country: a fixed M2 / M3 provider in the filter, else the same provider, or the cheapest per module.
   function inbound(ctx, R, p, source, lane, load, fz) {
     const of = M => { const f = chosen(ctx, M); return f !== "best" ? ctx.list.filter(x => x.id === f) : source === "cheapest" ? ctx.list : [p]; };
-    const t = pick(of("M2"), "best", Q => m2Own(Q, lane, load));
-    const keyT = m2Key(p.Q, lane, load);
-    need(R, !!t, `${keyT} (${load} to ${LANES[lane].name})`);
+    let t = pick(of("M2"), "best", Q => m2Own(Q, lane, load));
+    // the warehouse provider has no M2 price (for example a warehouse-only file): the cheapest M2 provider for the country and load
+    if (!t && chosen(ctx, "M2") === "best" && source !== "cheapest") { t = pick(ctx.list, "best", Q => m2Own(Q, lane, load)); if (t) R.m2Fallback = t.name; }
+    need(R, !!t, t ? "" : ctx.list.some(x => m2Own(x.Q, lane, load)) ? `${m2Key(p.Q, lane, load)} (${load} to ${LANES[lane].name})` : `no replenishment price (M2 ${load} to ${LANES[lane].name})`);
     const m3 = pick(of("M3"), "best", Q => (Q.m3[lane] && Q.m3[lane].clearance != null ? {price: Q.m3[lane].clearance, fzEntry: Q.m3[lane].fzEntry, fzExit: Q.m3[lane].fzExit} : null));
     need(R, !!m3, `m3.${lane}.clearance_eur`);
     if (fz) { need(R, !!(m3 && m3.fzEntry != null), `m3.${lane}.fz_entry_eur`); need(R, !!(m3 && m3.fzExit != null), `m3.${lane}.fz_exit_eur`); }
@@ -374,6 +396,10 @@
     const load = LOADS[set.load] ? set.load : "C20";
     if (load === "C20") need(R, W.W07 != null, `m4.${wh}.W07`); else if (load === "C40") need(R, W.W08 != null, `m4.${wh}.W08`); else need(R, W.W06 != null, `m4.${wh}.W06`);
     const io = whLane ? inbound(ctx, R, p, set.moduleSource, whLane, load, fz) : {t: null, m3: null};
+    // next-day from stock counts only when M5 next_day is Yes and the order cut-off (W24) is at or after FlexiTog's release time
+    // v3.0 files do not ask the cut-off: next-day there follows the M5 flag alone, as before v3.1
+    const asks = p.Q.minor !== "3.0", cut = minutes(W.W24), release = minutes(ctx.S.releaseTime) ?? 720, cutOk = !asks || (cut != null && cut >= release);
+    R.cutoff = W.W24 || null; R.releaseTime = ctx.S.releaseTime;
     // delivery from the warehouse, per stock order
     cls.forEach(x => {
       const d = m5Own(p.Q, wh, x.L, x.b, ctx.S);
@@ -382,10 +408,11 @@
       const c = R.countries[x.L];
       c.shipments += x.n; c.covered += x.n; c.measured += x.n; c.orders += x.n; c.kg += x.n * (Number(ctx.S.avgKg[x.b]) || 0);
       if (d.transit != null && d.transit <= Number(ctx.S.targetDays[x.L])) c.onTime += x.n;
-      if (LANES[x.L].gcc && d.nextDay && !R.nextDay.includes(x.L)) R.nextDay.push(x.L);
+      if (LANES[x.L].gcc && d.nextDay && cutOk && !R.nextDay.includes(x.L)) R.nextDay.push(x.L);
       add(R, x.L, "delivery", "delivery", x.n * d.price);
       if (!o.dedicated) {
-        const h = (W.W11 || 0) + (W.W10 != null ? W.W10 * cart(x.b) : (W.W09 || 0) * lines(x.b)) + (W.W12 || 0) * pal(x.b) + (set.labelling ? (W.W13 || 0) * cart(x.b) : 0);
+        const h = (W.W11 || 0) + (W.W10 != null ? W.W10 * cart(x.b) : (W.W09 || 0) * lines(x.b)) + (W.W12 || 0) * pal(x.b) + (set.labelling ? (W.W13 || 0) * cart(x.b) : 0)
+          + (W.W25 || 0);   // quality check per order (v3.1)
         add(R, x.L, "handling", "handling", x.n * h);
         c.byClass[x.b] = Object.assign(c.byClass[x.b] || {}, {delivery: d.price, handling: h, tag: d.tag});
         c.stock += x.n; c.stockDH += x.n * (d.price + h);
@@ -393,6 +420,9 @@
       if (fz && io.m3 && io.m3.fzExit != null) add(R, x.L, "fzExit", "customs", x.n * io.m3.fzExit);
     });
     used(R, "M5", p.name);
+    // next-day GCC from the warehouse: yes, no, or unconfirmed while the 3PL gives no cut-off time (W24)
+    const ndLanes = LANE_IDS.filter(L => LANES[L].gcc && R.served.includes(L) && p.Q.m5.some(r0 => r0.lane === L && (!r0.warehouse || r0.warehouse === wh) && /^y/i.test(r0.nextDay)));
+    R.nextDayState = asks && cut == null ? "unconfirmed" : R.nextDay.length || (cutOk && ndLanes.length) ? "yes" : "no";
     // replenishment, inbound, storage, fixed, minimum, carrying: warehouse-wide, spread by kg or orders
     const loadKg = io.t ? io.t.kg : LOADS[load].kg, loads = totKg > 0 ? Math.ceil(totKg / loadKg - 1e-9) : 0;
     R.loads = loads; R.load = load;
@@ -575,12 +605,15 @@
       {id: "Q22", label: "Road groupage", starts: [["All 9 countries", 4], ["Some", 2]]}, {id: "Q23", label: "Sea freight", starts: [["All 9 countries", 4], ["Some", 2]]},
       {id: "Q24", label: "Import clearance for the consignee", starts: [["All 9 countries", 4], ["Some", 2]]}, {id: "Q25", label: "DDP service", starts: [["All 9 countries", 4], ["Some", 2]]},
       {id: "Q26", label: "EUR.1 / A.TR origin documents", starts: [["Yes free", 4], ["Yes against", 3]]},
-      {id: "M4", label: "M4 warehouse completeness", kind: "complete", role: "threepl"}, {id: "M5", label: "M5 delivery completeness", kind: "complete", role: "threepl"}],
+      {id: "M4", label: "M4 warehouse completeness", kind: "complete", role: "threepl"}, {id: "M5", label: "M5 delivery completeness", kind: "complete", role: "threepl"},
+      // ease of working with the 3PL (v3.1 fields; not scored for v3.0 files, which do not ask them)
+      {id: "W26", label: "How orders reach the 3PL (W26)", kind: "m4", role: "threepl", since: "3.1", starts: [["API", 4], ["EDI", 4], ["Portal", 2], ["E-mail", 1], ["Email", 1]]},
+      {id: "W24", label: "Order cut-off for same-day dispatch (W24)", kind: "m4", role: "threepl", since: "3.1", time: [["15:00", 4], ["14:00", 3], ["12:00", 2], ["00:00", 1]]}],
   };
   const rubricOf = S => (S && S.rubric && Array.isArray(S.rubric.service) ? S.rubric : RUBRIC);
   const pctS = x => `${Math.round(x * 1000) / 10}%`;
-  function scoreAnswer(item, Q) {
-    const a = (Q.q[item.id] || {}).answer;
+  function scoreAnswer(item, Q, wh) {
+    const a = item.kind === "m4" ? Q.m4[wh || "A"][item.id] : (Q.q[item.id] || {}).answer;
     if (isBlank(a)) return {points: 0, reason: "no answer", missing: true};
     if (item.starts) { const s = String(a).trim().toLowerCase(), hit = item.starts.find(([pfx]) => s.startsWith(String(pfx).toLowerCase())); return {points: hit ? hit[1] : 0, reason: `"${a}"`}; }
     if (item.time) { const m = minutes(a); if (m == null) return {points: 0, reason: `"${a}" is not a time`, missing: true}; const hit = item.time.find(([t]) => m >= minutes(t)); return {points: hit ? hit[1] : 0, reason: `cut-off ${a}`}; }
@@ -626,7 +659,11 @@
         return {id: "ontime", label: rub.service[0].label, points: hit ? hit[1] : 0, reason: `${fmt2(scen.onTime).replace(/\.00$/, "")} of ${fmt2(scen.measured).replace(/\.00$/, "")} shipments within the lane target (${pctS(share)})`};
       };
       const shared = role => [area("service", "Service", [onTime(role)].concat(rub.service.slice(1).map(it => item(it, p.Q)))), area("quality", "Quality", rub.quality.map(it => item(it, p.Q)))];
-      const opts = role => area("options", "Options", rub.options.filter(it => !it.role || it.role === role).map(it => it.kind === "complete" ? {id: it.id, label: it.label, weight: 1, points: 4 * comp[it.id], reason: pctS(comp[it.id]) + " of the module filled"} : item(it, p.Q)));
+      const wh3 = S.s3.provider === p.id ? S.s3.warehouse : "A";
+      const applies = it => (!it.role || it.role === role0) && (!it.since || (p.Q.minor && p.Q.minor >= it.since));
+      let role0 = null;
+      const opts = role => { role0 = role; return area("options", "Options", rub.options.filter(applies).map(it => it.kind === "complete" ? {id: it.id, label: it.label, weight: 1, points: 4 * comp[it.id], reason: pctS(comp[it.id]) + " of the module filled"}
+        : it.kind === "m4" ? Object.assign({id: it.id, label: `${it.label}, warehouse ${wh3}`, weight: it.weight || 1}, scoreAnswer(it, p.Q, wh3)) : item(it, p.Q))); };
       const fc = fw.includes(p) ? fwCost(p) : 0, tc = tpCost[p.id];
       const costF = {key: "cost", label: "Cost", items: [{id: "cost", label: "S1 and M2 cost against the lowest", points: fc > 0 && Number.isFinite(fwLow) ? 4 * fwLow / fc : 0,
         reason: fc > 0 ? `EUR ${fmt2(fc)} on ${cells.length} lane-bands and ${loads.length} loads every forwarder prices, lowest EUR ${fmt2(fwLow)}` : "no forwarding prices"}]};
@@ -658,7 +695,7 @@
       const fast = Q.m1.some(r => LANES[r.lane] && LANES[r.lane].gcc && r.price != null && r.transit != null && r.transit <= 2) || Q.m5.some(r => LANES[r.lane] && LANES[r.lane].gcc && r.price != null && r.transit != null && r.transit <= 2);
       if (!fast) add2("F5", "q.Q10.answer", `Next-day GCC delivery is claimed ("${q("Q10")}"), but no quoted option reaches 2 days in the GCC.`);
     }
-    if (Q.priced.M1 || Q.modules.M1 === "Yes") LANE_IDS.filter(L => !Q.m1.some(r => r.lane === L && r.price != null)).forEach(L => add2("F6", `m1.${L}`, `${LANES[L].name}: no price at all in M1.`));
+    if ((Q.inFile || {}).M1 !== false && (Q.priced.M1 || Q.modules.M1 === "Yes")) LANE_IDS.filter(L => !Q.m1.some(r => r.lane === L && r.price != null)).forEach(L => add2("F6", `m1.${L}`, `${LANES[L].name}: no price at all in M1.`));
     if (Q.inputCheck !== OK_CHECK) add2("F7", "meta.input_check", Q.inputCheck ? `The file's own input check says: ${Q.inputCheck}.` : "The file's own input check has no result (the file was not saved in Excel).");
     if (q("Q14") === 0 || q("Q13") === 1) add2("F8", q("Q14") === 0 ? "q.Q14.answer" : "q.Q13.answer", `Self-reported ${q("Q14") === 0 ? "damage rate of 0%" : "on-time rate of 100%"} is not credible without evidence.`);
     Q.moduleNotes.forEach(n => add2("F9", `module.${n.module}.offered`, `${n.module} ${n.note}.`));
@@ -671,7 +708,8 @@
     Q15: "whether you offer track and trace and e-POD", Q16: "whether we get one contact person and one invoice for all lanes", Q17: "your experience with Saudi SASO / SABER",
     Q18: "how you handle Egypt ACID / CargoX pre-registration", Q19: "which certifications you hold", Q20: "where you offer express parcel service", Q21: "where you offer air freight",
     Q22: "where you offer road groupage", Q23: "where you offer sea freight", Q24: "where you offer import customs clearance for the consignee", Q25: "where you offer DDP service",
-    Q26: "whether you issue EUR.1 / A.TR origin documents"};
+    Q26: "whether you issue EUR.1 / A.TR origin documents", W24: "your daily order cut-off time for same-day dispatch, so we can confirm next-day delivery",
+    W26: "how you receive orders from our system (API, EDI, portal upload or e-mail)"};
   const FLAG_Q = {F1: "Can you extend the price validity to cover all of {year}?", F2: "Can you confirm how a crated cabinet of about 70 kg is charged, and whether per-piece surcharges apply?",
     F3: "Can you price on a volumetric rule of 1:6000, or confirm the rule you used?", F4: "Which fuel surcharge level is included, and how will it change?",
     F5: "Which services reach the GCC in 2 days or less, since none of the quoted options do?", F6: "Can you quote M1 for {what}?",
@@ -680,10 +718,12 @@
   function followUps(Q, F, scored, s3missing, settingsIn) {
     const S = withDefaults(settingsIn), out = [];
     (scored ? scored.missing : []).filter(id => QTEXT[id]).forEach(id => out.push(`Please tell us ${QTEXT[id]} (${id}).`));
-    if (Q.priced.M1 || Q.modules.M1 === "Yes") { const gaps = LANE_IDS.flatMap(L => BANDS.filter(b => (volume(S, "A", L, b) + volume(S, "B", L, b)) > 0 && Q.m1.some(r => r.lane === L && r.band === b && r.price == null)).map(b => `${L} ${b}`));
+    const inF = M => (Q.inFile || {})[M] !== false;
+    if (inF("M1") && (Q.priced.M1 || Q.modules.M1 === "Yes")) { const gaps = LANE_IDS.flatMap(L => BANDS.filter(b => (volume(S, "A", L, b) + volume(S, "B", L, b)) > 0 && Q.m1.some(r => r.lane === L && r.band === b && r.price == null)).map(b => `${L} ${b}`));
       if (gaps.length) out.push(`Can you quote M1 for ${gaps.join(", ")}? These have volume but no price.`); }
-    if ((Q.priced.M2 || Q.modules.M2 === "Yes")) { const g = Q.m2.filter(r => r.price == null).map(r => `${r.lane} ${r.load}`); if (g.length && g.length < Q.m2.length) out.push(`Can you quote M2 for ${g.join(", ")}?`); }
-    (s3missing || []).filter(k => !/^setting/.test(k)).forEach(k => out.push(`For the 3PL calculation we still need ${k}.`));
+    if (inF("M2") && (Q.priced.M2 || Q.modules.M2 === "Yes")) { const g = Q.m2.filter(r => r.price == null).map(r => `${r.lane} ${r.load}`); if (g.length && g.length < Q.m2.length) out.push(`Can you quote M2 for ${g.join(", ")}?`); }
+    // keys FlexiTog fills itself (settings) or the provider's file does not cover (M2 in a warehouse-only file) are not asked
+    (s3missing || []).filter(k => !/^setting/.test(k) && (inF("M2") || !/^(m2\.|no replenishment price)/.test(k))).forEach(k => out.push(`For the 3PL calculation we still need ${k}.`));
     F.forEach(f => { const what = f.id === "F6" ? LANES[f.key.replace(/^m1\./, "")].name : f.id === "F9" ? `${f.reason.replace(/\.$/, "")}: can you send the prices?` : "";
       out.push(`${f.id}: ${FLAG_Q[f.id].replace("{year}", S.volumeYear).replace("{what}", what)}`); });
     return out;
@@ -763,6 +803,8 @@
     const be = sens ? Object.entries(sens.breakEven).filter(([, m]) => m != null) : [];
     res.push(be.length ? be.map(([k, m]) => `${k} ${sname(k)} becomes cheaper than S1 from about ${m} times volume case ${out.S1.sc}.`).join(" ")
       : `Neither S3 nor S4 becomes cheaper than S1 between 0.25 and 5 times the volumes${["S3", "S4"].some(k => out[k].state !== "complete") ? " (S3 or S4 is not complete yet)" : ""}.`);
+    ["S3", "S3b"].filter(k => out[k].nextDayState === "unconfirmed" && out[k].state !== "not_configured").forEach(k => res.push(`${k} ${sname(k)}: next-day in the GCC is unconfirmed, the 3PL gives no order cut-off time (W24).`));
+    ["S3", "S3b"].filter(k => out[k].m2Fallback && out[k].state !== "not_configured").forEach(k => res.push(`${k} ${sname(k)}: replenishment uses M2 from ${out[k].m2Fallback}, the cheapest for the warehouse country and load, as the 3PL quotes no M2.`));
     const nd = ["S1", "S3", "S3b", "S4"].filter(k => out[k].state === "complete" && out[k].nextDay.length);
     res.push(nd.length ? `Next-day in the GCC: ${nd.map(k => `${k} reaches ${out[k].nextDay.map(L => LANES[L].short || LANES[L].name).join(", ")}`).join("; ")}.` : "No complete scenario reaches next-day delivery in the GCC.");
     ["S1", "S2", "S3", "S3b", "S4"].forEach(k => { const R = out[k];
@@ -774,6 +816,6 @@
 
   const api = {VERSION, V23, LEGACY_VERSIONS, OK_CHECK, LANES, LANE_IDS, BANDS, CLASSES, STOCK_BANDS, LOADS, REGIONS, SCENARIOS, TYPES, MULTS,
     DEFAULT_SETTINGS, withDefaults, newSite, strictNumber, convert, valuesOf, versionKind, laneOfText, lanesOfText, quote, completeness,
-    m1Own, m2Own, m5Own, classCost, scenarios, sensitivity, REVENUE_DEFAULTS, revenueSettings, revenueByCountry, revenueView, revenueAnswers, RUBRIC, rubricOf, scoreAnswer, scoreAll, flags, followUps, answers, sname};
+    STOCK_FIELDS, stockNote, MODULAR, V31, m1Own, m2Own, m5Own, classCost, scenarios, sensitivity, REVENUE_DEFAULTS, revenueSettings, revenueByCountry, revenueView, revenueAnswers, RUBRIC, rubricOf, scoreAnswer, scoreAll, flags, followUps, answers, sname};
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.FlexiRFQ30 = api;
 })(typeof window !== "undefined" ? window : globalThis);

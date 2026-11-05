@@ -269,7 +269,7 @@ async function replaceTemplate(file){
   let info;
   try { info = templateInfo(bytes); } catch (e) { toast(e.message || "This file is not an RFQ template", "bad"); return; }
   if (!info.version) { toast("The Export sheet has no meta.rfq_version. Template not replaced.", "bad"); return; }
-  if (info.version !== V.VERSION) toast(info.version === V.V23 ? `Template ${info.version} is the old Quick Quote: its answers import as M1 only.` : info.version && V.LEGACY_VERSIONS.includes(info.version) ? `Template ${info.version} is the old detailed RFQ: its answers import as legacy, not comparable.` : `Template ${info.version} is not supported, so uploads of its answers will be refused until the tool supports it.`, "bad");
+  if (!V.MODULAR.includes(info.version)) toast(info.version === V.V23 ? `Template ${info.version} is the old Quick Quote: its answers import as M1 only.` : info.version && V.LEGACY_VERSIONS.includes(info.version) ? `Template ${info.version} is the old detailed RFQ: its answers import as legacy, not comparable.` : `Template ${info.version} is not supported, so uploads of its answers will be refused until the tool supports it.`, "bad");
   const rec = {bytes: bytes.buffer.slice(0), name: file.name, version: info.version, date: info.date, replacedAt: nowIso()};
   await DataStore.files.put("rfq-template", rec);
   RFQT.current = Object.assign({}, rec, {bytes, source: "replaced"});
@@ -280,7 +280,7 @@ const xlsxBlob = bytes => new Blob([bytes], {type: "application/vnd.openxmlforma
 async function downloadPrefilled(id){
   const p = B.providers.find(x => x.id === id), t = tmpl(); if (!p || !t) return;
   try {
-    const src = ["v30", "v23"].includes(V.versionKind(t.version)) ? srcOf(V.versionKind(t.version)) : {}, cell = (k, v) => (src[k] ? [src[k][0], src[k][1], v] : null);
+    const src = ["v30", "v23"].includes(V.versionKind(t.version)) ? srcOf(V.versionKind(t.version), t.version) : {}, cell = (k, v) => (src[k] ? [src[k][0], src[k][1], v] : null);
     const cells = [cell("q.Q01.answer", p.name), cell("q.Q02.answer", p.contactName), cell("q.Q03.answer", p.contactEmail), cell("q.Q04.answer", p.contactPhone)].filter(Boolean);
     const bytes = await R.prefill(t.bytes, p, JSZip, {version: t.version, cells});
     await saveFile(R.fileName(p, today()), xlsxBlob(bytes));
@@ -538,8 +538,8 @@ async function uploadRfq(rowId, file){
     P = R.parseWorkbook(wb, XLSX, {});
   } catch (e) { await problemsDialog(file.name, [{sheet: "", cell: "", message: (e && e.message) || "This file could not be read as an Excel workbook."}]); return; }
   const kind = V.versionKind(P.version);
-  if (kind === "unknown") { await problemsDialog(file.name, [{sheet: "Export", cell: "B2", message: `RFQ version "${P.version || "missing"}" is not supported. This tool reads ${V.VERSION}; ${V.V23} answers import as M1 only, ${V.LEGACY_VERSIONS.join(", ")} answers as legacy, not comparable.`}]); return; }
-  if (kind === "v30" || kind === "v23") return uploadModular(rowId, file, buf, wb, kind);
+  if (kind === "unknown") { await problemsDialog(file.name, [{sheet: "Export", cell: "B2", message: `RFQ version "${P.version || "missing"}" is not supported. This tool reads ${V.V31} and ${V.VERSION}; ${V.V23} answers import as M1 only, ${V.LEGACY_VERSIONS.join(", ")} answers as legacy, not comparable.`}]); return; }
+  if (kind === "v30" || kind === "v23") return uploadModular(rowId, file, buf, wb, kind, P.version, String(P.values["meta.variant"] || "").trim().toLowerCase());
   P = R.parseWorkbook(wb, XLSX, {sources: legacySources()});
   // 1. right template: version and row count of the Export sheet, version of the metadata sheet
   const base = R.validate(P, null), meta = R.readMeta(wb);
@@ -791,8 +791,12 @@ function renderCompare(){
 // role scores here. v1 answers stay readable, listed as "Legacy v1, not comparable", and out of every scenario.
 const V = window.FlexiRFQ30;
 const activeUp = p => (p && p.latestResponseIndex >= 0 ? p.rfqResponses[p.latestResponseIndex] : null);
-const isModular = up => !!up && (up.rfqVersion === V.VERSION || up.rfqVersion === V.V23);
-const srcOf = kind => (kind === "v30" ? (PAYLOAD.rfq_template || {}).sources : kind === "v23" ? (PAYLOAD.rfq_v23 || {}).sources : (PAYLOAD.rfq_legacy || {}).sources) || {};
+const isModular = up => !!up && (V.MODULAR.includes(up.rfqVersion) || up.rfqVersion === V.V23);
+// The cell map of the template a file came from (reads files never saved in Excel). v3.1 moved the M4 cells, so each
+// version keeps its own map; a warehouse-only v3.1 file uses its own template's map when it is bundled, else none.
+const srcOf = (kind, version, variant) => (kind === "v30"
+  ? (version === V.V31 ? (variant === "warehouse" ? (PAYLOAD.rfq_v31w || {}).sources : (PAYLOAD.rfq_template || {}).sources) : (PAYLOAD.rfq_v30 || {}).sources)
+  : kind === "v23" ? (PAYLOAD.rfq_v23 || {}).sources : (PAYLOAD.rfq_legacy || {}).sources) || {};
 const legacySources = () => srcOf("legacy");
 const S30 = () => B.settings.rfq30;
 /* Internal revenue: confidential, kept in this browser under its own key (never with the provider data in the data
@@ -848,22 +852,23 @@ function warnHtml(Q){
 function modulesLine(Q){
   const comp = V.completeness(Q);
   return MODS.map(([M, l]) => { const off = Q.modules[M], pr = Q.priced[M], c = comp[M];
+    if (Q.inFile && Q.inFile[M] === false) return `<span class="modchip na" title="${esc(`${M} ${l}: not part of this file (warehouse-only RFQ)`)}">${M} –</span>`;
     return `<span class="modchip${pr ? " on" : off === "Yes" ? " warn" : ""}" title="${esc(`${M} ${l}: ${off === "Yes" ? "offered" : off === "No" ? "not offered" : "not stated"}${pr ? `, ${Math.round(c * 100)}% filled` : off === "Yes" ? ", but no prices" : ""}`)}">${M}${pr ? ` ${Math.round(c * 100)}%` : off === "Yes" ? " !" : ""}</span>`; }).join("");
 }
 function previewHtmlModular(p, file, Q, hasMeta){
   const s1 = V.scenarios([{id: p.id, name: p.name, Q}], S30(), "A", p.id).S1;
   return `<dl class="kv"><dt>Provider</dt><dd><b>${esc(p.name)}</b> · ${esc(p.id)} · ${esc(p.type)}</dd><dt>File</dt><dd>${esc(file.name)}</dd>
-      <dt>Template</dt><dd>${esc(Q.version)}${Q.kind === "v23" ? ` · <span class="srct assumption">v2.3, M1 only</span>` : ""} · ${hasMeta ? "metadata sheet found" : "no metadata sheet, provider picked by hand"}</dd>
+      <dt>Template</dt><dd>${esc(Q.version)}${Q.kind === "v23" ? ` · <span class="srct assumption">v2.3, M1 only</span>` : Q.variant === "warehouse" ? ` · <span class="srct derived">warehouse only: M3, M4, M5 and the questions</span>` : ""} · ${hasMeta ? "metadata sheet found" : "no metadata sheet, provider picked by hand"}</dd>
       <dt>Quote</dt><dd>${esc(Q.name || "no company name")}${Q.validUntil ? ` · valid until ${esc(Q.validUntil)}` : ""} · EUR excl. VAT, DAP</dd>
       <dt>Modules</dt><dd><div class="tags">${modulesLine(Q)}</div></dd>
-      <dt>S1, volume case A</dt><dd>${s1.state === "complete" ? `${eur(s1.total, 2)} a year · ${fmt(s1.covered)} of ${fmt(s1.shipments)} shipments covered` : "no M1 prices"}</dd></dl>
+      <dt>S1, volume case A</dt><dd>${Q.inFile.M1 === false ? "not part of this file" : s1.state === "complete" ? `${eur(s1.total, 2)} a year · ${fmt(s1.covered)} of ${fmt(s1.shipments)} shipments covered` : "no M1 prices"}</dd></dl>
     ${warnHtml(Q)}
     <p class="faint bnote">Nothing is saved yet. Confirm to store this answer for ${esc(p.name)} and make it the active one; earlier uploads stay in the history.</p>`;
 }
-async function uploadModular(rowId, file, buf, wb, kind){
-  const P = R.parseWorkbook(wb, XLSX, {sources: srcOf(kind)}), meta = R.readMeta(wb);
+async function uploadModular(rowId, file, buf, wb, kind, version, variant){
+  const P = R.parseWorkbook(wb, XLSX, {sources: srcOf(kind, version, variant)}), meta = R.readMeta(wb);
   const values = V.valuesOf(P), Q = V.quote(values), errs = [];
-  if (!Q.m1.length) errs.push({sheet: "Export", cell: "", message: kind === "v30" ? "The Export sheet has no M1 rows (m1.Txx keys). The file may be damaged." : "The Export sheet has no test shipments (ship.Txx keys)."});
+  if (!Q.m1.length && Q.variant !== "warehouse") errs.push({sheet: "Export", cell: "", message: kind === "v30" ? "The Export sheet has no M1 rows (m1.Txx keys). The file may be damaged." : "The Export sheet has no test shipments (ship.Txx keys)."});
   Q.m1.filter(r => !V.LANES[r.lane] || !V.BANDS.includes(r.band)).forEach(r => errs.push({sheet: "Export", cell: "", message: `${r.id}: lane "${r.lane}" or band "${r.band}" is not one of L01 to L09 and B1 to B5.`}));
   Q.m2.filter(r => !V.LANES[r.lane] || !V.LOADS[r.load]).forEach(r => errs.push({sheet: "Export", cell: "", message: `${r.id}: lane "${r.lane}" or load "${r.load}" is not one of L01 to L09 and P1, P5, C20, C40.`}));
   if (meta && meta.version && meta.version !== Q.version) errs.push({sheet: R.META_SHEET, cell: "B1", message: `The metadata sheet says ${meta.version}, but the Export sheet says ${Q.version}.`});
@@ -896,10 +901,11 @@ function answersTableHtml(){
   if (!ev.length) return `<div class="card"><div class="cardhead"><h2>RFQ answers</h2></div><p class="empty">No v3.0 or v2.3 answers yet. Send the RFQ (Download latest RFQ) and upload the answers on each provider's row.</p></div>`;
   const W = S30().weights, flagChips = e => (e.flags.length ? `<div class="tags">${[...new Set(e.flags.map(f => f.id))].map(id => `<span class="tag flag" title="${esc(e.flags.filter(f => f.id === id).map(f => f.reason).join(" "))}">${id}</span>`).join("")}</div>` : '<span class="faint">none</span>');
   const area = (s, k) => sc2((s.areas.find(a => a.key === k) || {}).score);
-  const rows = ev.slice().sort((a, b) => Math.max(b.S.forwarder.total, b.S.threepl.total) - Math.max(a.S.forwarder.total, a.S.threepl.total)).map(e => `<tr data-id="${esc(e.id)}">
+  const best = e => Math.max(e.Q.variant === "warehouse" ? 0 : e.S.forwarder.total, e.S.threepl.total);
+  const rows = ev.slice().sort((a, b) => best(b) - best(a)).map(e => `<tr data-id="${esc(e.id)}">
       <td><button type="button" class="lnk" data-a="detail">${esc(e.name)}</button>${badge(e.p)}<br><span class="faint num">${esc(e.id)} · ${esc(e.Q.tag)}</span></td>
       <td><div class="tags">${modulesLine(e.Q)}</div>${e.Q.inputCheck !== V.OK_CHECK || e.Q.invalid.length ? `<span class="faint" title="${esc(e.Q.inputCheck || "")}">⚠ ${e.Q.invalid.length} invalid</span>` : ""}</td>
-      <td class="n" title="${esc(`Cost ${area(e.S.forwarder, "cost")} · service ${area(e.S.forwarder, "service")} · quality ${area(e.S.forwarder, "quality")} · options ${area(e.S.forwarder, "options")}`)}"><b>${sc2(e.S.forwarder.total)}</b></td>
+      ${e.Q.variant === "warehouse" ? '<td class="n faint" title="A warehouse-only RFQ has no forwarding modules (M1, M2)">n/a</td>' : `<td class="n" title="${esc(`Cost ${area(e.S.forwarder, "cost")} · service ${area(e.S.forwarder, "service")} · quality ${area(e.S.forwarder, "quality")} · options ${area(e.S.forwarder, "options")}`)}"><b>${sc2(e.S.forwarder.total)}</b></td>`}
       <td class="n" title="${esc(`Cost ${area(e.S.threepl, "cost")} · service ${area(e.S.threepl, "service")} · quality ${area(e.S.threepl, "quality")} · options ${area(e.S.threepl, "options")}`)}"><b>${sc2(e.S.threepl.total)}</b></td>
       <td>${flagChips(e)}</td></tr>`).join("");
   return `<div class="card"><div class="cardhead"><h2>RFQ answers</h2><span class="faint" style="font-size:12px">Modules offered and filled · two role scores, 0 to 4 · volume case A</span></div>
@@ -991,6 +997,7 @@ function rfqSettingsHtml(){
         <label>Warehouse country${sel("s3.country", s.s3.country || "", [["", "from W01"]].concat(L9.map(L => [L, `${L} ${V.LANES[L].name}`])), "Warehouse country")}</label>
         <label>Average pallets in stock <span class="faint">required</span>${num("s3.avgPallets", s.s3.avgPallets, "Average pallets", ' placeholder="enter"')}</label>
         <label>Replenishment load${sel("s3.load", s.s3.load, Object.keys(V.LOADS).map(k => [k, k]), "Replenishment load")}</label>
+        <label>FlexiTog order release time <span class="faint">next-day needs the 3PL cut-off (W24) at or after it</span><input type="time" data-st="releaseTime" value="${esc(s.releaseTime || "12:00")}" aria-label="FlexiTog order release time"></label>
         <label>Labelling needed ${chk("s3.labelling", s.s3.labelling, "Labelling")}</label>
         <label>Amortisation years${num("s3.amortYears", s.s3.amortYears, "Amortisation years")}</label>
         <label>Carrying cost % <span class="faint">input from Finance</span>${num("s3.carryingPct", s.s3.carryingPct, "Carrying cost")}</label>
@@ -1077,6 +1084,10 @@ function wireRfqSettings(){
     else setPath(path, inp.checked);
     changed();
   }));
+  el.querySelectorAll("input[data-st]").forEach(inp => inp.addEventListener("change", () => {
+    if (!/^\d{2}:\d{2}$/.test(inp.value)) { toast("Enter a time as HH:MM", "bad"); return; }
+    setPath(inp.dataset.st, inp.value); changed();
+  }));
   el.querySelectorAll("select[data-ss]").forEach(s => s.addEventListener("change", () => { setPath(s.dataset.ss, s.value === "" ? (/country$/.test(s.dataset.ss) ? null : "") : s.value); changed(); }));
   el.querySelector('[data-a="site-add"]').addEventListener("click", () => { S30().s4.sites = (S30().s4.sites || []).concat([V.newSite()]); changed(true); });
   el.querySelectorAll('[data-a="site-rm"]').forEach(b => b.addEventListener("click", () => { S30().s4.sites.splice(Number(b.dataset.i), 1); changed(true); }));
@@ -1102,7 +1113,7 @@ async function exportJson(){
   if (inc == null) return;
   const list = modAll(), sum = R0 => ({state: R0.state, total: R0.total, parts: R0.parts, types: R0.types, missing: R0.missing, tags: R0.tags, coverage: [R0.covered, R0.shipments]});
   const outs = {}, scen = sc => { const o = outs[sc] = V.scenarios(list, S30(), sc, "best"); return Object.fromEntries(["S1", "S2", "S3", "S3b", "S4"].map(k => [k, sum(o[k])]).concat([["S5", {state: o.S5.state, solutions: o.S5.solutions}]])); };
-  const data = {kind: "flexitog-benchmarking-rfq", format: 3, exported: nowIso(), rfqVersion: V.VERSION, settings: {rfq30: V.withDefaults(S30())}, rfq: B.rfq,
+  const data = {kind: "flexitog-benchmarking-rfq", format: 3, exported: nowIso(), rfqVersion: V.V31, settings: {rfq30: V.withDefaults(S30())}, rfq: B.rfq,
     providers: list.map(e => ({providerId: e.id, name: e.name, tag: e.Q.tag, modules: e.Q.modules, completeness: e.comp, invalid: e.Q.invalid, inputCheck: e.Q.inputCheck,
       forwarder: e.S.forwarder.total, threepl: e.S.threepl.total, flags: e.flags, followUps: e.follow})),
     scenarios: list.length ? {A: scen("A"), B: scen("B")} : null,
@@ -1136,6 +1147,13 @@ async function copyText(t){
   try { document.execCommand("copy"); toast("Copied"); } catch (x) { toast("Copy failed. Select the text and copy it by hand.", "bad"); }
   ta.remove();
 }
+// "Stock profile sent": what FlexiTog told the provider about its stock (v3.1, meta.stock.S01 to S07).
+function stockHtml(Q){
+  if (!Q.stock || !Object.values(Q.stock).some(x => !isBlank(x))) return "";
+  const note = V.stockNote(Q, S30());
+  return `<h3 style="margin:14px 0 6px">Stock profile sent</h3><dl class="kv">${V.STOCK_FIELDS.filter(([id]) => !isBlank(Q.stock[id])).map(([id, l]) => `<dt>${esc(l)} <span class="faint">${id}</span></dt><dd>${esc(Q.stock[id])}</dd>`).join("")}</dl>
+    ${note ? `<p class="faint bnote">ⓘ ${esc(note)} The S3 storage cost uses the setting.</p>` : ""}`;
+}
 function detailBodyModular(p, r, T){
   const live = modOf(p.id), e = live && live.up === r ? live : (() => { const Q = V.quote(r.values || {}); const x = {id: p.id, name: p.name, Q};
     x.S = V.scoreAll([x], S30(), "A")[0]; x.flags = V.flags(Q, S30()); x.comp = V.completeness(Q); x.follow = V.followUps(Q, x.flags, x.S, [], S30()); return x; })();
@@ -1143,7 +1161,8 @@ function detailBodyModular(p, r, T){
   if (T === "profile") return warnHtml(Q) + kv([["Provider ID", esc(p.id)], ["Type", esc(p.type)], ["Answer", `${esc(Q.version)} · ${esc(Q.tag)}`], ["Company (Q01)", esc(qa("Q01"))], ["Contact (Q02)", esc(qa("Q02"))],
       ["E-mail (Q03)", qa("Q03") ? `<a href="mailto:${esc(qa("Q03"))}">${esc(qa("Q03"))}</a>` : ""], ["Phone (Q04)", esc(qa("Q04"))], ["Prices valid until (Q05)", esc(qa("Q05"))],
       ["Fuel included (Q06)", qa("Q06") == null ? "" : pctTxt(qa("Q06")) + " · information only, fuel is in the prices"], ["Surcharges on top (Q07)", esc(qa("Q07"))],
-      ["Modules", `<div class="tags">${modulesLine(Q)}</div>`], ["Input check", esc(Q.inputCheck || "no result")], ["RFQ status", esc(statusLabel(p.status))]]);
+      ["Modules", `<div class="tags">${modulesLine(Q)}</div>`], ["Input check", esc(Q.inputCheck || "no result")], ["RFQ status", esc(statusLabel(p.status))]]) + stockHtml(Q);
+  if (/^M[1-6]$/.test(T) && Q.inFile && Q.inFile[T] === false) return `<p class="muted">${T} is not part of this file: the warehouse-only RFQ holds M3, M4, M5 and the questions.</p>`;
   if (/^M[1-6]$/.test(T)) return warnHtml(Q) + `<div class="tablewrap btable" style="max-height:62vh">${moduleTable(T, [e])}</div>`;
   if (T === "questions") return `<div class="tablewrap btable" style="max-height:60vh"><table><thead><tr><th>#</th><th>Answer</th><th>Comment</th></tr></thead><tbody>
       ${Object.entries(Q.q).map(([id, x]) => `<tr><td class="num">${id}</td><td>${x.answer == null ? '<span class="faint">no answer</span>' : esc(["Q06", "Q13", "Q14", "Q27"].includes(id) && typeof x.answer === "number" ? pctTxt(x.answer) : x.answer)}</td><td class="wrap">${esc(x.comment)}</td></tr>`).join("")}</tbody></table></div>`;

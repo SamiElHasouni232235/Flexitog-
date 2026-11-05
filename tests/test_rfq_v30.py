@@ -8,6 +8,7 @@ the repository); without it they skip. Test 5 reads the v2.3 Aramex file when pr
 it in aramex_v23_values.json.
 """
 import json
+import re
 import shutil
 import subprocess
 import tempfile
@@ -16,7 +17,7 @@ from pathlib import Path
 import openpyxl
 import pytest
 
-from flexitog.dashboard import ASSETS, RFQ_LEGACY_TEMPLATE, RFQ_TEMPLATE, RFQ_V23_TEMPLATE, rfq_sources
+from flexitog.dashboard import ASSETS, RFQ_LEGACY_TEMPLATE, RFQ_TEMPLATE as RFQ_V31_TEMPLATE, RFQ_V23_TEMPLATE, RFQ_V30_TEMPLATE as RFQ_TEMPLATE, rfq_sources
 
 FIX = Path(__file__).parent / "fixtures"
 DUMMY = FIX / "rfq_v30_dummy_reconstructed.xlsx"
@@ -44,7 +45,7 @@ def run(body: str, tmp_path, *files):
     """Run JS with X (SheetJS), R (rfq core), V (rfq v3.0), fs, F[] (file paths), SRC (template key -> cell maps),
     quoteOf(file, kind) and out(scenarios result) helpers. The body sets `out`."""
     src = tmp_path / "sources.json"
-    src.write_text(json.dumps({"v30": rfq_sources(RFQ_TEMPLATE), "v23": rfq_sources(RFQ_V23_TEMPLATE), "v1": rfq_sources(RFQ_LEGACY_TEMPLATE)}))
+    src.write_text(json.dumps({"v30": rfq_sources(RFQ_TEMPLATE), "v31": rfq_sources(RFQ_V31_TEMPLATE), "v23": rfq_sources(RFQ_V23_TEMPLATE), "v1": rfq_sources(RFQ_LEGACY_TEMPLATE)}))
     script = tmp_path / "t.js"
     script.write_text(f"""const X = require({json.dumps(LIBS[0])}), R = require({json.dumps(LIBS[1])}), V = require({json.dumps(LIBS[2])}), fs = require('fs');
 const F = {json.dumps([str(f) for f in files])}, SRC = JSON.parse(fs.readFileSync({json.dumps(str(src))}, 'utf8'));
@@ -300,3 +301,103 @@ def test_revenue_stays_out_of_templates_and_settings(tmp_path):
     assert "revenuePerOrder" not in r["s"] and "revenue" not in r["s"]
     assert r["s"]["s2"]["L01"] == {"on": True, "loads": {"P1": 0, "P5": 0, "C20": 0, "C40": 0}}
     assert "commercial" not in r["types"]
+
+
+# ---------------------------------------------------------------- RFQ v3.1: stock profile, W24 to W26, warehouse-only variant
+V31_DUMMY = FIX / "rfq_v31_dummy_reconstructed.xlsx"
+V31_DUMMY_REAL = FIX / "FlexiTog RFQ MENA-TR v3.1 - Dummy provider test fill.xlsx"
+V31_WH = FIX / "rfq_v31_warehouse_reconstructed.xlsx"
+V31_WH_REAL = FIX / "FlexiTog RFQ MENA-TR v3.1 - Warehouse only - Aramex pre-filled.xlsx"
+V31_WH_BLANK = FIX / "FlexiTog RFQ MENA-TR v3.1 - Warehouse only.xlsx"
+
+
+def t31(tmp_path, f):
+    return run(f"""const Q = quoteOf(F[0], 'v31'), list = [{{id: 'P', name: 'Dummy provider', Q}}], S = {json.dumps(T1_SETTINGS)};
+  const o = V.scenarios(list, S, 'A', 'best'), o16 = V.scenarios(list, Object.assign({{}}, S, {{releaseTime: '16:00'}}), 'A', 'best');
+  const opts = V.scoreAll(list, S, 'A')[0].threepl.areas.find(a => a.key === 'options').items;
+  out = {{version: Q.version, minor: Q.minor, variant: Q.variant, tag: Q.tag, w: [Q.m4.A.W24, Q.m4.A.W25, Q.m4.A.W26], stock: Q.stock, invalid: Q.invalid, sc: all(o),
+    nd: o.S3.nextDayState, ndLanes: o.S3.nextDay, nd16: o16.S3.nextDayState, total16: o16.S3.total, score: opts.filter(i => /^W2/.test(i.id)).map(i => [i.id, i.points]),
+    note: V.stockNote(Q, S), flags: V.flags(Q, S).map(x => x.id)}};""", tmp_path, f)
+
+
+def check_t31(r):
+    s = r["sc"]
+    assert r["version"] == "RFQ-MENA-TR-MODULAR v3.1" and r["minor"] == "3.1" and r["variant"] == "full" and r["invalid"] == []
+    assert s["S3"]["state"] == "complete" and s["S3"]["total"] == 98210.00                  # unchanged
+    assert s["S3"]["parts"]["handling"] == 800 and s["S3"]["parts"]["minimumTopUp"] == 7900   # + 96 orders x EUR 0.50 quality check
+    sums_ok(s["S3"])
+    assert r["nd"] == "yes" and r["ndLanes"] == ["L01", "L02", "L03", "L04"]                 # cut-off 15:00, release 12:00
+    assert r["nd16"] == "no" and r["total16"] == 98210.00                                     # release 16:00
+    assert s["S1"]["total"] == 97000.00 and s["S2"]["total"] == 56800.00 and s["S4"]["total"] == 228310.00
+
+
+def test_v31_1_dummy_reconstructed(tmp_path):
+    r = t31(tmp_path, V31_DUMMY)
+    check_t31(r)
+    assert r["w"] == ["15:00", 0.5, "API"]
+    assert r["score"] == [["W26", 4], ["W24", 4]]
+    assert r["stock"]["S02"] == "About 360 pallet positions" and "average pallets in stock" in r["note"]   # 360 sent, setting 20
+    assert r["flags"] == []
+
+
+@pytest.mark.skipif(not V31_DUMMY_REAL.exists(), reason=f"{V31_DUMMY_REAL.name} is not in tests/fixtures")
+def test_v31_1_dummy_provider_file(tmp_path):
+    check_t31(t31(tmp_path, V31_DUMMY_REAL))
+
+
+def t31w(tmp_path, f):
+    return run("""const Q = quoteOf(F[0], 'v31'), list = [{id: 'ARX', name: 'Aramex', Q}], F2 = V.flags(Q, null), S = V.scoreAll(list, null, 'A')[0];
+  const o = V.scenarios(list, null, 'A', 'best');
+  out = {variant: Q.variant, tag: Q.tag, inFile: Q.inFile, flags: F2.map(f => f.key), follow: V.followUps(Q, F2, S, o.S3.missing, null), L01: (Q.m3.L01 || {}).clearance,
+    A: [Q.m4.A.W01, Q.m4.A.W02], B: [Q.m4.B.W01, Q.m4.B.W02], s3: o.S3.state, missing: o.S3.missing, nd: o.S3.nextDayState, invalid: Q.invalid};""", tmp_path, f)
+
+
+def check_t31w(r):
+    assert r["variant"] == "warehouse" and r["tag"] == "v3.1, warehouse only"
+    assert r["inFile"] == {"M1": False, "M2": False, "M3": True, "M4": True, "M5": True, "M6": False}
+    assert not any(re.search(r"module\.M[126]|^m1\.|^m2\.|^m6\.", k) for k in r["flags"])            # no flags for M1, M2 or M6
+    assert not any(re.search(r"\bM[126]\b|M1 for|M2 for", t) for t in r["follow"])                 # no follow-ups for them
+    assert r["L01"] == 103.20
+    assert [x.lower() for x in r["A"]] == ["dubai, uae", "free zone"] and [x.lower() for x in r["B"]] == ["saudi arabia", "free zone"]
+    assert r["s3"] == "incomplete" and r["nd"] == "unconfirmed"
+    assert any(m.startswith("m5 prices") for m in r["missing"]) and any(re.match(r"m4\.A\.W(05|11|15)", m) for m in r["missing"])   # M4 rates, every M5 price
+
+
+def test_v31_2_warehouse_reconstructed(tmp_path):
+    r = t31w(tmp_path, V31_WH)
+    check_t31w(r)
+    assert any("no replenishment price" in m for m in r["missing"])   # no M2 provider at all
+
+
+@pytest.mark.skipif(not V31_WH_REAL.exists(), reason=f"{V31_WH_REAL.name} is not in tests/fixtures")
+def test_v31_2_warehouse_aramex_file(tmp_path):
+    check_t31w(t31w(tmp_path, V31_WH_REAL))
+
+
+def test_v31_3_blank_files(tmp_path):
+    files = [RFQ_V31_TEMPLATE] + ([V31_WH_BLANK] if V31_WH_BLANK.exists() else [])
+    r = run("""out = F.map(f => { const Q = quoteOf(f, 'v31'), o = V.scenarios([{id: 'B', name: 'Blank', Q}], null, 'A', 'best');
+    return {minor: Q.minor, variant: Q.variant, invalid: Q.invalid, states: ['S1', 'S2', 'S3', 'S3b', 'S4', 'S5'].map(k => o[k].state), stock: Q.stock.S02}; });""", tmp_path, *files)
+    for x in r:
+        assert x["minor"] == "3.1" and x["invalid"] == []
+        assert all(st in ("not_configured", "incomplete") for st in x["states"])
+
+
+def test_v31_m2_fallback(tmp_path):
+    """A warehouse-only 3PL next to a forwarder with M2: S3 takes the forwarder's M2 for the warehouse country and load."""
+    r = run("""const W = quoteOf(F[0], 'v31'), D = quoteOf(F[1], 'v31');
+  const Wp = JSON.parse(JSON.stringify(D)); Wp.variant = 'warehouse'; Wp.inFile = {M1: false, M2: false, M3: true, M4: true, M5: true, M6: false};
+  Wp.m1.forEach(x => { x.price = null; }); Wp.m2.forEach(x => { x.price = null; x.altPrice = null; }); Wp.priced = Object.assign({}, Wp.priced, {M1: false, M2: false});
+  const fwd = JSON.parse(JSON.stringify(D)); fwd.m4 = {A: {}, B: {}, comments: {}}; fwd.m5 = []; fwd.priced = Object.assign({}, fwd.priced, {M4: false, M5: false});
+  const S = Object.assign({}, %s, {s3: {provider: 'WH', warehouse: 'A', avgPallets: 20}});
+  const o = V.scenarios([{id: 'WH', name: 'Warehouse 3PL', Q: Wp}, {id: 'FW', name: 'Forwarder', Q: fwd}], S, 'A', 'best');
+  out = {state: o.S3.state, fallback: o.S3.m2Fallback, m2: o.S3.providers.M2, total: o.S3.total};""" % json.dumps(T1_SETTINGS), tmp_path, V31_WH, V31_DUMMY)
+    assert r["fallback"] == "Forwarder" and "Forwarder" in r["m2"]
+    assert r["state"] == "complete" and r["total"] == 98210.00   # same prices as the dummy, M2 from the forwarder
+
+
+def test_v30_files_keep_next_day_and_scores(tmp_path):
+    r = run("""const Q = quoteOf(F[0]), S = %s, o = V.scenarios([{id: 'P', name: 'D', Q}], S, 'A', 'best');
+  out = {minor: Q.minor, nd: o.S3.nextDayState, lanes: o.S3.nextDay, threepl: V.scoreAll([{id: 'P', name: 'D', Q}], S, 'A')[0].threepl.total};""" % json.dumps(T1_SETTINGS), tmp_path, DUMMY)
+    assert r["minor"] == "3.0" and r["nd"] == "yes" and r["lanes"] == ["L01", "L02", "L03", "L04"]   # v3.0 asks no cut-off: M5 flag alone
+    assert round(r["threepl"], 2) == 3.59                                                         # W24 and W26 are not scored for v3.0

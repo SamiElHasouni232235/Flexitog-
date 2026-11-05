@@ -127,7 +127,7 @@ def test_dashboard_html_is_self_contained(ws):
     assert "fonts.googleapis" not in page and "fonts.gstatic" not in page     # no network calls at runtime
     assert '"sales_orders":{"source":"Sample_Sales_Orders_MENA_Turkey_ANONYMIZED.xlsx","anonymized":true' in page
     # SheetJS 0.9 MB, jsPDF + AutoTable 0.45 MB, docx 0.48 MB, basemap 1.1 MB, JSZip 0.1 MB, RFQ template 0.3 MB
-    assert "window.FlexiRFQ" in page and "JSZip" in page and '"rfq_template":{"name":"FlexiTog_RFQ_MENA-TR_v3.0.xlsx"' in page and "window.FlexiRFQ30" in page
+    assert "window.FlexiRFQ" in page and "JSZip" in page and '"rfq_template":{"name":"FlexiTog_RFQ_MENA-TR_v3.1.xlsx"' in page and "window.FlexiRFQ30" in page
     # login layer: inlined, the gate hides the app until auth.js sets data-auth="in"
     assert "window.FlexiAuth" in page and "window.AuthStore" in page and "FLEXI_AUTH_CONFIG" in page and 'id="authGate"' in page
     assert ':root:not([data-auth="in"]) .app{display:none!important}' in page

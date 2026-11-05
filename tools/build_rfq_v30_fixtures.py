@@ -9,6 +9,13 @@ Writes into tests/fixtures/:
                                     It stands in for "FlexiTog RFQ MENA-TR v3.0 - Dummy provider test fill.xlsx" until
                                     that file is in tests/fixtures.
   rfq_v30_input_errors.xlsx         the same fill with "incl" in m2.B01 price and "tbc" in m4.A.W05.
+  rfq_v31_dummy_reconstructed.xlsx  the same dummy on the bundled v3.1 template, plus warehouse A cut-off 15:00 (W24),
+                                    quality check EUR 0.50 per order (W25) and orders by API (W26). It stands in for
+                                    "FlexiTog RFQ MENA-TR v3.1 - Dummy provider test fill.xlsx".
+  rfq_v31_warehouse_reconstructed.xlsx  a warehouse-only v3.1 answer (meta.variant "warehouse", no M1, M2 or M6 rows) with
+                                    the Aramex Dubai identity, m3.L01 clearance EUR 103.20, warehouse A Dubai, UAE, free zone
+                                    and warehouse B Saudi Arabia, free zone, no M4 rates and no M5 prices. It stands in for
+                                    "FlexiTog RFQ MENA-TR v3.1 - Warehouse only - Aramex pre-filled.xlsx".
 Each file is filled through the input cells the template's Export formulas point at, then recalculated by
 LibreOffice (headless), so the Export sheet carries cached values and the template's own input check, as a file
 saved in Excel does.
@@ -31,6 +38,7 @@ sys.path.insert(0, str(ROOT))
 from flexitog.dashboard import ASSETS, rfq_sources  # noqa: E402
 
 TEMPLATE = ASSETS / "rfq" / "FlexiTog_RFQ_MENA-TR_v3.0.xlsx"
+TEMPLATE31 = ASSETS / "rfq" / "FlexiTog_RFQ_MENA-TR_v3.1.xlsx"
 OUT = ROOT / "tests" / "fixtures"
 SIZE_PRICE = {"S": 100, "M": 500, "L": 1000, "XL": 3000, "XXL": 6000}
 LOAD_PRICE = {"P1": 400, "P5": 1500, "C20": 3000, "C40": 5000}
@@ -77,14 +85,24 @@ def dummy_values(template_values: dict) -> dict:
     return v
 
 
-def fill(values: dict, out: Path) -> None:
-    src = rfq_sources(TEMPLATE)
-    wb = openpyxl.load_workbook(TEMPLATE)
+def fill(values: dict, out: Path, template: Path = TEMPLATE, export: dict | None = None, drop: tuple = ()) -> None:
+    """Fill the input cells, set constant Export values (export) and blank the Export rows whose key starts with drop."""
+    src = rfq_sources(template)
+    wb = openpyxl.load_workbook(template)
     for k, x in values.items():
         if k not in src:
             raise KeyError(f"{k} has no input cell in the template")
         sheet, cell = src[k]
         wb[sheet][cell] = x
+    for row in wb["Export"].iter_rows(min_row=2):
+        key = row[0].value
+        if not key:
+            continue
+        if export and key in export:
+            row[1].value = export[key]
+        elif drop and str(key).startswith(drop):
+            for c in row:
+                c.value = None
     with tempfile.TemporaryDirectory() as tmp:
         raw = Path(tmp) / out.name
         wb.save(raw)
@@ -94,13 +112,26 @@ def fill(values: dict, out: Path) -> None:
         shutil.copy(conv / out.name, out)
 
 
+def warehouse_values() -> dict:
+    v = {f"module.M{i}.offered": "Yes" for i in (3, 4, 5)}
+    v.update({"q.Q01.answer": "Aramex Dubai", "q.Q02.answer": "Test Contact", "q.Q03.answer": "rfq@aramex.example", "q.Q04.answer": "+971 4 000 0000",
+              "m3.L01.clearance_eur": 103.20, "m3.L01.clearance_days": 2,
+              "m4.A.W01": "Dubai, UAE", "m4.A.W02": "Free zone", "m4.B.W01": "Saudi Arabia", "m4.B.W02": "Free zone"})
+    return v
+
+
 def main() -> None:
     tv = {r[0]: r[1] for r in openpyxl.load_workbook(TEMPLATE, data_only=True)["Export"].iter_rows(min_row=2, values_only=True)}
     v = dummy_values(tv)
     fill(v, OUT / "rfq_v30_dummy_reconstructed.xlsx")
     bad = dict(v, **{"m2.B01.price_eur": "incl", "m4.A.W05": "tbc"})
     fill(bad, OUT / "rfq_v30_input_errors.xlsx")
-    for f in ("rfq_v30_dummy_reconstructed.xlsx", "rfq_v30_input_errors.xlsx"):
+    tv31 = {r[0]: r[1] for r in openpyxl.load_workbook(TEMPLATE31, data_only=True)["Export"].iter_rows(min_row=2, values_only=True)}
+    v31 = dict(dummy_values(tv31), **{"m4.A.W24": datetime.time(15, 0), "m4.A.W25": 0.5, "m4.A.W26": "API"})
+    fill(v31, OUT / "rfq_v31_dummy_reconstructed.xlsx", TEMPLATE31)
+    fill(warehouse_values(), OUT / "rfq_v31_warehouse_reconstructed.xlsx", TEMPLATE31, export={"meta.variant": "warehouse"},
+         drop=("m1.", "m2.", "m6.", "module.M1.", "module.M2.", "module.M6."))
+    for f in ("rfq_v30_dummy_reconstructed.xlsx", "rfq_v30_input_errors.xlsx", "rfq_v31_dummy_reconstructed.xlsx", "rfq_v31_warehouse_reconstructed.xlsx"):
         ws = openpyxl.load_workbook(OUT / f, data_only=True)["Export"]
         check = next(r[1] for r in ws.iter_rows(min_row=2, values_only=True) if r[0] == "meta.input_check")
         print(f, "| input check:", check)

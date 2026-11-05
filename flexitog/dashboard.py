@@ -32,10 +32,13 @@ from .sales_orders import sales_orders_table
 from .schema import COUNTRY_ALIASES, COUNTRY_NAMES, COUNTRY_REGION, DC_TYPE_LABELS, ENTITIES, EU27, PLACEHOLDER, SOURCE_COL
 
 ASSETS = Path(__file__).parent / "assets"
-# The RFQ providers fill in: the modular RFQ v3.0 (Download latest RFQ). The Quick Quote v2.3 and the detailed v1 templates
-# stay for answers that still come back in them (v2.3 imports as M1 only, v1 as "Legacy v1, not comparable"); their key maps
-# let the upload read files never saved in Excel.
-RFQ_TEMPLATE = ASSETS / "rfq" / "FlexiTog_RFQ_MENA-TR_v3.0.xlsx"
+# The RFQ providers fill in: the modular RFQ v3.1 (Download latest RFQ), with a warehouse-only variant when that file is
+# bundled. v3.0, the Quick Quote v2.3 and the detailed v1 templates stay for answers that still come back in them (v3.0 reads
+# with the same parser, v2.3 as M1 only, v1 as "Legacy v1, not comparable"); their key maps let the upload read files never
+# saved in Excel (v3.1 moved the M4 cells, so each version keeps its own map).
+RFQ_TEMPLATE = ASSETS / "rfq" / "FlexiTog_RFQ_MENA-TR_v3.1.xlsx"
+RFQ_V31W_TEMPLATE = ASSETS / "rfq" / "FlexiTog_RFQ_MENA-TR_v3.1_Warehouse_only.xlsx"
+RFQ_V30_TEMPLATE = ASSETS / "rfq" / "FlexiTog_RFQ_MENA-TR_v3.0.xlsx"
 RFQ_V23_TEMPLATE = ASSETS / "rfq" / "FlexiTog_RFQ_Quick_Quote_MENA-TR_v2.3.xlsx"
 RFQ_LEGACY_TEMPLATE = ASSETS / "rfq" / "Transport_Volume_Scenario_RFQ_FlexiTog.xlsx"
 # Home page and login logo: flexitog/assets/brand/logo.<ext> (refrigiwear_logo.<ext> also works). Drop the file
@@ -136,6 +139,10 @@ def build_payload(ws, per_region_synthetic: int = 15, sales_orders: str | Path |
         # The bundled RFQ template, served by Download latest RFQ until a newer one replaces it.
         "rfq_template": {"name": RFQ_TEMPLATE.name, "base64": base64.b64encode(RFQ_TEMPLATE.read_bytes()).decode("ascii"),
                          "sources": rfq_sources(RFQ_TEMPLATE)},
+        # the warehouse-only v3.1 variant (M3, M4, M5 and the questions), when bundled
+        "rfq_v31w": ({"name": RFQ_V31W_TEMPLATE.name, "base64": base64.b64encode(RFQ_V31W_TEMPLATE.read_bytes()).decode("ascii"),
+                      "sources": rfq_sources(RFQ_V31W_TEMPLATE)} if RFQ_V31W_TEMPLATE.exists() else None),
+        "rfq_v30": {"name": RFQ_V30_TEMPLATE.name, "sources": rfq_sources(RFQ_V30_TEMPLATE)},
         "rfq_v23": {"name": RFQ_V23_TEMPLATE.name, "sources": rfq_sources(RFQ_V23_TEMPLATE)},
         "rfq_legacy": {"name": RFQ_LEGACY_TEMPLATE.name, "sources": rfq_sources(RFQ_LEGACY_TEMPLATE)},
     }
