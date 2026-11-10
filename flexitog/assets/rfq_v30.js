@@ -6,8 +6,8 @@
  *   (warehouses A and B, W01 to W23), M5 delivery from the provider's warehouse (27 rows D01 to D27, sizes S, M, L),
  *   M6 another solution (description and five price lines), and 28 questions.
  * The tool assembles five scenarios from the modules, per volume case (A or B), country and order class:
- *   S1 direct from Helmond, S2 distributor holds stock, S3 3PL holds stock (S3b dedicated site), S4 own warehouse,
- *   S5 other (indicative, never ranked).
+ *   S1 direct from Helmond, S2 distributor holds stock, S3 3PL presence (the dedicated site is a toggle), S4 own warehouse.
+ *   M6 answers stay information only (m6Solutions).
  * Volumes, targets, distributor loads, the 3PL choice and the own-site costs are FlexiTog's internal settings.
  * A v2.3 Quick Quote answer maps to M1 only; a v1 answer stays legacy and out of every scenario.
  *
@@ -41,11 +41,10 @@
   const SCENARIOS = [
     {id: "S1", label: "Direct from Helmond", line: "Every customer order ships from Helmond to the customer door (M1)."},
     {id: "S2", label: "Distributor holds stock", line: "Bulk loads from Helmond to a distributor (M2), who serves the customers in its country."},
-    {id: "S3", label: "3PL holds stock", line: "FlexiTog restocks a 3PL warehouse in the region (M2, M3); the 3PL stores, picks, packs (M4) and delivers (M5)."},
-    {id: "S3b", label: "3PL dedicated site", line: "As S3, with a site the 3PL runs for FlexiTog only (W20 to W22)."},
+    {id: "S3", label: "3PL presence", line: "FlexiTog restocks a 3PL warehouse in the region (M2, M3); the 3PL stores, picks, packs (M4) and delivers (M5)."},
     {id: "S4", label: "Own warehouse", line: "FlexiTog runs its own site in the region; transport and customs from providers (M2, M3, M5)."},
-    {id: "S5", label: "Other", line: "A solution a provider advises (M6). Indicative, not ranked."},
   ];
+  const IDS = ["S1", "S2", "S3", "S4"];   // the four scenarios, ranked on cost
   const TYPES = [["transport", "Transport to region"], ["customs", "Customs"], ["handling", "Warehouse handling"], ["storage", "Storage"],
     ["delivery", "Delivery to customer"], ["fixed", "Fixed"], ["direct", "Direct from Helmond"]];
 
@@ -66,10 +65,16 @@
     kgPerPallet: 250,
     targetDays: {L01: 2, L02: 2, L03: 2, L04: 2, L05: 3, L06: 3, L07: 5, L08: 4, L09: 4},
     volumeYear: 2027,
-    releaseTime: "12:00",   // FlexiTog order release time: S3 next-day needs the 3PL's cut-off (W24) at or after it
+    releaseTime: "12:00",
+    // time horizon (Route dashboard): rate development per year, rate in year y = base rate x (1 + escalation)^(y - 1).
+    // All estimates until real provider and distributor data are in.
+    escalation: {setting: "base", rates: {freight: {low: 0, base: 3, high: 6}, fuel: {low: 0, base: 2, high: 5}, warehouse: {low: 0, base: 3, high: 5}, eurusd: {low: 0, base: 0, high: 0}},
+      source: "placeholder", sourceDate: "", status: "estimate"},
+    oneOffYear: {S3: 1, S4: 1},          // the horizon year the 3PL onboarding and the own-site setup fall in
+    gccTarget: "48 hours",               // delivery target for the recommendation: "48 hours" or "next-day" (GCC, sizes S, M, L)   // FlexiTog order release time: S3 next-day needs the 3PL's cut-off (W24) at or after it
     s2: Object.fromEntries(LANE_IDS.map(L => [L, {on: false, loads: zeroLoads()}])),   // the distributor discount is internal revenue data (revenueSettings)
     s3: {provider: "", warehouse: "A", country: null, served: null, share: Object.fromEntries(LANE_IDS.map(L => [L, 100])), avgPallets: null, load: "C20",
-      labelling: false, amortYears: 3, carryingPct: 0, stockValue: 0, moduleSource: "same"},   // carrying cost and stock value: input from Finance
+      labelling: false, amortYears: 3, carryingPct: 0, stockValue: 0, moduleSource: "same", dedicated: false},   // dedicated: the 3PL runs a site for FlexiTog only (W20 to W22)   // carrying cost and stock value: input from Finance
     s4: {sites: [], moduleSource: "same"},   // per site; sources: free-zone authority quotes, Benten (warehouse), Anna Murphy (finance)
     weights: {forwarder: roleWeights(), threepl: roleWeights()},   // to be agreed with Mies
     rubric: null,
@@ -77,16 +82,20 @@
   function withDefaults(s) {
     const d = DEFAULT_SETTINGS(), o = s || {};
     const m2 = (a, b) => Object.fromEntries(Object.keys(a).map(k => [k, Object.assign({}, a[k], (b || {})[k] || {})]));
-    const s2 = Object.fromEntries(LANE_IDS.map(L => { const x = ((o.s2 || {})[L]) || {}; return [L, {on: !!x.on, loads: Object.assign(zeroLoads(), x.loads || {})}]; }));
+    const s2 = Object.fromEntries(LANE_IDS.map(L => { const x = ((o.s2 || {})[L]) || {}; return [L, {on: !!x.on, loads: Object.assign(zeroLoads(), x.loads || {}), distributor: x.distributor || ""}]; }));
     const o2 = Object.assign({}, o); ["revenuePerOrder", "revenueSource", "revenue"].forEach(k => delete o2[k]);   // revenue never rides in these settings
     return Object.assign(d, o2, {
-      volumes: {A: m2(d.volumes.A, (o.volumes || {}).A), B: m2(d.volumes.B, (o.volumes || {}).B)},
+      // A and B with their defaults; any other table (a volume case year, "Y") as given
+      volumes: Object.assign({}, o.volumes || {}, {A: m2(d.volumes.A, (o.volumes || {}).A), B: m2(d.volumes.B, (o.volumes || {}).B)}),
       avgKg: Object.assign(d.avgKg, o.avgKg || {}), cartons: Object.assign(d.cartons, o.cartons || {}), pallets: Object.assign(d.pallets, o.pallets || {}),
       orderLines: Object.assign(d.orderLines, o.orderLines || {}), targetDays: Object.assign(d.targetDays, o.targetDays || {}),
       s2, s3: Object.assign(d.s3, o.s3 || {}, {share: Object.assign(d.s3.share, (o.s3 || {}).share || {})}),
       s4: Object.assign(d.s4, o.s4 || {}, {sites: ((o.s4 || {}).sites || []).map(x => Object.assign(newSite(), x))}),
       weights: {forwarder: Object.assign(roleWeights(), ((o.weights || {}).forwarder) || {}), threepl: Object.assign(roleWeights(), ((o.weights || {}).threepl) || {})},
       rubric: o.rubric || null,
+      distributors: Array.isArray(o.distributors) ? o.distributors : [],
+      escalation: (() => { const e = o.escalation || {}, er = e.rates || {}; return Object.assign({}, d.escalation, e, {rates: Object.fromEntries(Object.entries(d.escalation.rates).map(([k, v]) => [k, Object.assign({}, v, er[k] || {})]))}); })(),
+      oneOffYear: Object.assign(d.oneOffYear, o.oneOffYear || {}),   // Benchmarking > Distributors (passed in, not stored here)
     });
   }
 
@@ -296,6 +305,22 @@
   }
   const need = (R, ok, key, L) => { R.required++; if (ok) R.filled++; else { if (!R.missing.includes(key)) R.missing.push(key); if (L) { R.countries[L].missing.push(key); R.countries[L].state = "incomplete"; } } return ok; };
   const volume = (S, sc, L, b, mult) => (Number(((S.volumes[sc] || {})[L] || {})[b]) || 0) * (mult == null ? 1 : mult);
+  // Delivery capability: the slowest GCC delivery of sizes S, M, L (days), or unknown when a transit time is missing.
+  function gccDays(R, L, b, days) {
+    if (!LANES[L].gcc || !STOCK_BANDS.includes(b)) return;
+    R.gccMeasured = true;
+    if (days == null) { R.gccUnknown = true; return; }
+    R.gccMax = Math.max(R.gccMax || 0, days);
+  }
+  // A one-off amount spread over the years of amortisation: kept apart, so the horizon can book the one-off in its own year.
+  function amortised(R, weights, part, amount, oneOff) {
+    if (!amount && !oneOff) return;
+    spread(R, weights, part, "fixed", amount);
+    const tot = sum(Object.values(weights), w => w);
+    R.amortised = R.amortised || {total: 0, oneOff: 0, byCountry: {}};
+    R.amortised.total += amount; R.amortised.oneOff += oneOff;
+    Object.entries(weights).forEach(([L, w]) => { const sh = tot > 0 ? w / tot : 0, x = R.amortised.byCountry[L] || (R.amortised.byCountry[L] = {amount: 0, oneOff: 0}); x.amount += amount * sh; x.oneOff += oneOff * sh; });
+  }
   // Direct from Helmond for a share of one lane-band volume (S1, and the rest of S2, S3, S4).
   function direct(R, ctx, L, b, n) {
     if (!(n > 0)) return;
@@ -308,6 +333,7 @@
     const target = Number(ctx.S.targetDays[L]);
     if (x.transit != null && x.transit <= target) c.onTime += n;
     if (LANES[L].gcc && x.transit != null && x.transit <= 1 && !R.nextDay.includes(L)) R.nextDay.push(L);
+    gccDays(R, L, b, x.transit);
     c.byClass[b] = Object.assign(c.byClass[b] || {}, {direct: x});
   }
   function s1(ctx, sc, mult) {
@@ -334,6 +360,13 @@
     });
     tag(R, "excludes distributor margin");   // the distributor discount lowers net revenue (revenueView), not the cost
     R.distributors = on;
+    // the distributor's terms (Benchmarking > Distributors); none selected: the default margin (estimate) and a flag
+    R.distributorTerms = Object.fromEntries(on.map(L => { const d = (ctx.S.distributors || []).find(x => x.id === ctx.S.s2[L].distributor);
+      if (!d) { R.flags.push(`No distributor data for ${LANES[L].name}: S2 uses the default margin (estimate).`); tag(R, "no distributor data"); }
+      const lead = d && d.leadDays != null && d.leadDays !== "" ? Number(d.leadDays) : null;
+      BANDS.forEach(b => { if (volume(ctx.S, sc, L, b) > 0) gccDays(R, L, b, lead); });
+      return [L, d ? {id: d.id, name: d.name, marginPct: d.marginPct == null || d.marginPct === "" ? null : Number(d.marginPct), leadDays: lead, status: d.status || "prospect", dataStatus: d.dataStatus || "estimate"} : null]; }));
+    R.distributorNames = Object.values(R.distributorTerms).filter(Boolean).map(d => d.name);
     tag(R, "quoted");
     return finish(R, ctx);
   }
@@ -360,7 +393,8 @@
   /* S3 3PL holds stock. Orders of sizes S, M, L in served countries go through the warehouse (times the share from stock);
      XL, XXL and unserved countries go direct (S1). See the README for every formula. */
   function s3(ctx, sc, mult, opts) {
-    const o = opts || {}, R = result(o.dedicated ? "S3b" : "S3", ctx.S, sc), C = s3Choice(ctx), set = ctx.S.s3;
+    const o = opts || {}, R = result("S3", ctx.S, sc), C = s3Choice(ctx), set = ctx.S.s3;
+    R.dedicated = !!o.dedicated;
     if (!C) { R.state = "not_configured"; R.notes.push("No provider has warehouse data (M4)."); return finish(R, ctx); }
     const {p, wh} = C, W = p.Q.m4[wh], whLane = set.country || laneOfText(W.W01);
     R.provider = p.name; R.warehouse = wh; R.whLane = whLane;
@@ -409,6 +443,7 @@
       c.shipments += x.n; c.covered += x.n; c.measured += x.n; c.orders += x.n; c.kg += x.n * (Number(ctx.S.avgKg[x.b]) || 0);
       if (d.transit != null && d.transit <= Number(ctx.S.targetDays[x.L])) c.onTime += x.n;
       if (LANES[x.L].gcc && d.nextDay && cutOk && !R.nextDay.includes(x.L)) R.nextDay.push(x.L);
+      gccDays(R, x.L, x.b, d.transit);
       add(R, x.L, "delivery", "delivery", x.n * d.price);
       if (!o.dedicated) {
         const h = (W.W11 || 0) + (W.W10 != null ? W.W10 * cart(x.b) : (W.W09 || 0) * lines(x.b)) + (W.W12 || 0) * pal(x.b) + (set.labelling ? (W.W13 || 0) * cart(x.b) : 0)
@@ -436,15 +471,19 @@
     spread(R, kgW, load === "C20" || load === "C40" ? "devanning" : "inbound", "handling", devan);
     const amort = Number(set.amortYears) > 0 ? Number(set.amortYears) : 3;
     if (o.dedicated) {
-      need(R, Number(site.m2) > 0, "setting: S4 m2 (for S3b)"); need(R, Number(site.fte) > 0, "setting: S4 FTE (for S3b)");
+      need(R, Number(site.m2) > 0, "setting: S4 m2 (for the dedicated site)"); need(R, Number(site.fte) > 0, "setting: S4 FTE (for the dedicated site)");
       const ded = ((Number(site.m2) || 0) * W.W20 * 12 + (Number(site.fte) || 0) * W.W21 * 12) * (1 + (W.W22 || 0));
       spread(R, orders, "dedicated", "fixed", ded);
+      R.floor = {total: ded, lines: [["Dedicated site: m2 x W20 x 12 + FTE x W21 x 12, plus W22", ded]]};
     } else {
       const storage = (W.W05 || 0) * (Number(set.avgPallets) || 0) * 12;
       spread(R, kgW, "storage", "storage", storage);
-      spread(R, orders, "fixed", "fixed", (W.W15 || 0) * 12 + ((W.W16 || 0) + (W.W17 || 0)) / amort);
+      spread(R, orders, "fixed", "fixed", (W.W15 || 0) * 12);
+      amortised(R, orders, "fixed", ((W.W16 || 0) + (W.W17 || 0)) / amort, (W.W16 || 0) + (W.W17 || 0));
       const handling = R.parts.handling || 0, top = Math.max(0, (W.W19 || 0) * 12 - (storage + handling + devan));
       spread(R, orders, "minimumTopUp", "fixed", top);
+      // the floor of a 3PL presence: what it costs with no orders at all (fixed fees and the minimum monthly charge)
+      R.floor = {total: (W.W15 || 0) * 12 + (W.W19 || 0) * 12, lines: [["Fixed fees W15 x 12", (W.W15 || 0) * 12], ["Minimum monthly charge W19 x 12 (covers storage and handling)", (W.W19 || 0) * 12]]};
     }
     R.oneOff = (W.W16 || 0) + (W.W17 || 0);
     const carrying = (Number(set.carryingPct) || 0) / 100 * (Number(set.stockValue) || 0);
@@ -480,6 +519,7 @@
         c.shipments += n; c.covered += n; c.measured += n; c.orders += n; c.kg += n * (Number(ctx.S.avgKg[b]) || 0);
         if (d.transit != null && d.transit <= Number(ctx.S.targetDays[L])) c.onTime += n;
         if (LANES[L].gcc && d.nextDay && !R.nextDay.includes(L)) R.nextDay.push(L);
+        gccDays(R, L, b, d.transit);
         add(R, L, "delivery", "delivery", n * d.price);
         c.byClass[b] = Object.assign(c.byClass[b] || {}, {delivery: d.price, handling: 0, tag: "proxy"});
         c.stock += n; c.stockDH += n * d.price;
@@ -495,8 +535,9 @@
       }
       if (fz && io.m3 && io.m3.fzExit != null) Object.entries(oSite).forEach(([L, n]) => add(R, L, "fzExit", "customs", n * io.m3.fzExit));
       const amort = Number(site.amortYears) > 0 ? Number(site.amortYears) : 3, z = k => Number(site[k]) || 0;
-      const own = z("rentPerM2") * z("m2") + z("fte") * z("costPerFte") + (z("setup") + z("licence")) / amort + z("equipmentMonth") * 12 + z("wmsMonth") * 12 + z("insuranceYear") + z("carryingCost");
+      const own = z("rentPerM2") * z("m2") + z("fte") * z("costPerFte") + z("equipmentMonth") * 12 + z("wmsMonth") * 12 + z("insuranceYear") + z("carryingCost");
       spread(R, oSite, "ownFixed", "fixed", own);
+      amortised(R, oSite, "ownFixed", (z("setup") + z("licence")) / amort, z("setup") + z("licence"));
       R.oneOff += z("setup") + z("licence");
       Object.assign(kgW, kSite); Object.keys(oSite).forEach(L => { orders[L] = (orders[L] || 0) + oSite[L]; });
     });
@@ -505,9 +546,11 @@
     tag(R, "proxy"); tag(R, "assumption");
     return finish(R, ctx);
   }
-  // S5 other: the M6 solution, estimated only for lines priced per shipment, per order or per kg, on the countries in O03.
-  function s5(ctx, sc) {
-    const R = result("S5", ctx.S, sc), f6 = chosen(ctx, "M6"), ps = f6 !== "best" ? ctx.list.filter(p => p.id === f6) : ctx.list;
+  /* M6 "other solution" answers: information only (Benchmarking), not a scenario. An indicative yearly estimate from the
+     lines priced per shipment, per order or per kg, on the countries in O03. */
+  function m6Solutions(list, settingsIn, sc) {
+    const ctx = {list: (list || []).filter(p => p.Q && p.Q.kind === "v30"), S: withDefaults(settingsIn), choice: "best"};
+    const R = result("M6", ctx.S, sc || "A"), ps = ctx.list;
     R.solutions = ps.filter(p => p.Q.m6.O01 || p.Q.m6.lines.length).map(p => {
       const lanes = lanesOfText(p.Q.m6.O03), m = p.Q.m6;
       let est = 0, usedLines = 0;
@@ -515,7 +558,7 @@
         if (l.price == null) return;
         const per = /per (shipment|order)/.test(l.unit) ? "n" : /per kg/.test(l.unit) ? "kg" : null; if (!per) return;
         usedLines++;
-        lanes.forEach(L => BANDS.forEach(b => { const n = volume(ctx.S, sc, L, b); est += per === "n" ? n * l.price : n * (Number(ctx.S.avgKg[b]) || 0) * l.price; }));
+        lanes.forEach(L => BANDS.forEach(b => { const n = volume(ctx.S, sc || "A", L, b); est += per === "n" ? n * l.price : n * (Number(ctx.S.avgKg[b]) || 0) * l.price; }));
       });
       return {provider: p.id, name: p.name, title: m.O01, description: m.O02, countries: m.O03, lanes, transit: m.O04, nextDay: m.O05, lines: m.lines, estimate: usedLines ? est : null};
     });
@@ -526,7 +569,16 @@
     R.total = top ? top.estimate : null; R.parts = top ? {indicative: top.estimate} : {};
     return R;
   }
+  /* Delivery capability in the GCC for sizes S, M, L: "next-day", "48 hours", "N days", "unconfirmed" (a transit or lead time
+     is missing) or "n/a" (no GCC volume). S3 next-day also needs the 3PL cut-off rule (nextDayState). */
+  function capability(R) {
+    if (!R.gccMeasured) return {label: "n/a", meets48: false, nextDay: false};
+    if (R.gccUnknown) return {label: "unconfirmed", meets48: false, nextDay: false};
+    const d = R.gccMax || 0, nd = d <= 1 && (R.id !== "S3" || R.nextDayState === "yes" || R.nextDayState == null);
+    return {label: nd ? "next-day" : d <= 2 ? "48 hours" : `${d} days`, meets48: d <= 2, nextDay: nd, days: d};
+  }
   function finish(R, ctx) {
+    R.capability = capability(R);
     if (R.state === "not_configured") { R.total = null; return R; }
     if (R.missing.length) R.state = "incomplete";
     const cs = Object.values(R.countries);
@@ -553,17 +605,18 @@
   // Every scenario for one volume case. list: providers; S: settings; choice: "best" or a provider id; mult: volume multiplier.
   function scenarios(list, settingsIn, sc, choice, mult) {
     const ctx = {list: (list || []).filter(p => p.Q && (p.Q.kind === "v30" || p.Q.kind === "v23")), S: withDefaults(settingsIn), choice: choice || "best"};
-    const out = {S1: s1(ctx, sc, mult), S2: s2(ctx, sc), S3: s3(ctx, sc, mult), S3b: s3(ctx, sc, mult, {dedicated: true}), S4: s4(ctx, sc, mult), S5: s5(ctx, sc)};
-    const ranked = ["S1", "S2", "S3", "S3b", "S4"].filter(k => out[k].state === "complete").sort((a, b) => out[a].total - out[b].total);
+    // four scenarios; the 3PL dedicated site is a toggle on S3 (settings s3.dedicated), M6 answers are information only (m6Solutions)
+    const out = {S1: s1(ctx, sc, mult), S2: s2(ctx, sc), S3: s3(ctx, sc, mult, {dedicated: !!ctx.S.s3.dedicated}), S4: s4(ctx, sc, mult)};
+    const ranked = IDS.filter(k => out[k].state === "complete").sort((a, b) => out[a].total - out[b].total);
     out.cheapest = ranked[0] || null;
     out.byRegion = REGIONS.map(([region, lanes]) => {
       const costOf = k => sum(lanes, L => out[k].countries[L].cost);
-      const ok = ["S1", "S2", "S3", "S3b", "S4"].filter(k => out[k].state === "complete");
+      const ok = IDS.filter(k => out[k].state === "complete");
       const best = ok.sort((a, b) => costOf(a) - costOf(b))[0] || null;
       return {region, lanes, best, cost: best ? costOf(best) : null, s1: out.S1.state === "complete" ? costOf("S1") : null};
     });
     out.byCountry = Object.fromEntries(LANE_IDS.map(L => {
-      const ok = ["S1", "S2", "S3", "S3b", "S4"].filter(k => out[k].state === "complete" && out[k].countries[L].state === "complete" && out[k].countries[L].shipments > 0);
+      const ok = IDS.filter(k => out[k].state === "complete" && out[k].countries[L].state === "complete" && out[k].countries[L].shipments > 0);
       const best = ok.sort((a, b) => out[a].countries[L].cost - out[b].countries[L].cost)[0] || null;
       return [L, best];
     }));
@@ -740,8 +793,10 @@
   const numOr = (v, d) => (v === null || v === undefined || v === "" || !Number.isFinite(Number(v)) ? d : Number(v));
   function revenueSettings(r) {
     const d = REVENUE_DEFAULTS(), o = r || {}, bc = o.byCountry || {};
-    return {currency: "USD", fx: numOr(o.fx, d.fx), total: {A: numOr((o.total || {}).A, d.total.A), B: numOr((o.total || {}).B, d.total.B)}, last12: numOr(o.last12, d.last12),
-      byCountry: {A: Object.fromEntries(LANE_IDS.map(L => [L, numOr((bc.A || {})[L], null)])), B: Object.fromEntries(LANE_IDS.map(L => [L, numOr((bc.B || {})[L], null)]))},
+    // A and B with their defaults; any other key (a volume case year, "Y") as given
+    const keys = [...new Set(["A", "B"].concat(Object.keys(o.total || {}), Object.keys(bc)))];
+    return {currency: "USD", fx: numOr(o.fx, d.fx), total: Object.fromEntries(keys.map(k => [k, numOr((o.total || {})[k], d.total[k] ?? 0)])), last12: numOr(o.last12, d.last12),
+      byCountry: Object.fromEntries(keys.map(k => [k, Object.fromEntries(LANE_IDS.map(L => [L, numOr((bc[k] || {})[L], null)]))])),
       discount: Object.fromEntries(LANE_IDS.map(L => [L, Math.max(0, Math.min(100, numOr((o.discount || {})[L], 0)))]))};
   }
   // Revenue per country of a volume case in USD: the value set, else the case total x the country's share of shipments.
@@ -760,7 +815,9 @@
     const sc = out.S1.sc, base = revenueByCountry(revIn, settingsIn, sc), rv = revenueSettings(revIn), m = mult == null ? 1 : mult, fx = rv.fx;
     const block = (R, lanes, whole) => {
       const dist = L => R.id === "S2" && R.distributors && R.distributors.includes(L);
-      const usd = sum(lanes, L => base.countries[L].usd * m), netUsd = sum(lanes, L => base.countries[L].usd * m * (dist(L) ? 1 - rv.discount[L] / 100 : 1));
+      // the distributor's margin: the selected distributor's terms, else the default margin per country (estimate)
+      const margin = L => { const t = (R.distributorTerms || {})[L]; return t && t.marginPct != null ? t.marginPct : rv.discount[L]; };
+      const usd = sum(lanes, L => base.countries[L].usd * m), netUsd = sum(lanes, L => base.countries[L].usd * m * (dist(L) ? 1 - margin(L) / 100 : 1));
       const cost = R.state === "complete" ? (whole ? R.total : sum(lanes, L => R.countries[L].cost)) : null;
       const sh = sum(lanes, L => R.countries[L].shipments), cov = sum(lanes, L => R.countries[L].covered);
       return {usd, eur: usd * fx, netUsd, netEur: netUsd * fx, discountEur: (usd - netUsd) * fx, cost,
@@ -768,7 +825,7 @@
         contribution: cost != null ? netUsd * fx - cost : null, coverage: sh ? cov / sh : 1, coveredOnly: sh > 0 && cov < sh - 1e-9};
     };
     const scen = {};
-    ["S1", "S2", "S3", "S3b", "S4"].forEach(id => { const R = out[id];
+    IDS.forEach(id => { const R = out[id];
       scen[id] = {total: block(R, LANE_IDS, true), regions: Object.fromEntries(REGIONS.map(([rg, ls]) => [rg, block(R, ls)])), countries: Object.fromEntries(LANE_IDS.map(L => [L, block(R, [L])]))}; });
     const ok = Object.keys(scen).filter(id => scen[id].total.pct != null).sort((a, b) => scen[a].total.pct - scen[b].total.pct);
     return {sc, fx, mult: m, usd: base.usd * m, eur: base.usd * m * fx, perShipmentUsd: base.shipments ? base.usd / base.shipments : null,
@@ -776,12 +833,12 @@
       regions: Object.fromEntries(REGIONS.map(([rg, ls]) => [rg, {usd: sum(ls, L => base.countries[L].usd * m), eur: sum(ls, L => base.countries[L].usd * m) * fx}])),
       allocated: base.allocated, scenarios: scen, lowest: ok[0] || null};
   }
-  const PHRASE = {S1: "shipping from Helmond", S2: "a distributor holding stock", S3: "holding stock at a 3PL", S3b: "a dedicated 3PL site", S4: "an own warehouse"};
+  const PHRASE = {S1: "shipping from Helmond", S2: "a distributor holding stock", S3: "holding stock at a 3PL", S4: "an own warehouse"};
   const pct1 = x => `${(Math.round(x * 1000) / 10).toLocaleString("en-GB", {minimumFractionDigits: 1, maximumFractionDigits: 1})}%`;
   // One sentence per region: logistics cost as % of revenue per complete scenario.
   function revenueAnswers(view) {
     return REGIONS.map(([rg]) => {
-      const ids = ["S1", "S2", "S3", "S3b", "S4"].filter(id => view.scenarios[id].regions[rg].pct != null);
+      const ids = IDS.filter(id => view.scenarios[id].regions[rg].pct != null);
       const where = rg === "GCC" ? "the GCC" : rg;
       if (!ids.length) return `In ${where}, no complete scenario to set against revenue yet.`;
       const part = (id, first) => { const b = view.scenarios[id].regions[rg], ph = PHRASE[id];
@@ -803,19 +860,18 @@
     const be = sens ? Object.entries(sens.breakEven).filter(([, m]) => m != null) : [];
     res.push(be.length ? be.map(([k, m]) => `${k} ${sname(k)} becomes cheaper than S1 from about ${m} times volume case ${out.S1.sc}.`).join(" ")
       : `Neither S3 nor S4 becomes cheaper than S1 between 0.25 and 5 times the volumes${["S3", "S4"].some(k => out[k].state !== "complete") ? " (S3 or S4 is not complete yet)" : ""}.`);
-    ["S3", "S3b"].filter(k => out[k].nextDayState === "unconfirmed" && out[k].state !== "not_configured").forEach(k => res.push(`${k} ${sname(k)}: next-day in the GCC is unconfirmed, the 3PL gives no order cut-off time (W24).`));
-    ["S3", "S3b"].filter(k => out[k].m2Fallback && out[k].state !== "not_configured").forEach(k => res.push(`${k} ${sname(k)}: replenishment uses M2 from ${out[k].m2Fallback}, the cheapest for the warehouse country and load, as the 3PL quotes no M2.`));
-    const nd = ["S1", "S3", "S3b", "S4"].filter(k => out[k].state === "complete" && out[k].nextDay.length);
+    ["S3"].filter(k => out[k].nextDayState === "unconfirmed" && out[k].state !== "not_configured").forEach(k => res.push(`${k} ${sname(k)}: next-day in the GCC is unconfirmed, the 3PL gives no order cut-off time (W24).`));
+    ["S3"].filter(k => out[k].m2Fallback && out[k].state !== "not_configured").forEach(k => res.push(`${k} ${sname(k)}: replenishment uses M2 from ${out[k].m2Fallback}, the cheapest for the warehouse country and load, as the 3PL quotes no M2.`));
+    const nd = ["S1", "S3", "S4"].filter(k => out[k].state === "complete" && out[k].nextDay.length);
     res.push(nd.length ? `Next-day in the GCC: ${nd.map(k => `${k} reaches ${out[k].nextDay.map(L => LANES[L].short || LANES[L].name).join(", ")}`).join("; ")}.` : "No complete scenario reaches next-day delivery in the GCC.");
-    ["S1", "S2", "S3", "S3b", "S4"].forEach(k => { const R = out[k];
+    IDS.forEach(k => { const R = out[k];
       if (R.state === "incomplete") res.push(`${k} ${sname(k)} is incomplete: missing ${R.missing.slice(0, 8).join(", ")}${R.missing.length > 8 ? ` and ${R.missing.length - 8} more` : ""}.`);
       else if (R.state === "not_configured") res.push(`${k} ${sname(k)} is not configured: ${R.notes.join(" ")}`); });
-    if (out.S5.solutions && out.S5.solutions.length) res.push(`S5 other: ${out.S5.solutions.map(x => `${x.name} advises "${x.title || "an unnamed solution"}"${x.estimate != null ? `, indicative ${money0(x.estimate)} a year` : ""}`).join("; ")}.`);
     return res;
   }
 
   const api = {VERSION, V23, LEGACY_VERSIONS, OK_CHECK, LANES, LANE_IDS, BANDS, CLASSES, STOCK_BANDS, LOADS, REGIONS, SCENARIOS, TYPES, MULTS,
     DEFAULT_SETTINGS, withDefaults, newSite, strictNumber, convert, valuesOf, versionKind, laneOfText, lanesOfText, quote, completeness,
-    STOCK_FIELDS, stockNote, MODULAR, V31, m1Own, m2Own, m5Own, classCost, scenarios, sensitivity, REVENUE_DEFAULTS, revenueSettings, revenueByCountry, revenueView, revenueAnswers, RUBRIC, rubricOf, scoreAnswer, scoreAll, flags, followUps, answers, sname};
+    STOCK_FIELDS, stockNote, MODULAR, V31, IDS, m6Solutions, m1Own, m2Own, m5Own, classCost, scenarios, sensitivity, REVENUE_DEFAULTS, revenueSettings, revenueByCountry, revenueView, revenueAnswers, RUBRIC, rubricOf, scoreAnswer, scoreAll, flags, followUps, answers, sname};
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.FlexiRFQ30 = api;
 })(typeof window !== "undefined" ? window : globalThis);

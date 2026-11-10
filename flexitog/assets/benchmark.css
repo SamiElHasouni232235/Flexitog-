@@ -170,3 +170,7 @@ tr.noans td{opacity:.55}
 .m6{border-top:1px solid var(--rule);padding-top:8px;margin-top:8px}.m6:first-child{border-top:0;margin-top:0}.m6 h3{font-size:14px;margin:0 0 4px}.m6 p{font-size:13px;margin:4px 0}
 .revset .setgrid input{width:120px}.revset .setrow input{width:120px}
 .modchip.na{opacity:.55;box-shadow:inset 0 0 0 1px var(--rule);background:transparent}
+.vctable td.iact{white-space:nowrap}.vctable td.iact .btn{width:auto;display:inline-flex;margin-right:4px}.vctable tr.sel td{background:var(--ice-soft)}
+.hfiles{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12px;margin:6px 0 2px}.hfiles .lnk{margin-left:4px}
+.vcedit .setrow{margin-bottom:6px}
+.distgrid input,.distgrid select{width:auto;min-width:90px;padding:3px 5px;font:500 12px var(--body);border:1px solid var(--rule);border-radius:6px;background:var(--surface);color:var(--ink)}.distgrid td{padding:3px}

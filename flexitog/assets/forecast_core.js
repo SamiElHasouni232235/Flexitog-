@@ -49,8 +49,8 @@
   const CATEGORY_CLASS = { "gloves": "Gloves", "footwear": "Footwear", "headwear": "Headwear", "accessories": "Accessories",
     "drying cabinets": "Drying cabinets" };
   const CLASSES = ["Jackets", "Trousers", "Coveralls", "Baselayers", "Other clothing", "Gloves", "Footwear", "Headwear", "Accessories", "Drying cabinets"];
-  const METHODS = [["runrate", "Run rate"], ["holt", "Holt smoothing"], ["customer", "Customer-driven"], ["target", "Target allocation"]];
-  const SCENARIOS = ["Low", "Base", "Target"];
+  const METHODS = [["runrate", "Moving average (run rate)"], ["holt", "Exponential smoothing (Holt)"], ["seasonal", "Seasonal"], ["customer", "Customer-driven"], ["target", "Target allocation"]];
+  const SCENARIOS = ["Low", "Base", "Target"];   // forecast bands (not supply chain scenarios S1 to S4)
   // Customer country names as Odoo writes them -> ISO 2.
   const COUNTRY_ISO = { "turkey": "TR", "türkiye": "TR", "turkiye": "TR", "saudi arabia": "SA", "united arab emirates": "AE", "uae": "AE",
     "kuwait": "KW", "qatar": "QA", "bahrain": "BH", "oman": "OM", "morocco": "MA", "algeria": "DZ", "tunisia": "TN", "egypt": "EG",
@@ -147,7 +147,7 @@
         product: String(r["Product/Name"]).trim(), category: String(r["Product Template/Category"] || "").trim(),
         type, product_class: type === "goods" ? productClass(r["Product/Name"], r["Product Template/Category"]) : "Freight",
         quantity: qty, pack, units: qty * pack, currency: cur, total: num(r["Total"]), tax: num(r["Total Tax"]),
-        net, net_eur: netEur, net_rep: netEur / (fx[o.reporting] || 1),
+        net, net_eur: netEur, net_rep: netEur / (fx[o.reporting] || 1), file_year: r.__year == null ? null : Number(r.__year),
       });
       rep[type + "_lines"]++;
     });
@@ -275,6 +275,20 @@
     H.countries.forEach(c => { const ttm = sum(H.series[c].slice(-n)) * 12 / n; out[c] = target.map(() => ttm / 12); });
     return out;
   }
+  // 1b. Seasonal: the run rate x a seasonal index per calendar month (the month's average share of the history, all countries
+  // together, 1 = an average month). Needs 12 months; with less history the index stays 1 (plain run rate).
+  function seasonalIndex(H) {
+    const tot = H.months.map((m, i) => sum(H.countries.map(c => H.series[c][i] || 0))), by = {};
+    H.months.forEach((m, i) => { const k = m.slice(5, 7); (by[k] = by[k] || []).push(tot[i]); });
+    const avg = sum(tot) / (tot.length || 1), idx = {};
+    Object.entries(by).forEach(([k, v]) => { idx[k] = avg > 0 && H.months.length >= 12 ? (sum(v) / v.length) / avg : 1; });
+    return idx;
+  }
+  function seasonal(H, target) {
+    const rr = runRate(H, target), idx = seasonalIndex(H), out = {};
+    Object.keys(rr).forEach(c => { out[c] = rr[c].map((v, i) => v * (idx[target[i].slice(5, 7)] ?? 1)); });
+    return out;
+  }
   // 2. Holt linear exponential smoothing, no seasonality. Level starts at the mean of the first three
   // months, trend at 0 (the lumpy start would otherwise set a wild trend). Forecasts never go below 0.
   function holtFit(y, alpha, beta) {
@@ -364,10 +378,11 @@
       const v = o.includeProjects ? x.goods : Math.min(x.goods, fit.cap);
       const a = act[x.country] || (act[x.country] = hold.map(() => 0)); a[hold.indexOf(x.month)] += v;
     });
-    const fc = { runrate: runRate(fit, hold), holt: holt(fit, hold, o.alpha, o.beta), customer: customerDriven(fit, hold, {}).out };
+    const fc = { runrate: runRate(fit, hold), holt: holt(fit, hold, o.alpha, o.beta), seasonal: seasonal(fit, hold), customer: customerDriven(fit, hold, {}).out };
     // wape: per country and month (the level the forecast feeds the engine; drives the indicative label).
     // wape_total: on total revenue per month, all countries together.
-    const wape = {}, wapeTotal = {}, detail = {};
+    // mape: mean absolute % error of the monthly total over the hold-out months (months without sales left out)
+    const wape = {}, wapeTotal = {}, detail = {}, mape = {};
     Object.entries(fc).forEach(([k, f]) => {
       let err = 0, tot = 0;
       const cs = new Set(Object.keys(act).concat(Object.keys(f)));
@@ -375,10 +390,12 @@
       cs.forEach(c => hold.forEach((m, i) => { const a = (act[c] || [])[i] || 0, p = (f[c] || [])[i] || 0; err += Math.abs(a - p); tot += a; ma[i] += a; mf[i] += p; }));
       wape[k] = tot > 0 ? err / tot : null;
       wapeTotal[k] = tot > 0 ? sum(hold.map((_, i) => Math.abs(ma[i] - mf[i]))) / tot : null;
+      const ms = hold.map((_, i) => i).filter(i => ma[i] > 0);
+      mape[k] = ms.length ? sum(ms.map(i => Math.abs(ma[i] - mf[i]) / ma[i])) / ms.length : null;
       detail[k] = { actual: tot, forecast: sum(mf), actual_by_month: ma, forecast_by_month: mf };
     });
-    wape.target = null; wapeTotal.target = null;                       // top down: no statistical fit to test
-    return { months: hold, fit_to: addMonths(hold[0], -1), wape, wape_total: wapeTotal, detail };
+    wape.target = null; wapeTotal.target = null; mape.target = null;     // top down: no statistical fit to test
+    return { months: hold, fit_to: addMonths(hold[0], -1), wape, wape_total: wapeTotal, mape, detail };
   }
 
   // ================================================================== forecast with scenarios
@@ -395,6 +412,7 @@
     let base, extra = {};
     if (o.method === "runrate") base = runRate(H, months);
     else if (o.method === "holt") base = holt(H, months, o.alpha, o.beta);
+    else if (o.method === "seasonal") base = seasonal(H, months);
     else if (o.method === "customer") { const r = customerDriven(H, months, o.newPerQuarter); base = r.out; extra = r; }
     else { const r = targetAllocation(H, months, tMid, o.weights); base = r.out; extra = r; }
     if (o.method !== "target") Object.keys(base).forEach(c => { base[c] = base[c].map(v => v * up); });

@@ -137,7 +137,9 @@ def test_dashboard_html_is_self_contained(ws):
     # Benchmarking reads providers from Master Data; the RFQ source map for unsaved files is embedded
     assert '"sources":{"meta.rfq_version"' in page or '"sources":{"provider.provider_id"' in page
     assert "window.FlexiDash" in page and "SEED_PROVIDERS" not in page and "DataStore" in page
-    assert len(page.encode()) < 5_000_000
+    # volume cases and the time horizon: inlined, the Forecast tab builder and the summary panel
+    assert "root.FlexiCases" in page and "root.FlexiHorizon" in page and "window.CasesUI" in page and 'id="sumPanel"' in page
+    assert len(page.encode()) < 5_500_000       # 5.04 MB with the volume cases and horizon modules; the artifact limit is 16 MB
 
 
 def test_apply_dashboard_changes(ws):

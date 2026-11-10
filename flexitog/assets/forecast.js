@@ -41,18 +41,32 @@ const DEFAULT_SET = () => ({
 });
 
 // ============================================================ state
-const FS = {ready: false, source: null, records: [], lines: [], report: null, set: DEFAULT_SET(), F: null, all: {}, rows: [], batch: null, volume: null, ver: 0};
+const FS = {ready: false, source: null, files: [], records: [], lines: [], report: null, set: DEFAULT_SET(), F: null, all: {}, rows: [], batch: null, volume: null, ver: 0};
 try {
   const s = JSON.parse(localStorage.getItem(KEY) || "null");
   if (s) { const d = DEFAULT_SET(); FS.set = Object.assign(d, s, {fx: Object.assign(d.fx, s.fx || {}), classProfile: Object.assign(d.classProfile, s.classProfile || {}), feasibleDays: Object.assign(d.feasibleDays, s.feasibleDays || {})}); }
 } catch (e) {}
 const saveSet = () => Saver.later("forecast", () => { try { localStorage.setItem(KEY, JSON.stringify(FS.set)); } catch (e) {} });   // written on Save
 
-function loadTable(t, name, anonymized){
-  FS.source = {name, anonymized, rows: t.rows.length};
-  FS.records = FC.fromTable(t.headers, t.rows);
+/* Sales history, one file per year side by side (the fixed Odoo template). Each file is tagged with the year it covers;
+   the methods read all of them together, and the latest year is the base year of a new volume case. Kept in this tab only. */
+const yearsIn = recs => [...new Set(recs.map(r => { const m = String(r["Created on"] instanceof Date ? r["Created on"].toISOString() : r["Created on"] || "").match(/(20\d\d)/); return m ? Number(m[1]) : null; }).filter(Boolean))].sort();
+function loadTable(t, name, anonymized, year, replace){
+  const recs = FC.fromTable(t.headers, t.rows), ys = yearsIn(recs);
+  const y = Number(year) || (anonymized ? Number(String(FS.set.asOf || FC.DEFAULTS.asOf).slice(0, 4)) : ys[ys.length - 1]) || new Date().getFullYear();
+  recs.forEach(r => { r.__year = y; });
+  const file = {id: `H${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, year: y, name, anonymized, rows: t.rows.length, records: recs, years: ys};
+  FS.files = replace ? [file] : FS.files.filter(f => !(f.anonymized && !anonymized)).concat([file]);   // real data replaces the sample
+  FS.files.sort((a, b) => a.year - b.year);
+  mergeFiles();
+}
+function mergeFiles(){
+  FS.records = [].concat(...FS.files.map(f => f.records));
+  const f = FS.files[FS.files.length - 1];
+  FS.source = f ? {name: FS.files.map(x => `${x.name} (${x.year})`).join(" · "), anonymized: FS.files.every(x => x.anonymized), rows: FS.records.length} : null;
   clean();
 }
+const latestYear = () => (FS.files.length ? Math.max(...FS.files.map(f => f.year)) : null);
 function clean(){
   const res = FC.clean(FS.records, {fx: FS.set.fx, reporting: FS.set.reporting, countryOf: v => (v ? toIso2(v) : null)});
   FS.lines = res.lines; FS.report = res.report; FS.ver++;
@@ -94,9 +108,9 @@ function runEngine(){
 function render(){
   const P = $("viewForecast");
   if (!FS.ready) { P.innerHTML = `<div class="card"><p class="muted">Loading sales orders…</p></div>`; return; }
-  if (!FS.F) { P.innerHTML = controlsHtml() + `<div class="empty-state">No sales order lines. Upload the Odoo export (Sheet1, Order Lines/ columns).</div>`; bind(P); return; }
-  P.innerHTML = controlsHtml() + statsHtml() + chartsHtml() + tablesHtml() + `<div id="fcImpact"></div>` + assumptionsHtml();
-  bind(P); renderImpact();
+  if (!FS.F) { P.innerHTML = `<div id="vcBuilder"></div>` + controlsHtml() + `<div class="empty-state">No sales order lines. Upload the Odoo export (Sheet1, Order Lines/ columns).</div>`; bind(P); if (window.CasesUI) CasesUI.render(); return; }
+  P.innerHTML = `<div id="vcBuilder"></div>` + controlsHtml() + statsHtml() + chartsHtml() + tablesHtml() + `<div id="fcImpact"></div>` + assumptionsHtml();
+  bind(P); renderImpact(); if (window.CasesUI) CasesUI.render();
 }
 function chips(){
   const F = FS.F, w = F ? F.backtest.wape[FS.set.method] : null;
@@ -109,20 +123,22 @@ function seg(id, list, v){ return `<div class="seg" id="${id}">${list.map(([k, l
 function controlsHtml(){
   const s = FS.set, H = FS.F ? FS.F.H : null, countries = H ? H.countries : [];
   const curs = Object.keys(s.fx);
-  return `<div class="bhead"><p class="muted" style="font-size:13px;max-width:760px">2027 sales forecast from the Odoo sales order lines. Pick a method and a scenario: the result is the demand every route scenario prices on the Route Dashboard, the report extract and the Benchmarking test order.</p><div class="bchips" id="fcChips">${chips()}</div></div>
+  return `<div class="bhead"><p class="muted" style="font-size:13px;max-width:760px">Volume cases are built here, and only here: named forecasts of orders, units, kg and revenue per year that the Route Dashboard prices through scenarios S1 to S4. Below them, the 2027 sales forecast from the Odoo sales order lines, with a method and a forecast band (Low, Base, Target) for the route engine.</p><div class="bchips" id="fcChips">${chips()}</div></div>
   <div class="card"><div class="cardhead"><h2>Forecast settings</h2><div class="iact">
+      <label class="ctl" style="flex-direction:row;align-items:center;gap:6px;font-size:12px">Year this file covers<select id="fcYear" aria-label="Year the uploaded file covers"><option value="">from the dates</option>${Array.from({length: 8}, (_, i) => new Date().getFullYear() - i).map(y => `<option>${y}</option>`).join("")}</select></label>
       <label class="btn ghost filebtn">Upload Odoo export<input type="file" id="fcFile" accept=".xlsx,.xls,.csv" aria-label="Upload Odoo sales order lines"></label>
       ${FS.source && !FS.source.anonymized ? `<button type="button" class="btn ghost" id="fcSample">Back to the sample</button>` : ""}
       <button type="button" class="btn ghost" id="fcReset">Reset settings</button></div></div>
     <div class="optgrid">
       <div class="ctl"><label>Method</label>${seg("fcMethod", FC.METHODS, s.method)}</div>
-      <div class="ctl"><label>Scenario fed to the routes</label>${seg("fcScen", FC.SCENARIOS.map(x => [x, x]), s.scenario)}</div>
+      <div class="ctl"><label>Forecast band fed to the route engine</label>${seg("fcScen", FC.SCENARIOS.map(x => [x, x]), s.scenario)}</div>
       <div class="ctl"><label for="fcCur">Reporting currency</label><select id="fcCur">${curs.map(c => `<option${c === s.reporting ? " selected" : ""}>${esc(c)}</option>`).join("")}</select></div>
       <div class="ctl"><label>FX (EUR per unit)</label><div class="fx" style="grid-template-columns:repeat(${curs.length - 1},minmax(110px,1fr))">${curs.filter(c => c !== "EUR").map(c => `<label>${esc(c)}<input type="number" step="any" min="0" data-fx="${esc(c)}" value="${esc(s.fx[c])}"></label>`).join("")}</div></div>
       <div class="ctl"><label for="fcUp">Growth uplift %</label><input type="number" id="fcUp" step="1" value="${esc(s.upliftPct)}" style="width:90px"></div>
       <label class="toggle"><input type="checkbox" id="fcProj"${s.includeProjects ? " checked" : ""}><span>Include project orders<small>Orders above the P${s.capPercentile} order value (${H ? money(H.cap, s.reporting) : "n/a"}) count in full</small></span></label>
       <label class="toggle"><input type="checkbox" id="fcUse"${s.useAsDemand ? " checked" : ""}><span>Use as demand<small>Route Dashboard, report and benchmark read this forecast</small></span></label>
     </div>
+    ${FS.files.length ? `<div class="hfiles"><span class="faint">Sales history, side by side:</span> ${FS.files.map(f => `<span class="chip">${esc(f.name)} · <b>${f.year}</b> · ${fmt(f.rows)} rows${f.anonymized ? " · sample" : ""} <button type="button" class="lnk" data-rmfile="${esc(f.id)}" title="Remove this file" aria-label="Remove ${esc(f.name)}">×</button></span>`).join(" ")}</div>` : ""}
     <div class="optgrid" style="margin-top:4px">
       ${s.method === "holt" ? `<div class="ctl"><label for="fcA">Alpha (level) ${esc(s.alpha)}</label><input type="range" id="fcA" min="0.05" max="0.95" step="0.05" value="${esc(s.alpha)}"></div>
         <div class="ctl"><label for="fcB">Beta (trend) ${esc(s.beta)}</label><input type="range" id="fcB" min="0" max="0.9" step="0.05" value="${esc(s.beta)}"></div>` : ""}
@@ -299,15 +315,17 @@ function bind(P){
   on("fcFGCC", "change", e => update(s => { s.feasibleDays.GCC = Number(e.target.value); }));
   on("fcAsOf", "change", e => update(s => { if (e.target.value) s.asOf = e.target.value; }));
   on("fcReset", "click", () => { FS.set = DEFAULT_SET(); saveSet(); clean(); recompute(); render(); toast("Forecast settings reset"); });
-  on("fcSample", "click", () => { loadTable(PAYLOAD.sales_orders, PAYLOAD.sales_orders.source, PAYLOAD.sales_orders.anonymized); recompute(); render(); });
+  on("fcSample", "click", () => { loadTable(PAYLOAD.sales_orders, PAYLOAD.sales_orders.source, PAYLOAD.sales_orders.anonymized, null, true); recompute(); render(); });
+  P.querySelectorAll("[data-rmfile]").forEach(b => b.addEventListener("click", () => { FS.files = FS.files.filter(f => f.id !== b.dataset.rmfile); mergeFiles(); recompute(); render(); toast("History file removed"); }));
   on("fcFile", "change", async e => {
     const f = e.target.files[0]; e.target.value = ""; if (!f) return;
     try {
       const book = await readFile(f), name = book.names.includes("Sheet1") ? "Sheet1" : book.names[0], sh = book.sheets[name] || [];
       const hi = sh.findIndex(r => (r || []).some(c => /Order Reference/.test(String(c || ""))));
       if (hi < 0) throw new Error("No Order Lines/Order Reference column in " + name);
-      loadTable({headers: sh[hi], rows: sh.slice(hi + 1)}, f.name, false);
-      recompute(); render(); toast(`${f.name}: ${fmt(FS.report.lines)} lines, ${fmt(FS.report.orders)} orders. Kept in this tab only.`);
+      const yr = ($("fcYear") || {}).value;
+      loadTable({headers: sh[hi], rows: sh.slice(hi + 1)}, f.name, false, yr);
+      recompute(); render(); toast(`${f.name} added for ${FS.files[FS.files.length - 1].year}: ${fmt(FS.report.lines)} lines in all, ${fmt(FS.report.orders)} orders. Kept in this tab only.`);
     } catch (err) { toast(err.message || "Could not read the file", "bad"); }
   });
 }
@@ -320,7 +338,7 @@ function init(){
   if (window.DEMAND && window.DEMAND.active) runEngine();
 }
 window.ForecastUI = {
-  show(){ render(); }, state: FS, ready: () => FS.ready && !!FS.F,
+  show(){ render(); }, state: FS, ready: () => FS.ready && !!FS.F, latestYear, files: () => FS.files.map(f => ({year: f.year, name: f.name, anonymized: f.anonymized})),
   demandRows: () => FS.rows, classProfile: () => FS.set.classProfile, settings: () => FS.set,
 };
 init();

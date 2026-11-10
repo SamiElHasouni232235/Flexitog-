@@ -173,9 +173,9 @@ const {PAL, sfmt, lineChart, barsV, barsH, legendHtml, svgToPng, svgSize} = wind
 const regionColor = (pal, r) => pal[rc(r)] || pal.OTH;
 
 // ============================================================ shell, tabs, chips
-const TABS = [["providers", "Logistics Providers"], ["quotes", "Quote Benchmark"], ["sales", "Sales Data and Analysis"], ["goals", "Service Goals"], ["test", "Test Order and Report"]];
+const TABS = [["providers", "Logistics Providers"], ["distributors", "Distributors"], ["quotes", "Quote Benchmark"], ["sales", "Sales Data and Analysis"], ["goals", "Service Goals"], ["test", "Test Order and Report"]];
 function renderTabs(){
-  const n = {providers: B.providers.length, quotes: FlexiCalc.liveQuotes(MD.t.quotes, {today: today(), months: 0, typeOf: () => null}).length, sales: B.clean ? B.clean.lines.length : 0, goals: B.goals.length, test: B.test ? B.test.orders.length : null};
+  const n = {providers: B.providers.length, distributors: (B.distributors || []).length, quotes: FlexiCalc.liveQuotes(MD.t.quotes, {today: today(), months: 0, typeOf: () => null}).length, sales: B.clean ? B.clean.lines.length : 0, goals: B.goals.length, test: B.test ? B.test.orders.length : null};
   $("benchTabs").innerHTML = TABS.map(([k, l]) => `<button type="button" data-t="${k}" aria-pressed="${B.tab === k}">${esc(l)}${n[k] != null ? `<span class="cnt">${fmt(n[k])}</span>` : ""}</button>`).join("");
 }
 function renderChips(){
@@ -195,7 +195,7 @@ function render(){
   TABS.forEach(([k]) => { $("bp-" + k).hidden = k !== B.tab; });
   if (B.tab === "test") currentTest();
   renderTabs(); renderChips();
-  ({providers: renderProviders, quotes: renderQuotes, sales: renderSales, goals: renderGoals, test: renderTest})[B.tab]();
+  ({providers: renderProviders, distributors: renderDistributors, quotes: renderQuotes, sales: renderSales, goals: renderGoals, test: renderTest})[B.tab]();
   B.stale[B.tab] = false;
 }
 $("benchTabs").addEventListener("click", e => {
@@ -965,8 +965,8 @@ function rfqSettingsHtml(){
   const chk = (path, on, label) => `<input type="checkbox" data-sb="${path}"${on ? " checked" : ""} aria-label="${esc(label)}">`;
   const sel = (path, v, opts, label) => `<select data-ss="${path}" aria-label="${esc(label)}">${opts.map(([k, l]) => `<option value="${esc(k)}"${String(v ?? "") === String(k) ? " selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
   const tot = sc => L9.reduce((a, l) => a + V.BANDS.reduce((b, k) => b + (Number(s.volumes[sc][l][k]) || 0), 0), 0);
-  const vol = sc => `<div class="setcol"><h3>Volume case ${sc} <span class="faint" data-tot="${sc}">${fmt(tot(sc))} customer shipments a year</span></h3><div class="tablewrap"><table class="setgrid"><thead><tr><th>Lane</th>${V.BANDS.map(b => `<th>${b}</th>`).join("")}</tr></thead><tbody>
-    ${L9.map(l => `<tr><td class="num" title="${esc(V.LANES[l].name)}">${l}</td>${V.BANDS.map(b => `<td>${num(`volumes.${sc}.${l}.${b}`, s.volumes[sc][l][b], `Volume case ${sc} ${l} ${b}`)}</td>`).join("")}</tr>`).join("")}</tbody></table></div></div>`;
+  const vol = sc => `<div class="setcol"><h3>Reference volume ${sc} <span class="faint" data-tot="${sc}">${fmt(tot(sc))} customer shipments a year</span></h3><div class="tablewrap"><table class="setgrid"><thead><tr><th>Lane</th>${V.BANDS.map(b => `<th>${b}</th>`).join("")}</tr></thead><tbody>
+    ${L9.map(l => `<tr><td class="num" title="${esc(V.LANES[l].name)}">${l}</td>${V.BANDS.map(b => `<td>${num(`volumes.${sc}.${l}.${b}`, s.volumes[sc][l][b], `Reference volume ${sc} ${l} ${b}`, " disabled")}</td>`).join("")}</tr>`).join("")}</tbody></table></div></div>`;
   const provOpts = [["", "choose a provider"]].concat(ev.map(e => [e.id, e.name]));
   const site = (x, i) => `<div class="setsite"><h4>Site ${i + 1} <button type="button" class="btn ghost sm" data-a="site-rm" data-i="${i}">Remove</button></h4><div class="setrow">
       <label>Country${sel(`s4.sites.${i}.country`, x.country, L9.map(L => [L, `${L} ${V.LANES[L].name}`]), "Site country")}</label>
@@ -980,7 +980,9 @@ function rfqSettingsHtml(){
       <label>Delivery proxy provider${sel(`s4.sites.${i}.proxyProvider`, x.proxyProvider, provOpts, "Delivery proxy provider")}</label>
       <label>Proxy warehouse${sel(`s4.sites.${i}.proxyWarehouse`, x.proxyWarehouse, [["A", "A"], ["B", "B"]], "Proxy warehouse")}</label></div></div>`;
   return `<details class="card rfqset" id="bxRfqSet"${B.ui.setOpen ? " open" : ""}><summary><b>Internal settings</b><span class="faint"> · volumes, distributor, 3PL and own-site inputs, score weights · never sent to providers · saved with the Save button</span></summary>
-    <div class="setwrap">${vol("A")}${vol("B")}
+    <p class="warnbox">Volume cases are built and edited on the Forecast tab only. The tables A and B below are the reference volumes the provider scores compare on and the seeds of volume cases A and C.</p>
+    <details><summary class="faint">Reference volume tables A and B (read-only)</summary><div class="setwrap">${vol("A")}${vol("B")}</div></details>
+    <div class="setwrap">
       <div class="setcol"><h3>General</h3>
         <div class="setrow">${V.BANDS.map(b => `<label>Average kg ${b}${num(`avgKg.${b}`, s.avgKg[b], `Average kg ${b}`)}</label>`).join("")}</div>
         <div class="setrow">${V.STOCK_BANDS.map((b, i) => `<label>Cartons ${["S", "M", "L"][i]}${num(`cartons.${b}`, s.cartons[b], `Cartons ${b}`)}</label><label>Pallets ${["S", "M", "L"][i]}${num(`pallets.${b}`, s.pallets[b], `Pallets ${b}`)}</label>`).join("")}</div>
@@ -988,10 +990,13 @@ function rfqSettingsHtml(){
         <div class="setrow">${L9.map(L => `<label title="${esc(V.LANES[L].name)}">Target ${L}${num(`targetDays.${L}`, s.targetDays[L], `Target days ${L}`)}</label>`).join("")}
           <label>Kg per pallet${num("kgPerPallet", s.kgPerPallet, "Kg per pallet")}</label><label>Volume year${num("volumeYear", s.volumeYear, "Volume year", ' step="1"')}</label></div></div>
       ${revenueSetHtml()}
-      <div class="setcol wide"><h3>S2 distributor holds stock <span class="faint">bulk loads per year; the distributor discount is under Revenue, internal only</span></h3>
-        <div class="tablewrap"><table class="setgrid"><thead><tr><th>Country</th><th>Distributor</th><th>P1</th><th>P5</th><th>C20</th><th>C40</th></tr></thead><tbody>
-        ${L9.map(L => `<tr><td>${L} <span class="faint">${esc(laneName(L))}</span></td><td>${chk(`s2.${L}.on`, s.s2[L].on, `Distributor in ${L}`)}</td>${["P1", "P5", "C20", "C40"].map(ld => `<td>${num(`s2.${L}.loads.${ld}`, s.s2[L].loads[ld], `${ld} loads to ${L}`)}</td>`).join("")}</tr>`).join("")}</tbody></table></div></div>
-      <div class="setcol wide"><h3>S3 3PL holds stock</h3><div class="setrow">
+      <div class="setcol wide"><h3>S2 distributor holds stock <span class="faint">bulk loads per year; the distributor's margin comes from its terms (Distributors tab), else the default margin under Revenue, internal only</span></h3>
+        <div class="tablewrap"><table class="setgrid"><thead><tr><th>Country</th><th>Distributor</th><th>Which distributor <span class="faint">Benchmarking > Distributors</span></th><th>P1</th><th>P5</th><th>C20</th><th>C40</th></tr></thead><tbody>
+        ${L9.map(L => { const ds = (B.distributors || []).filter(d => d.country === L);
+          return `<tr><td>${L} <span class="faint">${esc(laneName(L))}</span></td><td>${chk(`s2.${L}.on`, s.s2[L].on, `Distributor in ${L}`)}</td>
+          <td>${sel(`s2.${L}.distributor`, s.s2[L].distributor || "", [["", ds.length ? "none: default margin (estimate)" : "no distributor entered: default margin"]].concat(ds.map(d => [d.id, `${d.name} (${d.status || "prospect"})`])), `Distributor for ${L}`)}</td>${["P1", "P5", "C20", "C40"].map(ld => `<td>${num(`s2.${L}.loads.${ld}`, s.s2[L].loads[ld], `${ld} loads to ${L}`)}</td>`).join("")}</tr>`; }).join("")}</tbody></table></div></div>
+      <div class="setcol wide"><h3>S3 3PL presence <span class="faint">M2 + M3 + M4 + M5</span></h3><div class="setrow">
+        <label>Dedicated site <span class="faint">the 3PL runs a site for FlexiTog only (W20 to W22, m2 and FTE from S4 site 1)</span>${chk("s3.dedicated", s.s3.dedicated, "Dedicated site")}</label>
         <label>Provider${sel("s3.provider", s.s3.provider, [["", "first with warehouse data"]].concat(ev.map(e => [e.id, e.name])), "S3 provider")}</label>
         <label>Warehouse${sel("s3.warehouse", s.s3.warehouse, [["A", "A"], ["B", "B"]], "S3 warehouse")}</label>
         <label>Warehouse country${sel("s3.country", s.s3.country || "", [["", "from W01"]].concat(L9.map(L => [L, `${L} ${V.LANES[L].name}`])), "Warehouse country")}</label>
@@ -1009,11 +1014,62 @@ function rfqSettingsHtml(){
         ${(s.s4.sites || []).map(site).join("") || '<p class="faint">No own site yet.</p>'}
         <div class="iact"><button type="button" class="btn ghost sm" data-a="site-add">Add a site</button>
           <label class="faint">M2 and M3 source ${sel("s4.moduleSource", s.s4.moduleSource, [["same", "same provider as the proxy"], ["cheapest", "cheapest provider per module"]], "S4 module source")}</label></div></div>
+      ${horizonSetHtml(s)}
       <div class="setcol wide"><h3>Score weights <span class="faint">to be agreed with Mies</span></h3><div class="setrow">
         ${["forwarder", "threepl"].flatMap(r => ["cost", "service", "quality", "options"].map(k => `<label>${r === "forwarder" ? "Forwarder" : "3PL"} ${k} %${num(`weights.${r}.${k}`, s.weights[r][k], `${r} ${k}`)}</label>`)).join("")}</div>
         <details><summary class="faint">Edit the rubric (JSON)</summary><textarea id="bxRubric" rows="12" spellcheck="false" aria-label="Scoring rubric as JSON">${esc(JSON.stringify(V.rubricOf(s), null, 1))}</textarea>
           <div class="iact"><button type="button" class="btn ghost sm" data-a="rubric-reset">Reset rubric</button></div></details>
         <div class="iact"><button type="button" class="btn ghost sm" data-a="set-reset">Reset all settings to the defaults</button></div></div></div></details>`;
+}
+// ============================================================ Distributors (structure only: no scoring, no RFQ yet)
+// S2 reads the selected distributor's terms per country (internal settings > S2). Every row keeps source, date and status.
+const DIST_FIELDS = [["name", "Name", "text"], ["country", "Country", "lane"], ["regions", "Regions served", "text"], ["contact", "Contact", "text"],
+  ["status", "Status", "status"], ["marginPct", "Discount or margin %", "number"], ["minOrder", "Minimum order", "text"], ["paymentTerms", "Payment terms", "text"],
+  ["stockCommitment", "Stock commitment", "text"], ["leadDays", "Lead time to customer, days", "number"], ["notes", "Notes", "text"],
+  ["source", "Source", "text"], ["sourceDate", "Source date", "date"], ["dataStatus", "Data status", "dstatus"]];
+function renderDistributors(){
+  const P = $("bp-distributors"), L9 = V.LANE_IDS, ds = B.distributors || [];
+  const cell = (d, [k, l, t]) => {
+    const v = d[k] == null ? "" : d[k], a = `data-dist="${esc(d.id)}" data-f="${k}" aria-label="${esc(l)} of ${esc(d.name || "distributor")}"`;
+    if (t === "lane") return `<select ${a}>${L9.map(L => `<option value="${L}"${v === L ? " selected" : ""}>${L} ${esc(V.LANES[L].name)}</option>`).join("")}</select>`;
+    if (t === "status") return `<select ${a}>${["prospect", "interested", "agreed"].map(x => `<option${v === x ? " selected" : ""}>${x}</option>`).join("")}</select>`;
+    if (t === "dstatus") return `<select ${a}>${["estimate", "confirmed"].map(x => `<option${(v || "estimate") === x ? " selected" : ""}>${x}</option>`).join("")}</select>`;
+    return `<input type="${t === "number" ? "number" : t === "date" ? "date" : "text"}" ${t === "number" ? 'step="any" min="0"' : ""} ${a} value="${esc(v)}">`;
+  };
+  P.innerHTML = `<div class="card"><div class="cardhead"><h2>Distributors</h2><div class="iact"><button type="button" class="btn" data-a="dist-add">Add a distributor</button></div></div>
+    <p class="faint bnote">Next to the logistics providers: the distributors that could hold stock for S2. S2 reads the distributor chosen per country under Logistics Providers > Internal settings > S2; with none chosen it uses the default margin (estimate) and shows "no distributor data". No scoring and no RFQ for distributors yet.</p>
+    ${ds.length ? `<div class="tablewrap btable"><table class="distgrid"><thead><tr>${DIST_FIELDS.map(([, l]) => `<th>${esc(l)}</th>`).join("")}<th></th></tr></thead><tbody>
+      ${ds.map(d => `<tr>${DIST_FIELDS.map(f => `<td>${cell(d, f)}</td>`).join("")}<td><button type="button" class="btn ghost sm" data-a="dist-rm" data-id="${esc(d.id)}">Remove</button></td></tr>`).join("")}</tbody></table></div>`
+      : '<p class="empty">No distributor yet. Add one, then pick it for its country in the S2 settings.</p>'}</div>`;
+  const persist = msg => { save("distributors", B.distributors, msg); FlexiCalc.invalidate(); renderTabs(); };
+  P.querySelector('[data-a="dist-add"]').addEventListener("click", () => {
+    B.distributors = ds.concat([{id: uid("DST"), name: "New distributor", country: "L02", status: "prospect", dataStatus: "estimate", source: "", sourceDate: today()}]);
+    persist("Distributor added"); renderDistributors(); });
+  P.querySelectorAll('[data-a="dist-rm"]').forEach(b => b.addEventListener("click", e => { if (!confirmInline(e.target, "Click again to remove this distributor")) return;
+    B.distributors = ds.filter(x => x.id !== b.dataset.id); persist("Distributor removed"); renderDistributors(); }));
+  P.querySelectorAll("[data-dist]").forEach(inp => inp.addEventListener("change", () => {
+    const d = B.distributors.find(x => x.id === inp.dataset.dist), f = DIST_FIELDS.find(x => x[0] === inp.dataset.f); if (!d || !f) return;
+    let v = inp.value.trim();
+    if (f[2] === "number") { if (v !== "" && !(Number(v) >= 0)) { toast("Enter a number of 0 or more", "bad"); return; } v = v === "" ? null : Number(v); }
+    d[f[0]] = v; persist();
+  }));
+}
+// ---- Time horizon assumptions: rate development per year (low, base, high), one-off years, the GCC delivery target
+function horizonSetHtml(s){
+  const e = s.escalation, num = (path, v, label) => `<input type="number" step="any" data-s="${path}" value="${v == null ? "" : esc(v)}" aria-label="${esc(label)}">`;
+  const sel = (path, v, opts, label) => `<select data-ss="${path}" aria-label="${esc(label)}">${opts.map(([k, l]) => `<option value="${esc(k)}"${String(v ?? "") === String(k) ? " selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
+  const RL = [["freight", "Freight escalation (M1, M2, M5)"], ["fuel", "Fuel surcharge development (M1, M2, M5)"], ["warehouse", "Warehouse rate escalation (M4, own site)"], ["eurusd", "EUR per USD rate (revenue)"]];
+  return `<div class="setcol wide"><h3>Time horizon <span class="faint">rate in year y = base rate x (1 + escalation)^(y - 1) · status: <span class="srct assumption">${esc(e.status || "estimate")}</span></span></h3>
+    <p class="warnbox">Timing assumptions pending real provider and distributor data.</p>
+    <div class="tablewrap"><table class="setgrid"><thead><tr><th>Escalation per year, %</th><th>Low</th><th>Base</th><th>High</th></tr></thead><tbody>
+      ${RL.map(([k, l]) => `<tr><td>${esc(l)}</td>${["low", "base", "high"].map(x => `<td>${num(`escalation.rates.${k}.${x}`, e.rates[k][x], `${l} ${x}`)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>
+    <div class="setrow"><label>Setting used${sel("escalation.setting", e.setting, [["low", "Low"], ["base", "Base"], ["high", "High"]], "Escalation setting")}</label>
+      <label>Source<input type="text" data-stx="escalation.source" value="${esc(e.source || "")}" aria-label="Escalation source"></label>
+      <label>Source date<input type="date" data-stx="escalation.sourceDate" value="${esc(e.sourceDate || "")}" aria-label="Escalation source date"></label>
+      <label>Status${sel("escalation.status", e.status || "estimate", [["estimate", "estimate"], ["confirmed", "confirmed"]], "Escalation status")}</label>
+      <label>S3 onboarding (W16 + W17) falls in year${sel("oneOffYear.S3", s.oneOffYear.S3, [1, 2, 3, 4, 5].map(y => [y, y]), "S3 one-off year")}</label>
+      <label>S4 setup and licences fall in year${sel("oneOffYear.S4", s.oneOffYear.S4, [1, 2, 3, 4, 5].map(y => [y, y]), "S4 one-off year")}</label>
+      <label>GCC delivery target for the recommendation${sel("gccTarget", s.gccTarget, [["48 hours", "48 hours"], ["next-day", "next-day"]], "GCC delivery target")}</label></div></div>`;
 }
 // ---- Revenue, internal only (its own browser key; hidden while "Hide revenue" is on)
 function revenueSetHtml(){
@@ -1022,22 +1078,15 @@ function revenueSetHtml(){
   const sw = `<label class="revsw"><input type="checkbox" data-a="rev-hide"${hidden ? " checked" : ""}> Hide revenue</label>`;
   if (hidden) return `<div class="setcol wide revset">${head}<p class="faint bnote">Revenue is hidden. ${sw}</p></div>`;
   const inp = (path, v, label, ph) => `<input type="number" step="any" min="0" data-r="${path}" value="${v == null ? "" : esc(v)}" aria-label="${esc(label)}"${ph != null ? ` placeholder="${esc(ph)}"` : ""}>`;
-  const base = sc => V.revenueByCountry(REV.data, S30(), sc);
-  const bA = base("A"), bB = base("B"), alloc = [...new Set(bA.allocated.concat(bB.allocated))];
   return `<div class="setcol wide revset">${head}<p class="faint bnote">${sw}</p>
     <div class="setrow">
       <label>Currency<input type="text" value="USD" disabled aria-label="Currency"></label>
       <label>USD to EUR <span class="faint">confirm with Anna Murphy</span>${inp("fx", rv.fx, "Exchange rate USD to EUR")}</label>
-      <label>Net revenue, volume case A, USD excl. VAT <span class="faint">2 x last 12 months, rounded</span>${inp("total.A", rv.total.A, "Net revenue volume case A")}</label>
-      <label>Net revenue, volume case B, USD excl. VAT <span class="faint">2027 target midpoint</span>${inp("total.B", rv.total.B, "Net revenue volume case B")}</label>
       <label>Last 12 months, USD <span class="faint">reference only</span>${inp("last12", rv.last12, "Last 12 months revenue")}</label></div>
-    ${alloc.length ? `<p class="warnbox">⚠ Revenue per country uses the default for ${esc(alloc.join(", "))}: allocated by shipments. Replace with per-country revenue from the internal scenario file (net revenue column on the Scenario_A and Scenario_B sheets).</p>` : ""}
-    <div class="tablewrap"><table class="setgrid"><thead><tr><th>Country</th><th>Case A, USD</th><th>Case B, USD</th><th>Distributor discount % on sales <span class="faint">from Tarek, S2</span></th></tr></thead><tbody>
-    ${L9.map(L => `<tr><td>${L} <span class="faint">${esc(laneName(L))}</span></td>
-      <td>${inp(`byCountry.A.${L}`, rv.byCountry.A[L], `Revenue case A ${L}`, Math.round(bA.countries[L].usd))}</td>
-      <td>${inp(`byCountry.B.${L}`, rv.byCountry.B[L], `Revenue case B ${L}`, Math.round(bB.countries[L].usd))}</td>
-      <td>${inp(`discount.${L}`, rv.discount[L], `Distributor discount ${L}`)}</td></tr>`).join("")}</tbody></table></div>
-    <p class="faint bnote">A blank country takes the case total split by its share of shipments in that case (shown greyed). Case revenue = the sum of the countries. In S2, net revenue in a distributor country = revenue x (1 - discount).</p></div>`;
+    <p class="faint bnote">Revenue per volume case, year and country sits in each volume case (Forecast tab): its base-year revenue grows with the case. Here: the exchange rate, the default distributor margin, and the last 12 months for reference.</p>
+    <div class="tablewrap"><table class="setgrid"><thead><tr><th>Country</th><th>Default distributor margin % <span class="faint">estimate, S2 when no distributor is selected</span></th></tr></thead><tbody>
+    ${L9.map(L => `<tr><td>${L} <span class="faint">${esc(laneName(L))}</span></td><td>${inp(`discount.${L}`, rv.discount[L], `Default distributor margin ${L}`)}</td></tr>`).join("")}</tbody></table></div>
+    <p class="faint bnote">In S2, net revenue in a distributor country = revenue x (1 - margin): the chosen distributor's margin (Distributors tab), else this default.</p></div>`;
 }
 function wireRevenueSet(el, changed){
   const hide = el.querySelector('.revset [data-a="rev-hide"]');
@@ -1084,6 +1133,7 @@ function wireRfqSettings(){
     else setPath(path, inp.checked);
     changed();
   }));
+  el.querySelectorAll("input[data-stx]").forEach(inp => inp.addEventListener("change", () => { setPath(inp.dataset.stx, inp.value.trim()); changed(); }));
   el.querySelectorAll("input[data-st]").forEach(inp => inp.addEventListener("change", () => {
     if (!/^\d{2}:\d{2}$/.test(inp.value)) { toast("Enter a time as HH:MM", "bad"); return; }
     setPath(inp.dataset.st, inp.value); changed();
@@ -1112,7 +1162,8 @@ async function exportJson(){
     [{label: "Cancel", value: null}, {label: "Export", value: dlg => !!dlg.querySelector("#bxIncRev").checked, primary: true}]);
   if (inc == null) return;
   const list = modAll(), sum = R0 => ({state: R0.state, total: R0.total, parts: R0.parts, types: R0.types, missing: R0.missing, tags: R0.tags, coverage: [R0.covered, R0.shipments]});
-  const outs = {}, scen = sc => { const o = outs[sc] = V.scenarios(list, S30(), sc, "best"); return Object.fromEntries(["S1", "S2", "S3", "S3b", "S4"].map(k => [k, sum(o[k])]).concat([["S5", {state: o.S5.state, solutions: o.S5.solutions}]])); };
+  // the four scenarios on the reference volume tables A and B; M6 answers as information only
+  const outs = {}, scen = sc => { const o = outs[sc] = V.scenarios(list, S30(), sc, "best"); return Object.fromEntries(V.IDS.map(k => [k, sum(o[k])]).concat([["M6", {state: V.m6Solutions(list, S30(), sc).state, solutions: V.m6Solutions(list, S30(), sc).solutions}]])); };
   const data = {kind: "flexitog-benchmarking-rfq", format: 3, exported: nowIso(), rfqVersion: V.V31, settings: {rfq30: V.withDefaults(S30())}, rfq: B.rfq,
     providers: list.map(e => ({providerId: e.id, name: e.name, tag: e.Q.tag, modules: e.Q.modules, completeness: e.comp, invalid: e.Q.invalid, inputCheck: e.Q.inputCheck,
       forwarder: e.S.forwarder.total, threepl: e.S.threepl.total, flags: e.flags, followUps: e.follow})),
@@ -1924,8 +1975,9 @@ async function generateFiles(){
 async function init(){
   await storeReady();
   try {
-    const names = ["goals", "settings", "packages", "salesmeta", "rfqstate", "rfqvalues", "providers", "rfqresponses"];
-    const [goals, settings, packages, meta, rfqstate, rfqvalues, oldProv, oldResp] = await Promise.all(names.map(n => DataStore.get(n)));
+    const names = ["goals", "settings", "packages", "salesmeta", "rfqstate", "rfqvalues", "providers", "rfqresponses", "distributors"];
+    const [goals, settings, packages, meta, rfqstate, rfqvalues, oldProv, oldResp, distributors] = await Promise.all(names.map(n => DataStore.get(n)));
+    B.distributors = Array.isArray(distributors) ? distributors : [];
     B.packages = packages || [];
     B.rfq = rfqstate || {};
     const byRef = {}; (rfqvalues || []).forEach(x => { byRef[x.ref] = x; });
@@ -1950,7 +2002,7 @@ async function init(){
 // getComparableMetrics(provider or id): the latest RFQ response in comparable form, for the scorecard.
 const getComparableMetrics = p => R.getComparableMetrics(typeof p === "string" ? B.providers.find(x => x.id === p) : p);
 // The Quick Quote results for the Dashboard: the same evaluated, scored list and settings this tab shows (one source of truth).
-const rfq30 = {ready: () => B.ready, list: () => (B.ready ? (syncProviders(), modAll()) : []), settings: () => S30(), revenue: () => REV.data, editRevenue, legacy: () => (B.ready ? legacyList().map(p => ({id: p.id, name: p.name})) : [])};
+const rfq30 = {ready: () => B.ready, list: () => (B.ready ? (syncProviders(), modAll()) : []), settings: () => Object.assign({}, S30(), {distributors: B.distributors || []}), revenue: () => REV.data, editRevenue, legacy: () => (B.ready ? legacyList().map(p => ({id: p.id, name: p.name})) : [])};
 window.BenchUI = {show(){ render(); }, state: B, getComparableMetrics, rfq30, syncProviders, comparison, comparisonReportModel, providerReportModel,
   rfq: {tmpl, uploadRfq, openDetail, removeUpload, downloadPrefilled, files: DataStore.files}, schema: {goals: GOAL_FIELDS}, reportModel, packageOf, templateBook, buildPdf, buildDocx, chartImages, currentTest};
 init();

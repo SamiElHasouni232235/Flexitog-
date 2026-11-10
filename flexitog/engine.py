@@ -27,8 +27,9 @@ from . import parameters as P
 from .schema import DC_TYPE_LABELS, EU27, region_for
 
 SCENARIOS = ["cif_baseline", "distributor", "3pl", "owned_warehouse"]
-SCENARIO_LABELS = {"cif_baseline": "Baseline: DAP from Helmond", **{k: v for k, v in DC_TYPE_LABELS.items()
-                                                                  if k != "helmond_hub"}}
+# the same names as the scenario engine of the dashboard (S1 to S4); DC types keep their own labels
+SCENARIO_LABELS = {"cif_baseline": "S1 Direct from Helmond", "distributor": "S2 Distributor holds stock",
+                   "3pl": "S3 3PL presence", "owned_warehouse": "S4 Own warehouse", "freight_forwarder": DC_TYPE_LABELS["freight_forwarder"]}
 STOCKED = {"distributor", "3pl", "owned_warehouse"}
 REGIONAL_GROUP = {"Gulf/GCC": "GCC", "North Africa": "NAF"}
 LANE_RANK = {"proven": 0, "occasional": 1, "unproven": 2}

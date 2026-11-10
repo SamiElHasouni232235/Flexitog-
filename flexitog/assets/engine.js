@@ -20,8 +20,9 @@
     { leg_group: "export", allowed_modes: "sea;road", pick: "cheapest", preferred_mode: "" },
     { leg_group: "delivery", allowed_modes: "road;air", pick: "cheapest", preferred_mode: "road" },
   ];
-  const LABELS = { cif_baseline: "Baseline: DAP from Helmond", distributor: "Distributor-held stock",
-                   "3pl": "3PL presence", owned_warehouse: "Owned non-EU warehouse" };
+  // the same names as the scenario engine (rfq_v30.js): S1 to S4
+  const LABELS = { cif_baseline: "S1 Direct from Helmond", distributor: "S2 Distributor holds stock",
+                   "3pl": "S3 3PL presence", owned_warehouse: "S4 Own warehouse" };
 
   const num = (v, d = 0) => { if (v === null || v === undefined || v === "") return d; const f = Number(v); return Number.isFinite(f) ? f : d; };
   const blank = v => v === null || v === undefined || (typeof v === "number" && Number.isNaN(v)) ||

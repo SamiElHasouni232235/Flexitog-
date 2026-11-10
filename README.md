@@ -151,7 +151,8 @@ HTML file that runs the whole simulator in the browser, with no Python and no se
   3PL / owned-warehouse nodes (faded = not signed), customers, and issue markers by severity.
   Colour countries by cheapest scenario, cost per unit, customer cost, lead time, FlexiTog paperwork or
   issue count. Click a country for its scenario comparison, serving nodes and issues.
-- Parameters drawer: what-if switches (Red Sea reopens, all SKUs EU-made), scenario defaults, partners
+- Parameters drawer (opened from the Parameters button in the Master Data top bar; the Dashboard has no edit
+  controls): what-if switches (Red Sea reopens, all SKUs EU-made), scenario defaults, partners
   (use/remove, status, MOV, margin, storage, served countries), freight, duty and VAT, compliance, SKUs
   (price, units per pallet, EU-made), general and risk, lead times, owned-warehouse fixed cost. Every
   change reruns the batch. Changes stay in the viewer's browser. "Copy changes" gives JSON that
@@ -179,38 +180,45 @@ HTML file that runs the whole simulator in the browser, with no Python and no se
 
 ### Logistics scenarios on the Dashboard (Benchmarking results)
 
-The Dashboard opens with the five logistics scenarios built from the modular RFQ v3.0 answers on Benchmarking
-(`flexitog/assets/dash_rfq.js`). It reads and explains only: it calls the `rfq_v30.js` functions on the providers
-Benchmarking lists (`BenchUI.rfq30`) with the internal settings from Benchmarking, so every total matches that tab.
-It updates when an answer is uploaded or removed, or a setting changes.
+Naming: forecast outputs are volume cases (A to E plus any you add, built on the Forecast tab); supply chain options
+are scenarios (S1 to S4). The two labels never mix.
 
-- Filters: volume case A or B, region, country detail (or follow the map selection), and a provider per module
-  (best per module, or one fixed provider for M1 to M6). A fixed M4 provider is the 3PL for S3.
-- Scenario cards S1 to S5, each in its own colour (S1 blue, S2 plum, S3 orange, S3b pink, S4 green, S5 grey):
-  annual cost for the scope, cost per order, the saving or extra cost against S1, inputs filled, source tags and the
-  providers per module. Incomplete and not configured scenarios say what is missing. S5 is indicative, not ranked.
-- Logistics scenario comparison: annual cost, against S1, per order, per kg, shipments covered, on-time share, inputs
-  filled and one-off cost. The cheapest complete scenario is green.
-- Region by scenario: annual cost per region (GCC, Türkiye, North Africa) and scenario, the cheapest marked.
-- Map: countries take the colour of the cheapest complete scenario for that country ("Cheapest scenario (S1 to S4)"
-  in Colour countries by). The tooltip lists each scenario's annual cost and cost per order per class.
-- Country detail: cost per order by class and scenario (`classCost`) and a stacked bar of the annual cost per cost
-  type (transport to region, customs, warehouse handling, storage, delivery, fixed, direct from Helmond, commercial).
-- Revenue per volume case at the top right of the block, editable: net revenue A and B in USD with their EUR value
-  and the USD to EUR rate (the same values as Benchmarking > internal settings > Revenue, internal only; pending until
-  Save). With all nine countries set on Benchmarking, the case shows their sum.
-- Internal revenue (hidden until "Hide revenue" in the block header is turned off; it is on each time the tool
-  opens, for screen sharing with providers): cost % of revenue and contribution on the cards; Revenue (EUR),
-  Logistics cost % of revenue (lowest among complete scenarios in green) and Contribution after logistics in the
-  comparison table; the % under each cost in the region matrix and the country bars; revenue and % in the map
-  tooltip; logistics cost per USD 1,000 of revenue in the unit cost table; a second axis with cost as % of revenue
-  on the break-even chart; one sentence per region in the answers. A warning shows while countries use the default
-  allocation.
-- Unit cost: per order, per kg and per pallet (per kg × kg per pallet) per scenario for the scope.
-- Break-even volume: S1, S3 and S4 at 0.5, 1, 1.5, 2 and 3 times the volume case, with the multiplier from which S3
-  or S4 becomes cheaper than S1.
-- Answers: deterministic sentences from templates and the figures, then the follow-up questions per provider
-  (copy button). No AI calls.
+The Dashboard prices the four scenarios over a time horizon from the modular RFQ answers on Benchmarking
+(`flexitog/assets/dash_rfq.js`). It reads and explains only: it calls `horizon_core.js` (`window.FlexiHorizon`), which
+calls the `rfq_v30.js` scenario engine once per year, on the providers Benchmarking lists (`BenchUI.rfq30`) with the
+internal settings from Benchmarking. Nothing on this tab edits a volume case or a rate; values link to the tab they
+come from. It updates when an answer is uploaded or removed, a case is saved or a setting changes.
+
+- Top bar (read-only): volume case (with its base year and status, confirmed or estimate), horizon 1 to 5 years,
+  filter All, a region or a country (or follow the map selection), Hide revenue (on each time the tool opens), the
+  provider per module (best per module, or one fixed provider for M1 to M5; a fixed M4 provider is the 3PL for S3),
+  and the escalation line with a link to Benchmarking.
+- Summary panel right of the map: orders in total and per year, units, kg, countries and customers, years and
+  extrapolated years, revenue when shown.
+- Recommended scenario: the lowest cumulative cost among the complete scenarios that meet the GCC target (setting
+  "GCC target", 48 hours), with the reason. Without one the cheapest complete scenario shows as the fallback.
+- Four scenario cards with one layout: total over the horizon, per order, per kg, one-off, next-day / 48 hours in
+  the GCC, inputs filled, providers or distributor. The S3 card shows the 3PL minimum (floor) as its own line.
+- Year table: cost per year per scenario, the cheapest per year highlighted, cumulative cost, extrapolated years
+  tagged, and cost % of revenue when revenue is shown.
+- Cumulative chart with the switch point: the first year (and volume) where a scenario becomes cheaper than S1 on a
+  cumulative basis. Without one inside the horizon the volume sensitivity break-even multiplier is shown.
+- Year 1 detail: scenario comparison, region by scenario, country detail (stacked bar per cost type), unit cost,
+  break-even volume and the answers (deterministic sentences and the follow-up questions per provider).
+- Map: countries take the colour of the cheapest complete scenario over the horizon ("Cheapest scenario over the
+  horizon (S1 to S4)" in Colour countries by). The tooltip lists each scenario's horizon cost.
+- Internal revenue (hidden by default): cost % of revenue and contribution on the cards and in the year table,
+  revenue in the summary panel and the map tooltip.
+
+Time horizon (`horizon_core.js`):
+- The horizon starts at the case's first forecast year. Each year is priced from that year's volume (lane × band
+  shipments from `cases_core.js`).
+- Escalation, an estimate with a low, base and high setting: freight, fuel, warehouse and EUR/USD. Rate in year y =
+  base × (1 + e)^(y − 1). Transport, direct and delivery costs take freight × fuel; handling, storage and fixed costs
+  take warehouse; customs takes none.
+- One-off costs (S3: W16 + W17; S4: setup and licences) fall in full in year 1 or a selected year (setting "One-off
+  year"). The single-year view on Benchmarking amortises them. Fixed yearly costs recur every year.
+- Years past the case's length are extrapolated with the last growth rate and tagged "extrapolated".
 
 Removed with this change (fed only by v2.3 logic): the key figure tiles (providers compared, best total score,
 cheapest option, coverage, GCC on time), the region cards per option, the order class matrix per option, cost per
@@ -244,7 +252,7 @@ engine.py are untouched.
    candidate) and data source (from RFQ, placeholder or entered rates). Click a bar to see its steps, who
    handles each one and whether it meets the target.
 5. Risks (issues without the coverage type, by severity, faded outside the selection) and the coverage matrix
-   (nine lane countries by four scenarios: signed, candidate or no partner; an empty cell opens Parameters >
+   (nine lane countries by four scenarios: signed, candidate or no partner; an empty cell opens Master Data, Parameters >
    Partners).
 6. Data readiness (collapsed): share of cost on real data and the data request table with a done, partial or
    missing status per dataset from the rows loaded.
@@ -492,10 +500,14 @@ Excel analytics: net revenue USD 529,622 (goods + freight billed), 79 orders, 46
 customers, 9 countries, Saudi Arabia USD 315,959, last 12 months to 2 October 2026 USD 513,857. The
 sample matches the counts; its revenue is perturbed (USD 521,301).
 
-Methods (pick one; all four show side by side with their back-test):
-- Run rate: trailing 12 full months per country. Orders above the 95th percentile of order value are
+History files: upload one Odoo export per year and tag the year it covers ("Year this file covers"). The files
+merge into one history; each shows as a chip with a remove button, side by side.
+
+Methods (pick one; all five show side by side with their back-test, WAPE and MAPE):
+- Moving average (run rate): trailing 12 full months per country. Orders above the 95th percentile of order value are
   capped; the excess is reported as project orders (toggle to include them in every method).
-- Holt linear exponential smoothing per country, no seasonality, alpha and beta sliders (0.3 / 0.1).
+- Exponential smoothing (Holt), linear, per country, no seasonality, alpha and beta sliders (0.3 / 0.1).
+- Seasonal: the run rate × a seasonal index per calendar month (the month's average share of the history).
 - Customer-driven: per customer the average days between orders and the average order value, plus new
   customers per quarter per country at the median first-order value.
 - Target allocation: the 2027 target (USD 2.3M to 2.5M) split by historical share or your weights.
@@ -505,6 +517,35 @@ WAPE, clipped to 10-50%); Target = the Base mix scaled to the target midpoint. R
 with the net unit price per class and country, to orders with the average order value and to lines with
 lines per order. Back-test: hold out the last 3 full months, fit on the rest; WAPE above 40% labels the
 forecast indicative.
+
+#### Volume cases (Forecast tab)
+
+Volume cases are the forecast outputs every scenario prices over the horizon (`flexitog/assets/cases_core.js`,
+`window.FlexiCases`, the model; `flexitog/assets/cases_ui.js`, the builder on the Forecast tab). Cases are edited on
+this tab only. Stored in this browser under `flexitog-volume-cases-v1` (they hold revenue, so never in a provider file or
+the default JSON export), written on Save.
+
+- Each case keeps its base year (orders and revenue per country, size-band mix, units per order) and creation date. A
+  case built on an older history year shows "newer history available"; "Rebuild the base" takes the latest file year.
+- Methods, factor f(y) = volume in year y / base-year volume:
+  - multiplier on history: f(1) = k, then the growth per year
+  - moving average, Holt, seasonal: f(1) = the method's first-year forecast / base year ("Take the level from the
+    history"), then the growth per year
+  - revenue target or volume target (orders or kg) T in year Y: r = (T / base)^(1 / (Y − base year)) − 1, flat after Y
+    (or the growth you enter)
+  - growth path: rates per year, f(y) = (1 + g1) × … × (1 + gy), or an end goal in year Y solved as a CAGR (EUR goals
+    converted at the case's rate), with a front-load option (year 1 at g1, the rest at the rate that still reaches the
+    goal)
+- Editable per case: base year, horizon length, growth, targets, split per country, garment mix.
+- Justification: method, formula, inputs, MAPE and a required basis (text and source). Without a basis the case is
+  "estimate" and flagged.
+- Yearly table (orders, units, kg, revenue; revenue follows the Hide revenue switch) and an overlaid line chart.
+- Save, rename, duplicate, delete.
+- Seeds (base year 2026, first forecast year 2027, 5 years; base = half of reference volume A per lane, revenue USD
+  515,000): A = 2 × history; B = Holt; C = revenue target USD 2,400,000 in 2027 (split and band mix of reference B); D =
+  volume target 282 orders in 2029 (placeholder); E = growth to EUR 5,000,000 in 2031 (placeholder).
+- Rows per year: orders per country = base orders × f(y) × country share; shipments per lane and band = orders × band
+  mix; kg = shipments × average kg of the band; units = orders × units per order; revenue USD = base revenue × f(y).
 
 Integration: the demand object `window.DEMAND.rows` = {month, country, product_class, units, orders,
 revenue, revenue_eur, lines, shipments}. With Use as demand on (default), the Route Dashboard, the
@@ -519,7 +560,7 @@ of the forecast. The page makes no network calls: Google Fonts is gone, system f
 
 Menu > Benchmarking builds one standard test order package from the sales history and sends it to
 logistics providers, so every freight forwarder, 3PL, carrier or distributor quotes on the same basis.
-Four sub-tabs; each view keeps its state when you switch back to the Route Dashboard.
+Sub-tabs; each view keeps its state when you switch back to the Route Dashboard.
 
 - Logistics Providers: one row per Master Data provider (Master data > Logistics providers, rows with a
   provider type). Columns: name, type, countries and lanes, RFQ status, last upload (file name and date),
@@ -529,6 +570,11 @@ Four sub-tabs; each view keeps its state when you switch back to the Route Dashb
   move a provider: the new order saves in Master Data at once. Click a column header to sort by provider,
   type, number of countries, RFQ status or last upload; Helmond stays first. Print report (PDF) writes the printable A4 provider report (cover,
   overview, RFQ comparison, one page per provider). The RFQ workflow below runs on this tab.
+- Distributors: one row per distributor with name, country, regions served, contact, status (prospect,
+  interested, agreed), discount or margin %, minimum order, payment terms, stock commitment, lead time to the
+  customer in days, notes, and source, source date and data status (confirmed or estimate). Saved through the data
+  store on Save. S2 reads the distributor chosen per country (internal settings). No scoring and no RFQ for
+  distributors yet.
 - Sales Data and Analysis: the default source is Master data > Sales history (192 demo orders). Add
   CSV or Excel exports from each merged entity; a mapping step matches columns (English and Dutch
   headers) to order date, order number, customer, destination country, SKU, description, garment
@@ -624,33 +670,43 @@ v3.1 additions:
 
 Internal settings (the panel under the comparison, never sent to providers, saved with the Save button through the
 same data store as every Benchmarking change):
-- Volume case A (141 customer shipments) and Volume case B (329) per lane and band. The name "volume case" keeps them
-  apart from scenarios S1 to S5.
+- Reference volumes A (141 customer shipments) and B (329) per lane and band, read-only (collapsed): the seeds of
+  the volume cases, which are edited on the Forecast tab. The single-year view on this tab prices A and B.
 - Average kg per band, cartons and pallets per class S, M, L, order lines per class (6, update from order history),
   kg per pallet 250, target transit per lane (L01 to L04 2, L05 and L06 3, L07 5, L08 and L09 4 working days),
   volume year 2027.
 - Revenue, internal only (see below).
-- S2 per country: distributor on or off, loads per year (P1, P5, C20, C40).
+- S2 per country: distributor on or off, loads per year (P1, P5, C20, C40), and which distributor (from the
+  Distributors sub-tab).
 - S3: provider, warehouse A or B, warehouse country (from W01, editable), countries served (blank: every country
   with an M5 price from that warehouse), share from stock per country (100%), average pallets in stock (required),
   replenishment load (C20), labelling (No), amortisation 3 years, carrying cost % and stock value (input from
-  Finance), M2 and M3 from the same provider or the cheapest per module.
+  Finance), M2 and M3 from the same provider or the cheapest per module, and "Dedicated site" (off; on prices the
+  3PL dedicated site, formerly S3b).
 - S4 per site: country, customs status, m2, rent per m2 per year, FTE and cost per FTE, setup and licences
   (one-off), equipment and WMS per month, insurance and utilities per year, carrying cost, amortisation years, the
   delivery proxy (a provider's M5 prices, tagged proxy). Sources: free-zone authority quotes, Benten (warehouse),
   Anna Murphy (finance).
+- Time horizon: escalation rates per year for freight (low 0, base 3, high 6%), fuel (0, 2, 5%), warehouse (0, 3,
+  5%) and EUR/USD (0, 0, 0%), the setting used (base), source, date and status (estimate); one-off year for S3 and
+  S4 (year 1); GCC target (48 hours, or next-day). Note: "Timing assumptions pending real provider and distributor
+  data."
 - Score weights per role, 25% each (to be agreed with Mies), and the rubric as one editable JSON object.
 
 Scenarios (`flexitog/assets/rfq_v30.js`, `window.FlexiRFQ30`), per volume case. Each one is complete, incomplete
-(with the missing keys), not configured or, for S5, indicative. Only complete scenarios are ranked.
+(with the missing keys) or not configured. Only complete scenarios are ranked. Each scenario reports its GCC
+capability (the slowest S, M and L delivery in Saudi Arabia, UAE, Kuwait and Qatar: next-day, 48 hours, N days or
+unconfirmed).
 - M1 price of a lane and band: the quoted price; a band with volume and no test shipment row takes the price per kg
   of the next lower band × the band's average kg (extrapolated). A row that exists but is blank is not covered.
 - S1 direct from Helmond: shipments × M1 price per lane and band. Not covered volume lowers coverage only.
-- S2 distributor holds stock: in each distributor country, loads per year × M2 price (bulk); the distributor serves
-  every order there. Other countries go direct (S1). The cost is tagged "excludes distributor margin": the
-  distributor's discount lowers net revenue instead (internal revenue). M2 alternative-mode prices are not used as a
+- S2 distributor holds stock (M2 + distributor terms): in each distributor country, loads per year × M2 price
+  (bulk); the distributor serves every order there in its lead time. Other countries go direct (S1). The cost is
+  tagged "excludes distributor margin": the chosen distributor's margin lowers net revenue instead (internal
+  revenue). A country without a chosen distributor uses the default margin per country (estimate) and the flag "no
+  distributor data". M2 alternative-mode prices are not used as a
   fallback.
-- S3 3PL holds stock: orders of sizes S, M and L in served countries × the share from stock go through the
+- S3 3PL presence (M2 + M3 + M4 + M5; one provider upload feeds S1 and S3): orders of sizes S, M and L in served countries × the share from stock go through the
   warehouse; XL, XXL and the rest go direct (S1).
   - delivery = stock orders × M5 price of the lane and size from the chosen warehouse
   - handling per order = W11 + (W10 × cartons, else W09 × order lines) + W12 × pallets (+ W13 × cartons with
@@ -663,17 +719,20 @@ Scenarios (`flexitog/assets/rfq_v30.js`, `window.FlexiRFQ30`), per volume case. 
   - loads = ceil(stock kg / load kg); replenishment = loads × (M2 price + M3 clearance + free-zone entry)
   - devanning = loads × W07 (C20) or W08 (C40); inbound = loads × pallets × W06 (P1, P5)
   - storage = W05 × average pallets × 12; carrying = carrying % × stock value
-  - fixed = W15 × 12 + (W16 + W17) / amortisation years
-  - minimum top-up = max(0, W19 × 12 − (storage + handling + devanning))
+  - fixed = W15 × 12 + (W16 + W17) / amortisation years (the time horizon books W16 + W17 in full in the one-off
+    year)
+  - minimum top-up = max(0, W19 × 12 − (storage + handling + devanning)); the 3PL minimum (W15 × 12 + W19 × 12, or
+    the dedicated-site amount) shows as its own line on the S3 card
   Replenishment, devanning, storage and carrying spread over the served countries by kg; fixed and the minimum
   top-up by orders.
-- S3b 3PL dedicated site: as S3 with (m2 × W20 × 12 + FTE × W21 × 12) × (1 + W22), m2 and FTE from S4 site 1, in
+- S3 with "Dedicated site" on (formerly S3b): as S3 with (m2 × W20 × 12 + FTE × W21 × 12) × (1 + W22), m2 and FTE from S4 site 1, in
   place of the handling, storage, fixed and minimum rates. Not configured without W20 and W21.
-- S4 own warehouse, per site: delivery via the proxy's M5 prices for the countries it serves, replenishment as S3
+- S4 own warehouse (M2 + M3 + M5 + own site costs, estimate), per site: delivery via the proxy's M5 prices for the countries it serves, replenishment as S3
   (no devanning), free-zone exit, own fixed = rent per m2 × m2 + FTE × cost per FTE + (setup + licences) /
   amortisation years + equipment × 12 + WMS × 12 + insurance and utilities + carrying cost. The rest goes direct.
-- S5 other: each M6 line priced per shipment or order (× shipments) or per kg (× kg) on the countries in O03. The
-  lowest estimate is shown, indicative and never ranked.
+- M6 other solutions stay readable on Benchmarking (module table, provider detail, JSON export as M6 info): each M6
+  line priced per shipment or order (× shipments) or per kg (× kg) on the countries in O03 (`m6Solutions`). M6 is
+  not a scenario and is never ranked.
 - Volume sensitivity: S1, S3 and S4 at 0.5, 1, 1.5, 2 and 3 times the volume case (S2 loads stay as set); break-even
   is the lowest multiplier between 0.25 and 5 (steps of 0.05) where S3 or S4 costs less than S1.
 - The provider filter is "best" (cheapest price per lane, band or load over all providers), one provider for every
@@ -685,13 +744,13 @@ export leaves it out unless "Include internal revenue data" is ticked in the exp
 `_INTERNAL`); stored in this browser under its own key `flexitog-internal-revenue-v1`, apart from the provider data,
 and written on Save.
 - Settings ("Revenue, internal only" on the internal settings panel): currency USD; USD to EUR 0.8607 (confirm with
-  Anna Murphy); net revenue excl. VAT for volume case A USD 1,030,000 (2 x last 12 months, rounded) and B USD
-  2,400,000 (2027 target midpoint); last 12 months USD 514,000 (reference only); revenue per country per case
-  (blank: the case total × the country's share of shipments in that case, with a warning to replace it from the
-  internal scenario file, net revenue column on the Scenario_A and Scenario_B sheets); distributor discount % on
-  sales per country (from Tarek, default 0).
+  Anna Murphy); last 12 months USD 514,000 (reference only); default distributor margin % per country (estimate,
+  default 0, used in S2 when no distributor is selected). Revenue per volume case, year and country sits in each
+  volume case on the Forecast tab: its base-year revenue grows with the case. The single-year view keeps the
+  reference revenue A USD 1,030,000 and B USD 2,400,000 (blank countries: the case total × the country's share of
+  shipments, with a warning).
 - Per scenario, volume case, region and country: revenue EUR = USD × rate; net revenue = revenue, and in S2
-  distributor countries revenue × (1 − discount); logistics cost % of revenue = cost / net revenue EUR; cost per USD
+  distributor countries revenue × (1 − the distributor's margin, else the default margin); logistics cost % of revenue = cost / net revenue EUR; cost per USD
   1,000 of net revenue; contribution after logistics = net revenue EUR − cost (before product cost and other
   overheads). A scenario that leaves shipments without a price shows its % as "covered shipments only".
 - Volume sensitivity: revenue scales with the volume multiplier.
@@ -734,11 +793,11 @@ Tests: `tests/test_rfq_v30.py`.
 - Test 1 runs on `tests/fixtures/rfq_v30_dummy_reconstructed.xlsx`, a dummy fill of the bundled template made by
   `tools/build_rfq_v30_fixtures.py` (filled through the template's input cells and recalculated with LibreOffice),
   and on "FlexiTog RFQ MENA-TR v3.0 - Dummy provider test fill.xlsx" when it sits in `tests/fixtures/`: S1 EUR
-  97,000, S2 EUR 56,800, S3 EUR 98,210, S4 EUR 228,310 with their breakdowns, S5 "Test consolidation hub", every
-  breakdown summing to its total.
+  97,000, S2 EUR 56,800, S3 EUR 98,210, S4 EUR 228,310 with their breakdowns, exactly the four scenarios S1 to S4, M6 info "Test consolidation hub" (EUR
+  21,438), the S3 floor EUR 18,000, S3 with "Dedicated site" on not configured, every breakdown summing to its total.
 - Test 2 runs when "FlexiTog RFQ MENA-TR v3.0 - Aramex test fill.xlsx" is in `tests/fixtures/` (S1 EUR 188,208.28
   with 12 not covered, m1.T05, m2.B01, m3.L01, S2 at 4 × P5 EUR 96,428.18, S2 with C20 incomplete, S3 incomplete
-  with F9, S5 "On-board courier").
+  with F9, M6 info "On-board courier").
 - Test 3 (blank template), Test 4 (`tests/fixtures/rfq_v30_input_errors.xlsx`, and the Aramex copy when present),
   Test 5 (the v2.3 Aramex file, or its saved Export values `aramex_v23_values.json`, as "v2.3, M1 only" with the same
   S1; the v1 dummy as legacy), module flags and the provider filter always run.
@@ -752,8 +811,25 @@ Tests: `tests/test_rfq_v30.py`.
 - Internal revenue: with the defaults, revenue A EUR 886,521.00 and B EUR 2,065,680.00, S1 21.23% and 21.60% of
   revenue (covered shipments only), USD 7,304.96 and 7,294.83 per shipment, Saudi Arabia A USD 365,248.23, GCC A
   EUR 679,037.36 at 24.17% and B 24.71% (on the Aramex v3.0 file when present, else the v2.3 Aramex values with the
-  same S1); the dummy at S1 10.94% and S3 11.08%; a 20% discount in L01 lowers its net revenue by 20% and raises the
+  same S1); the dummy at S1 10.94% and S3 11.08%; a 20% default margin in L01 lowers its net revenue by 20% and raises the
   S2 %; templates and settings carry no revenue.
+
+Time horizon and volume cases: `tests/test_horizon.py`, on the dummy with Prompt 3 Test 1 settings and volume case
+A (2 × history: 141 orders, 25,835 kg in 2027).
+- Year 1, low escalation: S1 EUR 97,000, S2 56,800, S3 101,210, S4 268,310; one-offs S3 4,500 and S4 60,000 in
+  full (the single-year view amortises them: S3 98,210 − 1,500 + 4,500, S4 228,310 − 20,000 + 60,000); S3 floor
+  18,000; cheapest S2.
+- 0% escalation and constant volume: the recurring cost is the same every year and the total from year 2 (S3 96,710,
+  S4 208,310).
+- Escalation: S1 base × 1.03^(y − 1) × 1.02^(y − 1) at the base setting.
+- Growth path +50%, +25%, +10%: orders and kg per year from the base year (70.5 orders).
+- Extrapolated years use the last growth rate and are tagged; case E reaches EUR 5,000,000 (USD 5,000,000 / 0.8607)
+  in 2031.
+- Switch points: S2 in 2027, S3 in 2028 at 141 orders; recommended S3 (48 hours; S1 takes 3 days, S2 has no
+  distributor lead time).
+- Distributor terms: the S2 cost does not move, net revenue × 0.75 with a 25% distributor, × 0.90 with a 10% default
+  margin, "no distributor data" without one.
+- Revenue only when asked for (withRevenue).
 
 Old lists: a Benchmarking provider list saved before this change moves into Master Data once, with its
 uploads (old types: 3PL / contract logistics to 3PL; freight forwarder, carrier, courier, customs broker

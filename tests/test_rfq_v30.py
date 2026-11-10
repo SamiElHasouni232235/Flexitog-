@@ -55,8 +55,9 @@ const r2 = x => (x == null ? null : Math.round(x * 100) / 100);
 const scen = R0 => ({{state: R0.state, total: r2(R0.total), parts: Object.fromEntries(Object.entries(R0.parts).map(([k, v]) => [k, r2(v)])),
   types: Object.fromEntries(Object.entries(R0.types).map(([k, v]) => [k, r2(v)])), countrySum: r2(Object.values(R0.countries).reduce((a, c) => a + c.cost, 0)),
   tags: R0.tags, missing: R0.missing, notes: R0.notes, notCovered: R0.notCovered || 0, shipments: R0.shipments, stockOrders: r2(R0.stockOrders), stockKg: r2(R0.stockKg),
-  loads: R0.loads, perLoad: r2(R0.perLoad), solutions: (R0.solutions || []).map(s => ({{title: s.title, estimate: r2(s.estimate)}})), distributors: R0.distributors || null}});
-const all = o => Object.fromEntries(['S1', 'S2', 'S3', 'S3b', 'S4', 'S5'].map(k => [k, scen(o[k])]));
+  loads: R0.loads, perLoad: r2(R0.perLoad), distributors: R0.distributors || null, floor: R0.floor ? r2(R0.floor.total) : null, capability: R0.capability && R0.capability.label}});
+const all = o => Object.fromEntries(['S1', 'S2', 'S3', 'S4'].map(k => [k, scen(o[k])]));
+const m6 = (list, S) => {{ const x = V.m6Solutions(list, S, 'A'); return {{state: x.state, tags: x.tags, solutions: x.solutions.map(s => ({{title: s.title, estimate: r2(s.estimate)}}))}}; }};
 let out = null;
 (async () => {{ {body}
   process.stdout.write(JSON.stringify(out)); }})().catch(e => {{ console.error(e); process.exit(1); }});
@@ -83,7 +84,7 @@ def t1(tmp_path, f):
     byRegion: o.byRegion.map(r => [r.region, r.best, r2(r.cost)]), byCountry: o.byCountry, breakEven: sen.breakEven,
     sens: sen.rows.map(r => [r.m, r2(r.S1), r2(r.S3), r2(r.S4)]), flags: V.flags(Q, S).map(x => x.id),
     scores: [r2(sc.forwarder.total), r2(sc.threepl.total)], classS3: V.classCost(o.S3, 'L01', 'B1'), classS2: V.classCost(o.S2, 'L01', 'B3'), classS1: V.classCost(o.S1, 'L05', 'B1'),
-    answers: V.answers(o, sen, list)}};""", tmp_path, f)
+    answers: V.answers(o, sen, list), m6: m6(list, S), dedicated: scen(V.scenarios(list, Object.assign({{}}, S, {{s3: Object.assign({{}}, S.s3, {{dedicated: true}})}}), 'A', 'best').S3)}};""", tmp_path, f)
 
 
 def check_t1(r):
@@ -100,12 +101,16 @@ def check_t1(r):
     assert s["S4"]["state"] == "complete" and s["S4"]["total"] == 228310.00
     assert s["S4"]["parts"] == {"ownFixed": 149600, "replenishment": 9450, "delivery": 5340, "fzExit": 1920, "direct": 62000}
     assert "proxy" in s["S4"]["tags"]
-    assert s["S5"]["state"] == "indicative" and "indicative" in s["S5"]["tags"]
-    assert [x["title"] for x in s["S5"]["solutions"]] == ["Test consolidation hub"]
-    assert s["S3b"]["state"] == "not_configured"   # the dummy quotes no dedicated site (W20, W21)
+    # S5 is gone: the M6 answer stays information only (Benchmarking), with its indicative estimate
+    assert set(s) == {"S1", "S2", "S3", "S4"}
+    assert r["m6"]["state"] == "indicative" and "indicative" in r["m6"]["tags"]
+    assert [x["title"] for x in r["m6"]["solutions"]] == ["Test consolidation hub"] and r["m6"]["solutions"][0]["estimate"] == 21438
+    # S3b is a toggle on S3: the dummy quotes no dedicated site (W20, W21), so S3 with the toggle on is not configured
+    assert r["dedicated"]["state"] == "not_configured"
+    assert s["S3"]["floor"] == 18000   # 3PL minimum: W15 x 12 + W19 x 12
     for k in ("S1", "S2", "S3", "S4"):
         sums_ok(s[k])
-    assert r["cheapest"] == "S2"   # S5 is never ranked
+    assert r["cheapest"] == "S2"
     assert r["byCountry"]["L01"] == "S2" and r["byCountry"]["L05"] == "S1"
     assert r["flags"] == []
 
@@ -136,7 +141,7 @@ def test_2_aramex(tmp_path):
   const p5 = V.scenarios(list, {s2: {L01: {on: true, loads: {P5: 4}}}}, 'A', 'best').S2;
   const c20 = V.scenarios(list, {s2: {L01: {on: true, loads: {C20: 2, P5: 4}}}}, 'A', 'best').S2;
   out = {kind: Q.kind, sc: all(o), T05: Q.m1.find(x => x.id === 'T05').price, B01: Q.m2.find(x => x.id === 'B01'), L01: Q.m3.L01,
-    p5: scen(p5), c20: scen(c20), flags: V.flags(Q, null)};""", tmp_path, ARAMEX_V30)
+    p5: scen(p5), c20: scen(c20), flags: V.flags(Q, null), m6: m6(list, null)};""", tmp_path, ARAMEX_V30)
     s = r["sc"]
     assert r["kind"] == "v30"
     assert s["S1"]["total"] == 188208.28 and s["S1"]["notCovered"] == 12 and s["S1"]["shipments"] == 141
@@ -149,7 +154,7 @@ def test_2_aramex(tmp_path):
     assert s["S3"]["state"] == "incomplete"
     f9 = [f["key"] for f in r["flags"] if f["id"] == "F9"]
     assert "module.M4.offered" in f9 and "module.M5.offered" in f9
-    assert any("On-board courier" in (x["title"] or "") for x in s["S5"]["solutions"])
+    assert any("On-board courier" in (x["title"] or "") for x in r["m6"]["solutions"])
 
 
 # ---------------------------------------------------------------- Test 3, blank template
@@ -212,13 +217,13 @@ def test_5_v23_is_m1_only(tmp_path):
     assert r["sc"]["S1"]["total"] == 188208.28 and r["sc"]["S1"]["notCovered"] == 12   # the same S1 as Test 2
     assert r["T05"] == 17894.40
     assert r["m2"] == 0 and r["m5"] == 0
-    for k in ("S2", "S3", "S4", "S5"):
+    for k in ("S2", "S3", "S4"):
         assert r["sc"][k]["state"] == "not_configured"
 
 
 def test_5_v1_is_legacy_and_excluded(tmp_path):
     r = run("""const Q = quoteOf(F[0], 'v1'), o = V.scenarios([{id: 'D', name: 'Dummy v1', Q}], null, 'A', 'best');
-  out = {version: Q.version, kind: Q.kind, states: Object.fromEntries(['S1', 'S2', 'S3', 'S3b', 'S4', 'S5'].map(k => [k, o[k].state])),
+  out = {version: Q.version, kind: Q.kind, states: Object.fromEntries(['S1', 'S2', 'S3', 'S4'].map(k => [k, o[k].state])),
     unknown: V.versionKind('RFQ-MENA-TR-MODULAR v9.9')};""", tmp_path, DUMMY_V1)
     assert r["kind"] == "legacy"
     assert set(r["states"].values()) == {"not_configured"}   # out of every scenario
@@ -234,7 +239,7 @@ def test_module_flags_and_choice(tmp_path):
   const Q = V.quote(noPrices), S = %s;
   const Q2 = JSON.parse(JSON.stringify(V.quote(v))); Q2.m1.forEach(x => { if (x.price != null) x.price = x.price / 2; });
   const list = [{id: 'P', name: 'Dummy', Q: V.quote(v)}, {id: 'H', name: 'Half M1', Q: Q2}];
-  out = {notes: Q.moduleNotes, f9: V.flags(Q, null).filter(f => f.id === 'F9').map(f => f.key), s5: V.scenarios([{id: 'P', name: 'D', Q}], null, 'A').S5.state,
+  out = {notes: Q.moduleNotes, f9: V.flags(Q, null).filter(f => f.id === 'F9').map(f => f.key), s5: V.m6Solutions([{id: 'P', name: 'D', Q}], null, 'A').state,
     best: V.scenarios(list, S, 'A', 'best').S1.total, fixedP: V.scenarios(list, S, 'A', {M1: 'P'}).S1.total, fixedH: V.scenarios(list, S, 'A', 'H').S1.total,
     caseB: V.scenarios(list, S, 'B', 'best').S1.total};""" % json.dumps(T1_SETTINGS), tmp_path, DUMMY)
     assert {"module": "M6", "note": "marked No but holds prices; the prices are used"} in r["notes"]
@@ -299,7 +304,7 @@ def test_revenue_stays_out_of_templates_and_settings(tmp_path):
         assert not any(s in text for s in secrets), f.name
     r = run("""out = {s: V.withDefaults({revenuePerOrder: {L01: 1}, revenue: {fx: 1}, s2: {L01: {on: true, discountPct: 20, salesValue: 5}}}), types: V.TYPES.map(t => t[0])};""", tmp_path)
     assert "revenuePerOrder" not in r["s"] and "revenue" not in r["s"]
-    assert r["s"]["s2"]["L01"] == {"on": True, "loads": {"P1": 0, "P5": 0, "C20": 0, "C40": 0}}
+    assert r["s"]["s2"]["L01"] == {"on": True, "loads": {"P1": 0, "P5": 0, "C20": 0, "C40": 0}, "distributor": ""}
     assert "commercial" not in r["types"]
 
 
@@ -377,7 +382,7 @@ def test_v31_2_warehouse_aramex_file(tmp_path):
 def test_v31_3_blank_files(tmp_path):
     files = [RFQ_V31_TEMPLATE] + ([V31_WH_BLANK] if V31_WH_BLANK.exists() else [])
     r = run("""out = F.map(f => { const Q = quoteOf(f, 'v31'), o = V.scenarios([{id: 'B', name: 'Blank', Q}], null, 'A', 'best');
-    return {minor: Q.minor, variant: Q.variant, invalid: Q.invalid, states: ['S1', 'S2', 'S3', 'S3b', 'S4', 'S5'].map(k => o[k].state), stock: Q.stock.S02}; });""", tmp_path, *files)
+    return {minor: Q.minor, variant: Q.variant, invalid: Q.invalid, states: ['S1', 'S2', 'S3', 'S4'].map(k => o[k].state), stock: Q.stock.S02}; });""", tmp_path, *files)
     for x in r:
         assert x["minor"] == "3.1" and x["invalid"] == []
         assert all(st in ("not_configured", "incomplete") for st in x["states"])

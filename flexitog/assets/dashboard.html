@@ -81,6 +81,8 @@ details.dready>summary{align-items:center}
 
 /* map area */
 .maprow{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:14px;align-items:start}
+.sidecol{display:flex;flex-direction:column;gap:14px;min-width:0}
+body[data-view="dash"] #openParams{display:none}
 .card{background:var(--surface);border:1px solid var(--rule);border-radius:var(--radius-card);padding:var(--pad-card);display:flex;flex-direction:column;gap:10px;min-width:0;box-shadow:var(--shadow-card);transition:transform var(--dur) var(--ease),box-shadow var(--dur) var(--ease)}
 .card:hover{transform:translateY(var(--lift));box-shadow:var(--shadow-lift)}
 #mdPanel.card:hover,#mdUploads.card:hover,.card.still:hover{transform:none;box-shadow:var(--shadow-card)}
@@ -326,7 +328,14 @@ body[data-view="md"] .top>.controls,body[data-view="report"] .top>.controls,body
 .rqtbl{width:100%;font-size:13px}.rqtbl th{text-align:left;white-space:nowrap}.rqtbl td.n{text-align:right;white-space:nowrap}
 .rqtbl tr.best td,.rqtbl tr.best th,.rqtbl td.best{background:color-mix(in srgb,var(--green) 13%,transparent);font-weight:700}
 .rqtbl tr.ind td,.rqtbl tr.ind th{color:var(--muted)}.rqtbl tr.sel th{color:var(--accent-text)}
-.rqrev{color:var(--ink);font-weight:600}.rqpct,.rqcov{display:block;font-size:10.5px;color:var(--muted);font-weight:400}
+.rqrev{color:var(--ink);font-weight:600}
+.rqcards.four{grid-template-columns:repeat(4,minmax(0,1fr))}.rqcard.rec{box-shadow:0 0 0 2px var(--accent) inset}
+.rqrec{font-style:normal;font-size:10.5px;font-weight:700;color:var(--accent-text);text-transform:uppercase;letter-spacing:.04em}
+.rqkv{display:grid;grid-template-columns:auto 1fr;gap:2px 8px;margin:6px 0 2px;font-size:12px}.rqkv dt{color:var(--muted)}.rqkv dd{margin:0;text-align:right;color:var(--ink)}
+.rqrecline{margin:10px 0 0;padding:8px 12px;border-radius:var(--radius-field);background:var(--surface-2);font-size:13px}
+.rqbar{margin:2px 0 6px}.rqsec{font-size:15px;margin:18px 0 8px}.rqsec .faint{font-size:12px;font-weight:400}
+.srcl{font-size:11.5px;font-weight:600}.sumkv{font-size:13px}.sumkv dd{margin:0}
+.hztbl tr.tot th,.hztbl tr.tot td{border-top:2px solid var(--rule)}.rqpct,.rqcov{display:block;font-size:10.5px;color:var(--muted);font-weight:400}
 .revsw{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--ink);cursor:pointer}
 .rqhead{align-items:flex-start;gap:12px;flex-wrap:wrap}.rqhead h2{margin:0 0 2px}
 .rqrevbox{margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:6px}
@@ -350,7 +359,7 @@ body[data-view="md"] .top>.controls,body[data-view="report"] .top>.controls,body
 .rqstack.na{align-items:center;padding-left:6px}.rqstack.na span{font-size:11.5px;color:var(--muted);font-style:italic}
 .rqchart svg{width:100%;height:auto;display:block}
 .rqq{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;font-size:13.5px;line-height:1.5}.rqfu{margin:8px 0 2px;font-size:13px}
-@media (max-width:1180px){.rqcards{grid-template-columns:repeat(3,minmax(0,1fr))}.rqpair{grid-template-columns:1fr}}
+@media (max-width:1180px){.rqcards,.rqcards.four{grid-template-columns:repeat(2,minmax(0,1fr))}.rqpair{grid-template-columns:1fr}}
 @media (max-width:640px){.rqcards{grid-template-columns:repeat(2,minmax(0,1fr))}.rqbrow{grid-template-columns:44px minmax(0,1fr) 84px}}
 
 .iconbtn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--rule);background:var(--surface);color:var(--ink);border-radius:var(--radius-pill);padding:5px 10px;font:600 12px var(--body);cursor:pointer}
@@ -602,7 +611,6 @@ details.custom .iact{display:flex;gap:6px;margin-top:8px}
             <button type="button" class="btn ghost" id="supView" aria-pressed="false" title="Show the suppliers and their routes to Helmond (S)">Suppliers</button>
             <button type="button" class="btn ghost" id="custView" aria-pressed="true" title="Show every customer in Master Data as a white point (C)">Customers</button>
             <button type="button" class="btn ghost" id="issView" aria-pressed="false" title="Show the issue markers">Issues</button>
-            <button type="button" class="btn ghost fs-only" id="fsParams">Parameters</button>
             <button type="button" class="btn" id="fsBtn" aria-pressed="false" title="Full screen (F)">Full screen</button>
           </div>
         </div>
@@ -613,7 +621,10 @@ details.custom .iact{display:flex;gap:6px;margin-top:8px}
       </div>
       <div class="maplegend" id="mapLegend"></div>
     </div>
-    <aside class="card" id="countryPanel" aria-live="polite"></aside>
+    <div class="sidecol">
+      <aside class="card" id="sumPanel" aria-live="polite" aria-label="Summary of the selection"></aside>
+      <aside class="card" id="countryPanel" aria-live="polite"></aside>
+    </div>
   </section>
 
   <section class="rfqdash" id="rfqBody" aria-label="Benchmark results per region, order class and provider"></section>
@@ -655,7 +666,8 @@ details.custom .iact{display:flex;gap:6px;margin-top:8px}
       <p class="muted">Enter or upload the data the simulator runs on. Each tab is one table. Changes apply to the map, scorecard and report after you press Save changes.</p>
       <div class="mdtopr"><span class="faint" id="storeStatus"></span>
         <button type="button" class="btn ghost" id="mdTemplates">Upload templates (Excel)</button>
-        <button type="button" class="btn ghost" id="mdExportAll">Export all master data (Excel)</button></div>
+        <button type="button" class="btn ghost" id="mdExportAll">Export all master data (Excel)</button>
+        <button type="button" class="btn" id="mdParams" title="Freight, duties, compliance, lead times and partners of the route engine">Parameters (what-if)</button></div>
     </div>
     <div class="card" id="mdUploads"></div>
     <div class="tabs" id="mdTabs" role="tablist" aria-label="Master data tables"></div>
@@ -688,6 +700,7 @@ details.custom .iact{display:flex;gap:6px;margin-top:8px}
       <div class="bchips" id="benchChips"></div>
     </div>
     <div id="bp-providers" class="bpanel"></div>
+    <div id="bp-distributors" class="bpanel" hidden></div>
     <div id="bp-quotes" class="bpanel" hidden></div>
     <div id="bp-sales" class="bpanel" hidden></div>
     <div id="bp-goals" class="bpanel" hidden></div>
@@ -1043,7 +1056,7 @@ let selected = null;   // {kind, id}
 
 function metricDefs(){
   return [
-    {key: "rfq", label: "Cheapest scenario (S1 to S4)", kind: "rfq"},
+    {key: "rfq", label: "Cheapest scenario over the horizon (S1 to S4)", kind: "rfq"},
     {key: "best", label: "Best scenario", kind: "cat"},
     {key: "cost_per_unit_eur", label: "Cost to serve per unit (€)", kind: "seq", dp: 2},
     {key: "customer_cost_per_unit_eur", label: "Customer pays per unit (€)", kind: "seq", dp: 2},
@@ -1394,7 +1407,7 @@ $("mapInfo").addEventListener("click", e => {
   else if (act === "goto-sup") { select("sup", b.dataset.s); }
   else if (act === "zoom-sup") { const p = loc("sup", selected.id); if (p) zoomToPoint(p, 200); }
   else if (act === "md-sup") { if (isFs()) exitFs(); MDUI.tab = "suppliers"; MDUI.filter = String(selected.id); showView("md"); }
-  else if (act === "params") { openDrawer(); const g = document.querySelector('details.grp[data-g="dcs"]'); if (g) { g.open = true; g.scrollIntoView({block: "start"}); } }
+  else if (act === "params") { if (isFs()) exitFs(); showView("md"); openDrawer(); const g = document.querySelector('details.grp[data-g="dcs"]'); if (g) { g.open = true; g.scrollIntoView({block: "start"}); } }
   else if (act === "panel") { if (isFs()) exitFs(); $("countryPanel").scrollIntoView({behavior: REDUCED ? "auto" : "smooth", block: "start"}); }
   else if (act === "order") {
     const o = BATCH.orders.find(x => x.customer_id === selected.id) || MD.t.orders.find(x => x.customer_id === selected.id);
@@ -1844,7 +1857,6 @@ function initControls(){
   $("custView").addEventListener("click", () => { ui.layers.customers = !ui.layers.customers; $("custView").setAttribute("aria-pressed", String(ui.layers.customers)); drawOverlay(); });
   $("issView").addEventListener("click", () => { ui.layers.issues = !ui.layers.issues; $("issView").setAttribute("aria-pressed", String(ui.layers.issues)); drawOverlay(); drawLegend(); });
   $("inclCand").addEventListener("change", e => setCandidates(e.target.checked));
-  $("fsParams").addEventListener("click", openDrawer);
 }
 
 // ============================================================ parameter drawer
@@ -1937,6 +1949,7 @@ function changed(redrawDrawer){ save(); clearTimeout(timer); timer = setTimeout(
 function openDrawer(){ renderDrawer(); $("drawer").hidden = false; $("scrim").hidden = false; }
 function closeDrawer(){ $("drawer").hidden = true; $("scrim").hidden = true; }
 $("openParams").addEventListener("click", openDrawer);
+$("mdParams").addEventListener("click", openDrawer);   // the Route dashboard is read-only: its parameters sit with Master Data
 $("closeParams").addEventListener("click", closeDrawer);
 $("scrim").addEventListener("click", closeDrawer);
 document.addEventListener("keydown", e => {
@@ -1991,8 +2004,11 @@ load(); initControls(); compute(); renderView();
 <script>/*BENCHCORE*/</script>
 <script>/*RFQCORE*/</script>
 <script>/*RFQV30*/</script>
+<script>/*CASESCORE*/</script>
+<script>/*HORIZONCORE*/</script>
 <script>/*BENCHMARK*/</script>
 <script>/*DASHRFQ*/</script>
 <script>/*FORECASTCORE*/</script>
 <script>/*FORECAST*/</script>
+<script>/*CASESUI*/</script>
 <script>/*LANDED*/</script>
