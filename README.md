@@ -1,1 +1,860 @@
-# Flexitog-
+# FlexiTog EU route simulator
+
+Simulates how a customer order flows from the Helmond EU hub to Türkiye, North Africa and Gulf/GCC
+under four scenarios, and compares them on cost, lead time and hassle.
+
+| Scenario | What it models |
+|---|---|
+| Baseline: DAP from Helmond | FlexiTog pays freight, insurance and delivery to the customer's door. Customer clears import, pays duty and VAT. |
+| Distributor-held stock | Distributor imports and holds stock in-country. |
+| 3PL presence | FlexiTog stock at a regional 3PL. |
+| Owned non-EU warehouse | FlexiTog-run warehouse in the region. |
+
+Out of scope: US and UK operations, DAP direct.
+
+## Run
+
+```bash
+pip install -r requirements.txt
+streamlit run app.py
+python -m pytest -q
+python tools/build_dashboard.py           # interactive HTML dashboard from the current workspace
+python tools/build_report.py              # static HTML report from the current workspace
+python tools/build_request_pack.py        # Excel data request pack
+```
+
+Data is stored as CSV under `workspace/` (git-ignored). Set `FLEXITOG_WORKSPACE` to use another folder.
+On first run the tool fills every table with generic placeholder rows.
+
+## Build phases
+
+1. **Data model + import** (done): entity schemas, CSV/Excel import with column mapping, editable
+   master data and parameters, test order builder.
+2. **Single-order engine** (done): route per scenario and node, cost breakdown by category and payer,
+   lead time, lane-aware recommendation, forced override, delta versus the DAP baseline.
+3. **Batch mode and scorecard** (done): synthetic, saved or sales-history batches per region, all
+   scenarios per order, scorecard with winners per dimension, hassle method check.
+
+## Data model
+
+| Table | Key | Notes |
+|---|---|---|
+| suppliers | supplier_id | SKUs (`;`-separated), brands, lead time, inbound mode (road/sea), location |
+| distribution_centers | dc_id | `dc_type`: helmond_hub, distributor, 3pl, owned_warehouse. `status`: existing, potential, candidate |
+| customers | customer_id | country, city, postal code. Region derived from country |
+| products | sku | brand, weight, dimensions, unit price, HS code, origin, units per pallet, conformity cert flag |
+| lanes | lane_id | existing routes with status proven / occasional / unproven |
+| sales_history | order_id + sku | past order lines |
+| demand_forecast | period + sku + country + customer_id | forecast quantity |
+| orders / order_lines | order_id | test orders. Pallet count is required |
+
+Every row has a `data_source` column: `placeholder`, `imported:<file>` or `manual`.
+Every parameter row has `source`: `placeholder` or `real`, plus `source_note`.
+
+## Import
+
+- CSV with `,` `;` or tab, or Excel (pick sheet and header row).
+- Headers are matched on field names and common aliases, including Dutch ERP headers
+  (Debiteurnummer, Artikelnummer, Omschrijving, Gewicht, Prijs, Land, Plaats).
+- Country names and codes (Turkey, KSA, UAE, Maroc) normalise to ISO2.
+- Numbers like `1.234,50`, `€ 40`, `15%` parse. The decimal separator is detected per column or forced.
+- Unmatched columns are kept as extra columns or ignored. Add custom fields per table.
+- Commit modes: upsert, append, replace.
+
+## Parameters (placeholder defaults)
+
+General, freight per leg, duty and VAT per country, compliance costs (SABER, legalisation,
+Egypt ACI/GOEIC and more), non-transport lead times, scenario defaults (handling, storage,
+margin, minimum order value, handoffs) and owned warehouse fixed cost. All ship as placeholders.
+
+## Engine rules (phase 2)
+
+- Cost to serve = all cost between the supplier and goods at the customer, including supplier
+  freight. Goods value and recoverable import VAT are excluded. Each step records who pays:
+  FlexiTog, partner or customer.
+- Stock sourcing: each order's pallets are split by the supplier of each SKU. The baseline always
+  ships from Helmond stock, so it carries supplier to Helmond freight. A distributor, 3PL or owned
+  warehouse is refilled per supplier either via Helmond (supplier to Helmond, Helmond handling, EU
+  export, main leg) or straight from the supplier (`direct` freight rates plus origin export
+  documents). `direct_sourcing_mode` in General: 0 always via Helmond, 1 direct when cheaper per
+  pallet (default), 2 direct whenever a rate exists. A supplier with `direct_to_partners` = no always
+  goes via Helmond. `risk_premium_direct_sourcing_pct` adds a routing penalty scaled by the share
+  sourced direct. Scorecards show the direct share per region and model.
+- Baseline (DAP from Helmond, key `cif_baseline` kept for saved workspaces): one shipment per order,
+  so minimum charges and per-shipment fees apply in full. FlexiTog pays handling, export docs, freight,
+  insurance and delivery to the door. Customer pays clearance, duty, VAT and compliance.
+- Demand-driven volumes (`Data.volume`, set by the Forecast view): shipments per year per country
+  replace `shipments_per_year_per_country`, the refill load per node (forecast pallets per year of the
+  countries it serves / refills per year) caps `replenishment_pallets_per_shipment` and
+  `direct_replenishment_pallets_per_shipment`, and owned warehouse pallets per year replace
+  `expected_pallets_per_year`. An order line may carry `unit_price_eur` (forecast lines priced from
+  sales history); the SKU still sets origin, supplier, duty and compliance.
+- Stocked scenarios assume stock on hand in the region. Order lead time = local pick + delivery.
+  Replenishment freight is consolidated (`replenishment_freight_factor`) and per-shipment fees
+  are spread over `replenishment_pallets_per_shipment`.
+- A node in another country (for example Jebel Ali serving Saudi Arabia) is treated as a free zone:
+  duty-suspended storage, then a per-order re-export, regional freight and import in the customer country.
+- Duty = value-weighted rate per SKU origin. EU27 origin uses the preferential rate and adds a
+  preference document step.
+- Distributor margin (default 25% of goods value) counts as cost to the chain, paid by the customer
+  through price.
+- Recommendation = lowest cost x (1 + risk premium). Premiums for occasional/unproven lanes and
+  potential/candidate nodes steer toward proven lanes. Routes below minimum order value are excluded.
+- Lane status comes from the lanes table and from sales history (`shipped_via` order count, 12 months).
+- Transport modes (Parameters > Transport modes per leg): each kind of leg has allowed modes and a
+  pick rule. Defaults: supply (supplier to Helmond or to a partner) by sea, preferring sea and
+  using a supplier's own mode first; refill (Helmond to a partner) preferring sea; export (DAP
+  baseline) the cheapest of sea and road; delivery to customers (regional and in-country) by road
+  or air, cheapest first. Pick `fastest` on delivery to use air. Air is used only where a group
+  allows it. A leg with no rate in its allowed modes makes the route infeasible. Inbound and direct
+  rates can be specific to the supplier country (`origin_country`).
+- Hassle metrics per route: customs touchpoints, handoffs between parties, documentation steps,
+  steps the customer handles itself. Phase 3 lets you pick the scoring method.
+
+## Batch and scorecard (phase 3)
+
+- Batch sources: synthetic test batch (reproducible seed, size mix 50% 1 pallet / 35% 2-4 / 15% 6-10),
+  saved test orders, or sales history (one batch order per historical order). Upload sales history on
+  the Batch page or the Import page. A profile table compares the test batch with history per region.
+- Each order runs through the baseline and the best node per in-scope scenario.
+- Scorecard per region x scenario: coverage, cost to serve per unit, cost % of order value, customer
+  cost per unit, FlexiTog cost per unit, lead time, hassle score, customer paperwork steps,
+  FlexiTog paperwork, proven-lane share, placeholder share. Winners per dimension, ties marked.
+- Hassle methods: customer-first (default), customs touchpoints, handoffs, documentation steps.
+  Customer-first scores the paperwork left with the customer (weights in General parameters). FlexiTog
+  paperwork shows what FlexiTog takes on to cover it. The method check table shows which methods
+  separate the scenarios.
+
+## Demo data, HTML report and data request pack
+
+- The tool ships with dummy data: 20 customers, 12 SKUs in three brands, 5 suppliers, candidate
+  distributors/3PLs/warehouses and 12 months of dummy sales history (192 orders). FlexiTog's own line
+  is made in Albania (Durrës, road to Helmond). RefrigiWear and Gold Freeze come mostly from China
+  (Ningbo, Qingdao) and Bangladesh (Chattogram) by sea, with boots and socks from Serbia (Leskovac) by
+  road. Albanian and Serbian origin pays the standard duty rate in the model; only EU origin gets the
+  preferential rate. Overview > Reset to demo data restores it.
+- HTML report: Batch and scorecard > Download HTML report, or `python tools/build_report.py`.
+  One self-contained page with findings, the regional scorecard, one order route by route, the
+  hassle method check and the data request list. `reports/demo_route_report.html` is the demo run.
+- Data request pack: `templates/FlexiTog_data_request_pack.xlsx`. One sheet per dataset with the
+  exact headers the importer reads, placeholders prefilled on parameter sheets, owner/status tracking
+  on the Overview sheet. Partner sheets take per-partner margin and 3PL rates (`margin_pct`,
+  `inbound_eur_per_pallet`, `storage_eur_per_pallet_month`, `outbound_eur_per_order`), which override
+  the scenario defaults.
+
+## Interactive dashboard
+
+`python tools/build_dashboard.py` (or Batch and scorecard > Download interactive dashboard) writes one
+HTML file that runs the whole simulator in the browser, with no Python and no server:
+
+- Map of Europe, North Africa and the Middle East: lanes from Helmond scaled by pallets, distributor /
+  3PL / owned-warehouse nodes (faded = not signed), customers, and issue markers by severity.
+  Colour countries by cheapest scenario, cost per unit, customer cost, lead time, FlexiTog paperwork or
+  issue count. Click a country for its scenario comparison, serving nodes and issues.
+- Parameters drawer (opened from the Parameters button in the Master Data top bar; the Dashboard has no edit
+  controls): what-if switches (Red Sea reopens, all SKUs EU-made), scenario defaults, partners
+  (use/remove, status, MOV, margin, storage, served countries), freight, duty and VAT, compliance, SKUs
+  (price, units per pallet, EU-made), general and risk, lead times, owned-warehouse fixed cost. Every
+  change reruns the batch. Changes stay in the viewer's browser. "Copy changes" gives JSON that
+  Parameters > Apply changes from the interactive dashboard writes back into the workspace.
+- Best option per region, scenario comparison, order explorer with route steps, risks with the coverage
+  matrix and data readiness (see Route Dashboard layout below).
+- Map filters: modes shown (sea, road, air) and one supplier at a time. Air legs to customers draw
+  as dotted arcs.
+- Parameters drawer, Transport modes: tick allowed modes per leg and choose preferred, cheapest or
+  fastest.
+- Map navigation: drag to pan, Ctrl/⌘ + scroll or pinch to zoom (plain scroll in full screen),
+  double-click to zoom in (Shift + double-click out), + / − / arrows / 0 on the keyboard, F for full screen.
+  Full screen uses the browser's full screen when allowed and a page overlay otherwise; the parameter
+  drawer still opens over it. Click a country, issue, node, lane or customer for a detail card with
+  zoom and jump actions.
+- World map: every country (Natural Earth 1:50m, Antarctica left out), finer detail in Europe, Africa
+  and Asia, Russia and Fiji split cleanly at the date line. Zoom out to see the whole world.
+- Suppliers: supplier countries are filled blue, each supplier has a dark navy factory marker, a
+  blue line where stock goes to Helmond and a navy line where it goes straight to a partner node
+  (dashed = road, width = pallets in view). Sea legs (supplier, direct and Helmond outbound) follow
+  a shortest path on a sea-lane graph (`geo.route_graph`): round the Cape of Good Hope, or via Suez
+  with the Red Sea switch on; Jeddah stays reachable via Suez. The Suppliers button (or S) frames the supply base. Click a supplier
+  country or factory for brands, SKUs, origin, lead time and share of the batch. Blue is reserved for
+  suppliers: distributor-held stock is plum and the country value scale is violet.
+
+### Logistics scenarios on the Dashboard (Benchmarking results)
+
+Naming: forecast outputs are volume cases (A to E plus any you add, built on the Forecast tab); supply chain options
+are scenarios (S1 to S4). The two labels never mix.
+
+The Dashboard prices the four scenarios over a time horizon from the modular RFQ answers on Benchmarking
+(`flexitog/assets/dash_rfq.js`). It reads and explains only: it calls `horizon_core.js` (`window.FlexiHorizon`), which
+calls the `rfq_v30.js` scenario engine once per year, on the providers Benchmarking lists (`BenchUI.rfq30`) with the
+internal settings from Benchmarking. Nothing on this tab edits a volume case or a rate; values link to the tab they
+come from. It updates when an answer is uploaded or removed, a case is saved or a setting changes.
+
+- Top bar (read-only): volume case (with its base year and status, confirmed or estimate), horizon 1 to 5 years,
+  filter All, a region or a country (or follow the map selection), Hide revenue (on each time the tool opens), the
+  provider per module (best per module, or one fixed provider for M1 to M5; a fixed M4 provider is the 3PL for S3),
+  and the escalation line with a link to Benchmarking.
+- Summary panel right of the map: orders in total and per year, units, kg, countries and customers, years and
+  extrapolated years, revenue when shown.
+- Recommended scenario: the lowest cumulative cost among the complete scenarios that meet the GCC target (setting
+  "GCC target", 48 hours), with the reason. Without one the cheapest complete scenario shows as the fallback.
+- Four scenario cards with one layout: total over the horizon, per order, per kg, one-off, next-day / 48 hours in
+  the GCC, inputs filled, providers or distributor. The S3 card shows the 3PL minimum (floor) as its own line.
+- Year table: cost per year per scenario, the cheapest per year highlighted, cumulative cost, extrapolated years
+  tagged, and cost % of revenue when revenue is shown.
+- Cumulative chart with the switch point: the first year (and volume) where a scenario becomes cheaper than S1 on a
+  cumulative basis. Without one inside the horizon the volume sensitivity break-even multiplier is shown.
+- Year 1 detail: scenario comparison, region by scenario, country detail (stacked bar per cost type), unit cost,
+  break-even volume and the answers (deterministic sentences and the follow-up questions per provider).
+- Map: countries take the colour of the cheapest complete scenario over the horizon ("Cheapest scenario over the
+  horizon (S1 to S4)" in Colour countries by). The tooltip lists each scenario's horizon cost.
+- Internal revenue (hidden by default): cost % of revenue and contribution on the cards and in the year table,
+  revenue in the summary panel and the map tooltip.
+
+Time horizon (`horizon_core.js`):
+- The horizon starts at the case's first forecast year. Each year is priced from that year's volume (lane × band
+  shipments from `cases_core.js`).
+- Escalation, an estimate with a low, base and high setting: freight, fuel, warehouse and EUR/USD. Rate in year y =
+  base × (1 + e)^(y − 1). Transport, direct and delivery costs take freight × fuel; handling, storage and fixed costs
+  take warehouse; customs takes none.
+- One-off costs (S3: W16 + W17; S4: setup and licences) fall in full in year 1 or a selected year (setting "One-off
+  year"). The single-year view on Benchmarking amortises them. Fixed yearly costs recur every year.
+- Years past the case's length are extrapolated with the last growth rate and tagged "extrapolated".
+
+Removed with this change (fed only by v2.3 logic): the key figure tiles (providers compared, best total score,
+cheapest option, coverage, GCC on time), the region cards per option, the order class matrix per option, cost per
+pallet, holding stock per provider and the Helmond against regional stock chart. The scenario views above replace
+them.
+
+### Route Dashboard layout
+
+The tab answers six questions in order. One store (`RS` in `dashboard.html`: selected region, country,
+order, option and the switch "Include partners not yet signed") feeds every section. The logic without DOM
+is `flexitog/assets/route_core.js` (`window.FlexiRoute`, tested in `tests/test_route.py`); engine.js and
+engine.py are untouched.
+
+1. Best option per region: one card per region (the cards are the region selector; click the active card
+   for all regions). Best scenario in its colour, cost to serve per unit, lead time (red when it misses the
+   target), the target, risk counts by severity and the share of cost on real data. `bestScenario` rule:
+   only Distributor, 3PL and Owned WH count (Baseline DAP is the reference); scenarios where every order meets
+   its target come first; then the lowest cost to serve plus customer pays per unit, weighted by order count;
+   then the lower hassle score; when none meets the target the cheapest wins, labelled "misses target". With
+   the switch off the batch reruns with signed partners only (status existing).
+2. Scenario comparison for the selection: four rows, order-weighted cost, customer cost, lead time, hassle,
+   FlexiTog paperwork, orders missing the target and partner status. Best in-scope value in bold. A scenario
+   without a route shows one line with the reason.
+3. Map and country detail: countries coloured by their best scenario, routes only for the selected country or
+   order, supplier and issue layers off behind the Suppliers and Issues buttons, legend entries only for layers
+   that are on. Clicking a country selects it and its region. The Customers button (or C, on by default) shows
+   every Master Data customer in the region as a white point, placed by its latitude and longitude, else its
+   city, else the country centre (dashed outline). Customers on the same spot share one larger point; click
+   it for the list. Forecast placeholder customers stay off the layer.
+4. Order explorer: orders of the selection, every route option ranked by total cost with its status (signed or
+   candidate) and data source (from RFQ, placeholder or entered rates). Click a bar to see its steps, who
+   handles each one and whether it meets the target.
+5. Risks (issues without the coverage type, by severity, faded outside the selection) and the coverage matrix
+   (nine lane countries by four scenarios: signed, candidate or no partner; an empty cell opens Master Data, Parameters >
+   Partners).
+6. Data readiness (collapsed): share of cost on real data and the data request table with a done, partial or
+   missing status per dataset from the rows loaded.
+
+Targets come from the lane rules (working days after pickup on the destination weekend): Saudi Arabia, UAE,
+Kuwait and Qatar 2, Türkiye and Morocco 3, Egypt and Tunisia 4, Algeria 5. A Service Goal with a time unit
+that names a country (ISO code or name, not a region) overrides its lane rule. Engine lead times are calendar
+days; `workingDays` rolls a weekend delivery to the next working day and averages over the five pickup days.
+
+RFQ wiring: `getRfqRate(providerId, lane, band)` reads `rate.<lane>.<band>.cost_per_shipment` and
+`.transit_days` from the provider's latest RFQ response in Benchmarking, `getRfqStock` reads
+`stock.<lane>.serve_from_stock` and `.transit_days`. Lanes L01 Saudi Arabia to L09 Tunisia, weight bands by
+gross kg (quantity × unit_weight_kg plus 20 kg per pallet): B1 to 30, B2 to 100, B3 to 500, B4 to 2,000, B5
+above. Each provider with a rate adds a Baseline DAP option in the Order explorer (door-to-door freight replaces
+the main leg and local delivery). A partner node is a Master Data provider, so its own RFQ answer (same
+`dc_id`) gives its delivery-from-stock transit from `stock.<lane>`. No RFQ value means the placeholder rate stays.
+RFQ rates feed the Order explorer only; sections 1 and 2 still run on the engine rates.
+
+### Login, home page and users
+
+The page opens on a login card. Nothing of the app shows until a user logs in with username or email
+and password (Enter submits, the eye button shows or hides the password, a wrong login shows one
+message without naming the field). The session lives in sessionStorage: a refresh keeps you logged in,
+closing the tab logs you out. Every page shows the user and a Log out button top right, and a Home link
+top left. The address bar hash follows the view (`#dash`, `#forecast`, `#bench`, `#report`, `#md`,
+`#users`), so a refresh stays on the same page.
+
+After login the home page shows the logo from `flexitog/assets/brand/` (300 px wide, see the README
+there) and one button per view in this order: Route Dashboard,
+Forecast, Benchmarking, Report Extract, Master Data Upload, then Users for the admin. Five or six per row
+on desktop, three on a tablet, two on a phone.
+
+Users (admin only, blocked for everyone else, also by direct hash or `showView("users")`): table with
+username, email, role, status, created date and actions (reset password, disable or enable, delete with
+a confirm step). The admin account cannot be disabled or deleted. Add user takes username, email, role
+(Editor or Viewer, Admin is reserved) and one permission checkbox per view, then creates a random
+14-character password (upper, lower, digit, symbol, from `crypto.getRandomValues`) shown once with a
+Copy button. Usernames and emails are unique, emails are checked. Roles and permissions are saved on
+each user and not enforced yet (`FlexiAuth.permits(user, view)` is the hook). Export users and Import
+users move the accounts as JSON, password hashes included, so test users survive a storage change.
+
+Files: `auth_config.js` holds the seed admin (username, email, salt and hash, never the password),
+`auth_store.js` is the only code that reads or writes users and sessions (`getUsers`, `getUser`,
+`saveUser`, `deleteUser`, `getSession`, `setSession`, `clearSession`, all async; users in localStorage
+under `flexitog-auth-v1:users`), `auth_core.js` (`window.FlexiAuth`) holds hashing, random passwords,
+validation and import rules, `auth.js` and `auth.css` the screens. Password hash:
+hex(SHA-256(UTF-8(salt + password))) with a random 16-byte salt per user, Web Crypto API. Change the seed
+password by writing a new salt and hash in `auth_config.js`; the stored admin follows on the next load.
+Tests: `tests/test_auth.py`.
+
+The login runs in the browser. It keeps the screens away from someone who opens the page without an
+account. It does not protect the data: the master data, sales orders and the user list sit in the page
+file and in browser storage, and anyone with the file and the browser developer tools can read them or
+set a session. Real access control needs a server that checks the login before it sends any data.
+
+### Data store, upload templates, Landed Cost and quote benchmark (Tier 1)
+
+One store, one engine. Every view reads the Master Data tables (artifact database when published, this
+browser otherwise). New tables: `countries` (import facts per country), `quotes` (freight quotes) and
+`settings` (one row). Every formula sits in `flexitog/assets/calc.js` (`window.FlexiCalc`): landed cost, the
+quote benchmark, the RFQ Rate Card shipment cost, the provider comparison against Helmond and the forecast
+scenario margins. Views only display what it returns. Results are cached per data version and filter set;
+any Master Data change clears the cache (`FlexiCalc.invalidate`).
+
+Single sources:
+- Duty, VAT, other levies and clearance per country come from Countries, for Landed Cost and for the route
+  engine (they replace the duties parameter row of that country). Cargo insurance comes from Settings.
+- USD conversion everywhere uses Settings `eur_usd_rate` (USD per 1 EUR) with its date.
+- Target countries are the Countries rows with target = true. Add a row to onboard a country: it shows in
+  Landed Cost, the coverage indicator, the quote filters, the map and the region cards. target = false takes a
+  built-in study country out.
+- Region choices: Türkiye, North Africa (Morocco, Algeria, Tunisia, Egypt, Libya, Sudan, Mauritania), Gulf/GCC (Saudi
+  Arabia, UAE, Qatar, Kuwait, Bahrain, Oman), Middle East (Jordan, Lebanon, Iraq, Israel, Palestine, Syria, Yemen,
+  Iran), Caucasus and Central Asia, Sub-Saharan Africa, South Asia, East and Southeast Asia. Blank = the built-in
+  region of the country. The three study regions are always on; a target country in another region adds that region
+  to the region cards, the filters, the report and the Benchmarking test orders. The RFQ lanes stay L01 to L09.
+
+Provenance: every row carries `source_ref`, `source_date` and `data_status` (confirmed or estimate). Built-in
+data is "estimate". A cell edited in Master Data records who and when; a template upload fills blanks with
+the file name and the upload date, and blank status means estimate.
+
+Master Data > Data upload: one fixed template per data type, as CSV or Excel (with a Fields sheet listing
+type, unit, range, allowed values and an example), a Download of the current rows in template columns, and
+an Upload per type. Data types and columns (every template ends with source, sourceDate, status):
+
+| Type | Columns |
+|---|---|
+| suppliers | supplierId, name, country |
+| products | category, brand, sku, weightKg, cartonLcm, cartonWcm, cartonHcm, unitsPerCarton, exwPriceEUR, hsCode |
+| customers | customerId, name, country, segment |
+| logisticsProviders | providerId (optional), name, type (forwarder / 3PL), country (optional), customsBrokerage, freeZone, warehousing, complianceSupport, handoffsPerShipment, documentsPerShipment |
+| lanes | laneId (optional), origin, destinationCountry, mode (road / sea / air / express) |
+| quotes | quoteId (optional), provider, laneId, quoteDate, validUntil, baseRate, rateUnit (per kg / per m3 / per shipment), fuelSurcharge, peakSurcharge, warRiskSurcharge, currency (EUR / USD), transitDaysDoorToDoor, optional minCharge, otherSurcharge, weightFromKg, weightToKg |
+| salesHistory | date, customerId, country, sku, units, revenueEUR, orderId (optional) |
+| countries | name, dutyRate, preferenceCert (EUR.1 / ATR / none), vatRate, clearanceFeeEUR, complianceCostEUR, expectedYearlyUnits, optional target, region, standardDutyRate, otherFeesPct |
+| settings | eurUsdRate, eurUsdDate, insuranceRate, marginPct, shipmentUnits |
+
+Rates are in % (12 = 12%). Dates YYYY-MM-DD (DD-MM-YYYY and Excel dates are read too). Numbers take a decimal
+comma or point and the column's unit ("2.1 kg"). The upload checks headers (unknown or missing columns),
+required values, types, units and ranges, dates, allowed values, countries, duplicates, and links (a quote's
+provider must be in Logistics providers, its lane in Lanes; validUntil not before quoteDate). Any problem
+rejects the whole file with a list of row (the header is row 1), column and message, downloadable as CSV;
+nothing is saved. A clean file shows new and updated rows and saves on Confirm (update and add, or replace
+every row of the type). The panel shows per type the last upload (date, file), the row count and the
+confirmed share, and per target country the coverage: confirmed fields over all filled fields of the rows
+tied to that country (its Countries row, lanes and quotes to it, customers, sales, providers serving it).
+
+Landed Cost (menu and home page): filters country, garment category, provider and mode (or the cheapest),
+garments per shipment (saved in Settings) and an EUR/USD toggle with the stored rate and its date. Per SKU it
+takes the cheapest valid quote (not expired, weight band matching). Formula (calc.js `landedCost`):
+1. Cartons = round up (units / unitsPerCarton), volume = cartons × carton L × W × H, actual kg = units × weightKg.
+   Chargeable weight = max(actual kg, m3 × factor); factors air 167, road 333, sea (LCL) 1000, express 200 kg per m3.
+   Rate unit per kg uses chargeable kg, per m3 uses max(m3, kg / factor), per shipment counts 1.
+2. Freight total = max(rate × chargeable units, minCharge) + fuel + peak + war risk + other surcharges
+   (amounts per shipment, quote currency, USD / eurUsdRate to EUR). Freight per garment = total / units.
+3. CIF = EXW + freight + insurance, insurance = insuranceRate × (EXW + freight).
+4. Duty = CIF × dutyRate.
+5. Landed cost = CIF + duty + clearanceFeeEUR / units + complianceCostEUR / expectedYearlyUnits.
+6. DAP price = landed cost × (1 + marginPct).
+The view shows a stacked bar per SKU (EXW, freight, insurance, duty, clearance, compliance; EXW can be left out
+to see the added cost), a table with every element in EUR or USD and its share, and for the chosen SKU every
+intermediate value, the surcharge split (base against each surcharge) and the status and source of each input.
+`tests/test_calc.py` holds a hand calculation the engine matches within 1%.
+
+Benchmarking > Quote Benchmark: the quotes in force (expired ones never count), filters provider type
+(forwarders, 3PLs), quote date (all, last 6 months, last 3 months), country and mode. Per lane (lane × rate
+unit × weight band, newest quote per provider): low, median and high base rate in EUR. Per provider: lanes
+quoted, lanes compared (2 or more providers), share above the median and average transit days. A confirmed
+RFQ answer writes its Rate Card into Quotes (ids QR-<provider>-<lane>-<band>, one per lane, mode and band, fuel
+included in rate and minimum, docs and other fees as the other surcharge) and adds the lanes it needs.
+Removing or switching the active upload rewrites them.
+
+Export view (top bar, every view but Home and Users): the tables on screen as an Excel workbook (one sheet per
+table) or one CSV, headed by the view, who exported it and when, the data date (last Master Data save and
+newest source date) and the active filters.
+
+### Theme and the Odoo data for the operations overview
+
+Theme: `flexitog/assets/theme.css` holds every colour, font, shape and motion token (light, dark and the
+light-only `--print-*` set for PDF, Word and the HTML report). No component holds a hex value: CSS uses
+`var(--...)`, canvases and exported documents read tokens with `tok("--name")`. Brand tokens: bg, wash,
+surface, surface-2, text, muted, line, navy, navy-2, ice, ice-soft, warn, warn-soft, green, green-soft, bar;
+the older names (ground, ink, rule, accent ...) map onto them. Font Manrope (400 to 800) when the device has
+it, else system-ui; no font file is bundled. Cards 24 px radius, 20 px padding, soft shadow, lift 5 px on
+hover; pills fully rounded; labels in sentence case; prefers-reduced-motion switches motion off. The theme
+follows the system; the theme button in the top bar cycles system, light and dark (kept per viewer).
+
+Odoo data (Master Data > Data upload, export from Odoo as CSV or Excel; headers may be the technical field
+names of an import-compatible export or the English labels of a normal export):
+- Odoo transfers, `stock.picking`: name, picking_type_code, scheduled_date, date_done, state, origin,
+  partner_id/country_id, and the custom fields x_dock, x_slot_type, x_slot_minutes. Dock schedule.
+- Odoo move lines, `stock.move.line`: picking_id, product_id/default_code, quantity (qty_done), date,
+  picking_code, state, location_id, location_dest_id. Done outgoing lines = units shipped.
+- Odoo stock, `stock.quant`: product_id/default_code, product_categ_id, location_id, quantity,
+  reserved_quantity. Stock by temperature zone.
+- Odoo location counts (physical inventory): location_id, product_id/default_code, last_count_date, quantity,
+  inventory_quantity. Location accuracy.
+- Temperature zones: categoryMatch, zone (freezer -5 to -50°C, chiller +10 to -5°C, ppe). A product category
+  containing the text joins the zone.
+Orders and markets read the Odoo sales order lines the Forecast already loads (one source).
+
+The figures live in `calc.js` (`FlexiCalc.ops`): month to date against the same days of last month; a source
+whose last record is in an earlier month is measured at that day. Location accuracy = location counts with no
+difference / location counts. Days of cover = units on hand in the zone / average daily units shipped of those
+SKUs over the last 90 days; under 21 days is a warning. Until an export is uploaded, each figure uses
+`flexitog/assets/data/ops_sample.json` (written by `tools/build_ops_sample.py`, dates as day offsets from
+today) and is marked sample. The same file holds the facts Odoo has no field for yet: pick time per line,
+relabeling progress and certificate expiry dates. The overview screen itself waits for the reference design
+(`design/flexitog-reference.html`).
+
+### Menu, master data and report extract
+
+The menu button (three lines, top left) opens Home, Route Dashboard, Forecast, Benchmarking, Report
+Extract, Master Data Upload, Users (admin only) and Parameters, plus shortcuts to the main master data tabs.
+
+- Master data upload: one tab per table. Products, Customers, Suppliers, Logistics providers
+  (distributors, 3PLs, owned warehouses and the Helmond hub, filterable by type), Lanes, Sales history,
+  Demand forecast, Test orders, Test order lines and Other data (any file: rate cards, quotes, shipment
+  logs). Each tab is an editable table with search, add and delete row, required-field and allowed-value
+  checks, CSV export and a CSV template. Upload CSV (comma, semicolon or tab) or Excel: the page finds
+  the sheet and header row, matches columns to fields (same aliases as the Python importer), converts
+  countries to ISO codes, reads 1.234,50 and 13-09-2025, and shows a check and preview before rows go in.
+  Modes: update matching and add new, add all, replace. Save changes reruns the map, scorecard and report.
+  Select rows with the checkbox column (Shift + click selects a range, the header box selects the page,
+  Select all takes every row that matches the search and filter). The selection bar then deletes the
+  selected rows (with a confirm click), exports only them as CSV or Excel, or sets one column to the same
+  value on all of them. Delete and Set change the draft: Save changes keeps them, Discard undoes them.
+  Click a column header to sort: A to Z (numbers low to high, dates oldest first), again Z to A, a third
+  time off. Blanks sort last. The row under the headers filters per column: text that the cell contains,
+  a dropdown for list columns, `>`, `<`, `>=`, `<=` or `=` with a number for number columns, `(empty)`
+  for blank cells. Sort and filters change the view only. Keep this order makes the sorted order the
+  table order. Move rows by dragging the ⠿ handle in the # column, with Alt + ↑ / ↓ on the focused
+  handle, or with Move To top, Up, Down, To bottom in the selection bar. Drag is off while a sort is on.
+  A new order is a draft change: Save changes keeps it.
+  Country, city and port fields suggest values as you type (also in their column filters and in Set on the
+  selection bar). Names that start with the typed letters come first, then names with a word that starts
+  with them; accents are ignored, so "turk" finds Türkiye. Countries come from the basemap (every ISO
+  code) and go in as the code (Morocco becomes MA); serves_countries completes the part after the last ";"
+  and leaves out countries already in the list. Cities and ports come from the Master Data tables (the
+  row's country first) and the places on the map. Enter or click picks, arrow keys move, Escape closes.
+  A typed country name without a pick still becomes its code, and the region follows a new country.
+  Sales history rebuilds the batch in the browser (one order per historical order, same rules as
+  `batch.history_batch`). Header buttons give the whole master data as one Excel workbook and an
+  Excel workbook of upload templates.
+- Saving: in the published artifact, saved tables are stored with the dashboard and everyone who opens
+  it sees them. Opened as a local file, they stay in that browser. Export the master data workbook to
+  move data into the Python tool (Import data accepts it sheet by sheet).
+- Save button (disk icon next to Home, top left): every change waits for it. Master Data drafts, uploads,
+  table resets, other datasets, Benchmarking (RFQ status, goals, settings, sales sources), Forecast settings
+  and Route Dashboard edits apply to the views at once and are written only on Save, or Ctrl+S (Cmd+S on a
+  Mac). The button turns navy with a count of unsaved changes and reads "All changes saved" when nothing is
+  held. Leaving or reloading the page with unsaved changes asks first. A table's own Save changes button
+  still saves that one table. View preferences (tabs, filters, theme), login accounts and original RFQ
+  files save at once. The code is `Saver` in `workspace.js`.
+- Report extract: a standard cross-border supply chain report for all regions or one. Sections:
+  executive summary, scope and method, scenario scorecard, landed cost breakdown, lead time breakdown,
+  demand profile, network (logistics providers and lanes), supply base (suppliers and brand mix),
+  stock sourcing (via Helmond or direct, per region, model and lane), transport modes (policy and
+  mode mix per leg), trade compliance by country, risk and issue register, data quality, recommendations, and an order
+  appendix. Export as an Excel workbook (one sheet
+  per section plus all orders), an HTML report or a CSV of every order and scenario.
+
+Excel read and write uses SheetJS Community Edition 0.18.5 (Apache-2.0), inlined from
+`flexitog/assets/vendor/`. The menu and master data code is `flexitog/assets/workspace.js`.
+
+### Sales Forecast
+
+Menu > Forecast builds the 2027 demand every route scenario prices. Source: the Odoo sales order line
+export (sheet `Sheet1`, headers `Order Lines/...`). The page embeds the anonymized sample
+(`flexitog/assets/data/`, Dummy data badge on). Upload the real export on the Forecast view (SheetJS, in
+the browser, kept in that tab only), or build a local copy with
+`python tools/build_dashboard.py out.html --sales workspace/Official_Sales_Orders_MENA_Turkey.xlsx`.
+Keep the real file in `workspace/`: git ignores it and it holds real customer names.
+
+Data rules (`forecast_core.js` `clean`, the one implementation for the embedded and uploaded file):
+1. Skip rows with an empty Order Reference.
+2. Net revenue = Total − Total Tax (UK lines include 20% VAT).
+3. FX table in EUR per unit, default 1 GBP = 1.1555 EUR and 1 USD = 0.8607 EUR. Reporting currency USD.
+4. Order date = the earliest Created on of all lines in the order.
+5. Customer = Customer/Company Name Entity, else Customer; " (EU)" stripped; "Turk Hava Yollan Teknik AS"
+   maps to "Turkish Airlines Technic" (the sample's "Anatolia Aero Teknik AS" to "Anatolia Aero Technic").
+6. Freight: category Service, or a product name with Delivery, Freight, Fedex, UPS SAVER or Collection UK.
+   Lines without a product name are blank and ignored. Everything else is goods.
+7. Product class from the name: Coveralls, Baselayers, Trousers, Jackets (in that order), else the
+   template category (Gloves, Footwear, Headwear, Accessories, Drying cabinets, Other clothing).
+8. Goods revenue, units (quantity x pack size) and orders by month, country and class; freight apart.
+
+Validation (`tests/test_forecast.py`): with the real file in `workspace/` the totals must match the
+Excel analytics: net revenue USD 529,622 (goods + freight billed), 79 orders, 464 order lines, 32
+customers, 9 countries, Saudi Arabia USD 315,959, last 12 months to 2 October 2026 USD 513,857. The
+sample matches the counts; its revenue is perturbed (USD 521,301).
+
+History files: upload one Odoo export per year and tag the year it covers ("Year this file covers"). The files
+merge into one history; each shows as a chip with a remove button, side by side.
+
+Methods (pick one; all five show side by side with their back-test, WAPE and MAPE):
+- Moving average (run rate): trailing 12 full months per country. Orders above the 95th percentile of order value are
+  capped; the excess is reported as project orders (toggle to include them in every method).
+- Exponential smoothing (Holt), linear, per country, no seasonality, alpha and beta sliders (0.3 / 0.1).
+- Seasonal: the run rate × a seasonal index per calendar month (the month's average share of the history).
+- Customer-driven: per customer the average days between orders and the average order value, plus new
+  customers per quarter per country at the median first-order value.
+- Target allocation: the 2027 target (USD 2.3M to 2.5M) split by historical share or your weights.
+
+Scenarios: Base = the method x (1 + growth uplift); Low / High = Base x (1 -/+ the method's back-test
+WAPE, clipped to 10-50%); Target = the Base mix scaled to the target midpoint. Revenue converts to units
+with the net unit price per class and country, to orders with the average order value and to lines with
+lines per order. Back-test: hold out the last 3 full months, fit on the rest; WAPE above 40% labels the
+forecast indicative.
+
+#### Volume cases (Forecast tab)
+
+Volume cases are the forecast outputs every scenario prices over the horizon (`flexitog/assets/cases_core.js`,
+`window.FlexiCases`, the model; `flexitog/assets/cases_ui.js`, the builder on the Forecast tab). Cases are edited on
+this tab only. Stored in this browser under `flexitog-volume-cases-v1` (they hold revenue, so never in a provider file or
+the default JSON export), written on Save.
+
+- Each case keeps its base year (orders and revenue per country, size-band mix, units per order) and creation date. A
+  case built on an older history year shows "newer history available"; "Rebuild the base" takes the latest file year.
+- Methods, factor f(y) = volume in year y / base-year volume:
+  - multiplier on history: f(1) = k, then the growth per year
+  - moving average, Holt, seasonal: f(1) = the method's first-year forecast / base year ("Take the level from the
+    history"), then the growth per year
+  - revenue target or volume target (orders or kg) T in year Y: r = (T / base)^(1 / (Y − base year)) − 1, flat after Y
+    (or the growth you enter)
+  - growth path: rates per year, f(y) = (1 + g1) × … × (1 + gy), or an end goal in year Y solved as a CAGR (EUR goals
+    converted at the case's rate), with a front-load option (year 1 at g1, the rest at the rate that still reaches the
+    goal)
+- Editable per case: base year, horizon length, growth, targets, split per country, garment mix.
+- Justification: method, formula, inputs, MAPE and a required basis (text and source). Without a basis the case is
+  "estimate" and flagged.
+- Yearly table (orders, units, kg, revenue; revenue follows the Hide revenue switch) and an overlaid line chart.
+- Save, rename, duplicate, delete.
+- Seeds (base year 2026, first forecast year 2027, 5 years; base = half of reference volume A per lane, revenue USD
+  515,000): A = 2 × history; B = Holt; C = revenue target USD 2,400,000 in 2027 (split and band mix of reference B); D =
+  volume target 282 orders in 2029 (placeholder); E = growth to EUR 5,000,000 in 2031 (placeholder).
+- Rows per year: orders per country = base orders × f(y) × country share; shipments per lane and band = orders × band
+  mix; kg = shipments × average kg of the band; units = orders × units per order; revenue USD = base revenue × f(y).
+
+Integration: the demand object `window.DEMAND.rows` = {month, country, product_class, units, orders,
+revenue, revenue_eur, lines, shipments}. With Use as demand on (default), the Route Dashboard, the
+scorecard and the report extract price `FC.forecastBatch` (forecast orders per country and month, one
+line per class at the representative SKU of the product class profile) and the engine reads
+`FC.volumes`. The Forecast view shows cost to serve, landed cost, margin (gross margin % per class is a
+placeholder), next-day / 48-hour feasibility, lead time and hassle per scenario, and freight per unit
+by product class. Benchmarking > Test Order and Report can build the test set from one average month
+of the forecast. The page makes no network calls: Google Fonts is gone, system fonts take over.
+
+### Benchmarking
+
+Menu > Benchmarking builds one standard test order package from the sales history and sends it to
+logistics providers, so every freight forwarder, 3PL, carrier or distributor quotes on the same basis.
+Sub-tabs; each view keeps its state when you switch back to the Route Dashboard.
+
+- Logistics Providers: one row per Master Data provider (Master data > Logistics providers, rows with a
+  provider type). Columns: name, type, countries and lanes, RFQ status, last upload (file name and date),
+  actions. Helmond (type Own hub) comes first, labelled Baseline, with no RFQ upload: its costs and lead
+  times come from Master Data and the parameters. Add, edit and delete providers in Master Data; they show
+  here the next time the view opens. The table follows the Master Data order. Drag ⠿ (or Alt + ↑ / ↓) to
+  move a provider: the new order saves in Master Data at once. Click a column header to sort by provider,
+  type, number of countries, RFQ status or last upload; Helmond stays first. Print report (PDF) writes the printable A4 provider report (cover,
+  overview, RFQ comparison, one page per provider). The RFQ workflow below runs on this tab.
+- Distributors: one row per distributor with name, country, regions served, contact, status (prospect,
+  interested, agreed), discount or margin %, minimum order, payment terms, stock commitment, lead time to the
+  customer in days, notes, and source, source date and data status (confirmed or estimate). Saved through the data
+  store on Save. S2 reads the distributor chosen per country (internal settings). No scoring and no RFQ for
+  distributors yet.
+- Sales Data and Analysis: the default source is Master data > Sales history (192 demo orders). Add
+  CSV or Excel exports from each merged entity; a mapping step matches columns (English and Dutch
+  headers) to order date, order number, customer, destination country, SKU, description, garment
+  category, brand, quantity, value, currency and optional weight, cartons, pallets and incoterm. Data
+  quality shows rows loaded and dropped with reasons, missing values per column, duplicates and the
+  date range. Exchange rates (EUR per unit, placeholders) convert values. Analyses with chart and table:
+  orders, units and value per month and year, seasonality index per month (overall and per region),
+  volume per region, country, customer and garment category, order profile, top customers per region
+  with peak months, peak and low months. A findings list is written from the numbers.
+- Service Goals: editable goals with name, description, target, unit, mandatory or preferred and the
+  regions they apply to. Seven defaults (next-day TR/NAF, 48 hours GCC, customs paperwork, no hassle,
+  damage rate, returns, tracking and POD).
+- Test Order and Report: a 12-month test set drawn month by month from the history with a fixed seed
+  (same options, same set). Options: base years, scale factor or yearly revenue target in USD, seed,
+  order values on or off, lines as SKU or garment category. Customers become codes per region (Customer
+  GCC-01). Cartons, pallets, weight and volume come from the product master or packing defaults per
+  category. A check compares totals, monthly shape, region and category mix with the history. Generate
+  report files writes, per ticked provider or as a generic version, a PDF report, a Word report and an
+  Excel response template. Generating for a provider sets its Date test order sent to today. Cost
+  against Helmond (on this tab and as Comparison report (PDF)) prices the test order set for Helmond and
+  every provider with an active RFQ answer, Helmond first. The outbound package never holds these costs.
+
+Seasonality index: units per calendar month averaged over the years that cover that month, divided by
+the mean of those averages (average month = 100). Part years do not skew the shape.
+
+Response template (version 1) sheets: Instructions, Provider, Rates per order (one row per test order
+ID), Rates per lane (one row per destination country from Helmond), Service goals (meets goal yes, no,
+partly, comment), Test order lines (reference) and a hidden `_meta` sheet with the package and provider
+IDs. Cost columns per row: transport mode, transit days, total lead time days, freight rate, fuel
+surcharge, customs clearance fee, warehousing cost, other surcharges, incoterm offered, currency,
+comment. `BenchCore.parseResponse` reads a completed file into a ProviderResponse
+`{package_id, provider_id, provider_name, currency, valid_until, lines: [{kind: order|lane, ref, cost fields}],
+goals: [{goal_id, meets, comment}]}`: the input for the side-by-side comparison (not built yet).
+Exports never hold real customer names, source order numbers, margins, purchase prices or supplier costs.
+
+#### RFQ workflow (Logistics Providers)
+
+Provider fields used (Master Data table `distribution_centers`): `dc_id` (provider ID), `name`, `dc_type`,
+`provider_type` (3PL, Freight forwarder, Own hub; blank derives from `dc_type`: helmond_hub is Own hub,
+3pl is 3PL, freight_forwarder is Freight forwarder), `status`, `country`, `serves_countries`,
+`contact_name`, `contact_email`, `contact_phone`, `website`, `notes`, `data_source` (placeholder shows the
+dummy badge). Rows without a provider type (distributors, owned warehouses) stay out of Benchmarking.
+`dc_type` freight_forwarder holds no stock: the engine and the map skip it.
+
+RFQ status per provider: Not sent, Sent (set by hand, or by Prefilled RFQ), Answered (after a confirmed
+upload).
+
+The RFQ is the modular RFQ MENA-TR v3.1 (`meta.rfq_version` "RFQ-MENA-TR-MODULAR v3.1",
+`flexitog/assets/rfq/FlexiTog_RFQ_MENA-TR_v3.1.xlsx`, served by Download latest RFQ). v3.0 answers
+("RFQ-MENA-TR-MODULAR v3.0") still import with the same parser; v3.1 only adds keys. Each version keeps its own cell map
+(`rfq_v30` and `rfq_template` in the payload), because v3.1 moved the M4 cells; a warehouse-only v3.1 template is bundled
+when `flexitog/assets/rfq/FlexiTog_RFQ_MENA-TR_v3.1_Warehouse_only.xlsx` exists (`rfq_v31w`).
+
+v3.1 additions:
+- `meta.variant` "full" or "warehouse". A warehouse file holds M3, M4, M5 and the questions; M1, M2 and M6 show as "not
+  part of this file" (chips "M1 –", detail tabs, preview), never as missing, and raise no F6, no F9 and no follow-up
+  question. The forwarder score shows n/a.
+- `meta.stock.S01` to `S07`: the stock profile FlexiTog sent (articles and SKUs, average stock, inbound, outbound,
+  process, delivery target, system), shown as "Stock profile sent" in the provider detail, with an info note when the
+  pallet number in S02 differs from the setting "average pallets in stock" (the S3 storage cost uses the setting).
+- `m4.A/B.W24` order cut-off for same-day dispatch (Excel time fraction or HH:MM, 0.625 = 15:00), `W25` quality check
+  per order (EUR), `W26` how orders reach the 3PL (API, EDI, Portal upload, E-mail). A provider answers the modules it offers
+(`module.M1.offered` to `module.M6.offered`):
+- M1 direct from Helmond: 33 test shipments T01 to T33 (lane L01 to L09, band B1 to B5, size S 8 kg, M 52 kg,
+  L 261 kg, XL 941 kg, XXL 2,380 kg), service, all-in DAP price, transit.
+- M2 bulk to the region: B01 to B36, per lane and load (P1 1 pallet 250 kg, P5 1,250 kg, C20 11 pallets 2,750 kg,
+  C40 24 pallets 6,000 kg), mode, price, transit, an alternative mode.
+- M3 customs per country L01 to L09: clearance per entry, free-zone entry, free-zone exit per order, deposit, days.
+- M4 warehouse A and B: W01 to W23 (location, customs status, countries, model, storage, inbound, devanning,
+  pick, pack, labelling, fixed fee, one-off, minimum term, minimum monthly, dedicated site rates), and comments.
+- M5 delivery from the warehouse: D01 to D27 per lane and size S, M, L, with warehouse, price, transit, next day.
+- M6 other solution: O01 to O05 and up to five price lines P1 to P5.
+- Questions Q01 to Q28 and the file's own `meta.input_check`.
+
+1. Download latest RFQ gets the bundled v3.0 template. Replace RFQ template stores a newer file in this browser,
+   Reset to bundled drops it.
+2. Prefilled RFQ writes the provider's name, contact, e-mail and phone into Q01 to Q04 (the input cells the
+   template's own Export formulas point at) and adds the hidden `_rfqmeta` sheet (template version and provider ID).
+3. Upload answered RFQ reads the hidden Export sheet with SheetJS (column A key, column B value). The version picks
+   the parser:
+   - v3.0 enters the scenarios and scores. A blank or not offered value is never 0. Text in a number field (for
+     example "incl") is invalid, listed by key and left out. If `meta.input_check` is not "No problems found", the
+     preview and the detail show a warning and the valid values still import. A module marked Yes without prices
+     is flagged; a module marked No with prices uses the prices and is flagged (F9). A file never saved in Excel is
+     read from its input cells.
+   - v2.3 ("RFQ-MENA-TR-QUICK v2.3") maps Option 1 to M1 and is tagged "v2.3, M1 only".
+   - v1 ("RFQ-MENA-TR v1.0") still imports through the existing parser and appears under "Legacy v1, not
+     comparable": out of every scenario, score and the Helmond comparison.
+   - Any other version is refused with the version it found.
+   Nothing saves before Confirm and save. The provider comes from `_rfqmeta`, or is picked by hand.
+4. History: each confirmed upload is kept; the latest is active. View modules (v3.0, v2.3) or View parsed rates
+   (v1) opens the detail, Make this upload active switches back, Download original and Remove upload as before.
+
+Internal settings (the panel under the comparison, never sent to providers, saved with the Save button through the
+same data store as every Benchmarking change):
+- Reference volumes A (141 customer shipments) and B (329) per lane and band, read-only (collapsed): the seeds of
+  the volume cases, which are edited on the Forecast tab. The single-year view on this tab prices A and B.
+- Average kg per band, cartons and pallets per class S, M, L, order lines per class (6, update from order history),
+  kg per pallet 250, target transit per lane (L01 to L04 2, L05 and L06 3, L07 5, L08 and L09 4 working days),
+  volume year 2027.
+- Revenue, internal only (see below).
+- S2 per country: distributor on or off, loads per year (P1, P5, C20, C40), and which distributor (from the
+  Distributors sub-tab).
+- S3: provider, warehouse A or B, warehouse country (from W01, editable), countries served (blank: every country
+  with an M5 price from that warehouse), share from stock per country (100%), average pallets in stock (required),
+  replenishment load (C20), labelling (No), amortisation 3 years, carrying cost % and stock value (input from
+  Finance), M2 and M3 from the same provider or the cheapest per module, and "Dedicated site" (off; on prices the
+  3PL dedicated site, formerly S3b).
+- S4 per site: country, customs status, m2, rent per m2 per year, FTE and cost per FTE, setup and licences
+  (one-off), equipment and WMS per month, insurance and utilities per year, carrying cost, amortisation years, the
+  delivery proxy (a provider's M5 prices, tagged proxy). Sources: free-zone authority quotes, Benten (warehouse),
+  Anna Murphy (finance).
+- Time horizon: escalation rates per year for freight (low 0, base 3, high 6%), fuel (0, 2, 5%), warehouse (0, 3,
+  5%) and EUR/USD (0, 0, 0%), the setting used (base), source, date and status (estimate); one-off year for S3 and
+  S4 (year 1); GCC target (48 hours, or next-day). Note: "Timing assumptions pending real provider and distributor
+  data."
+- Score weights per role, 25% each (to be agreed with Mies), and the rubric as one editable JSON object.
+
+Scenarios (`flexitog/assets/rfq_v30.js`, `window.FlexiRFQ30`), per volume case. Each one is complete, incomplete
+(with the missing keys) or not configured. Only complete scenarios are ranked. Each scenario reports its GCC
+capability (the slowest S, M and L delivery in Saudi Arabia, UAE, Kuwait and Qatar: next-day, 48 hours, N days or
+unconfirmed).
+- M1 price of a lane and band: the quoted price; a band with volume and no test shipment row takes the price per kg
+  of the next lower band × the band's average kg (extrapolated). A row that exists but is blank is not covered.
+- S1 direct from Helmond: shipments × M1 price per lane and band. Not covered volume lowers coverage only.
+- S2 distributor holds stock (M2 + distributor terms): in each distributor country, loads per year × M2 price
+  (bulk); the distributor serves every order there in its lead time. Other countries go direct (S1). The cost is
+  tagged "excludes distributor margin": the chosen distributor's margin lowers net revenue instead (internal
+  revenue). A country without a chosen distributor uses the default margin per country (estimate) and the flag "no
+  distributor data". M2 alternative-mode prices are not used as a
+  fallback.
+- S3 3PL presence (M2 + M3 + M4 + M5; one provider upload feeds S1 and S3): orders of sizes S, M and L in served countries × the share from stock go through the
+  warehouse; XL, XXL and the rest go direct (S1).
+  - delivery = stock orders × M5 price of the lane and size from the chosen warehouse
+  - handling per order = W11 + (W10 × cartons, else W09 × order lines) + W12 × pallets (+ W13 × cartons with
+    labelling) + W25 quality check (0 when blank)
+  - next-day GCC from stock (v3.1): counts only when M5 next_day is Yes and W24 is at or after the setting "FlexiTog
+    order release time" (12:00); W24 blank shows "unconfirmed". v3.0 files, which do not ask W24, follow the M5 flag
+  - replenishment M2: when the 3PL has no M2 price for the warehouse country and load (a warehouse-only file), the
+    cheapest M2 provider for them, named on the S3 card; without any M2 price S3 is incomplete: "no replenishment price"
+  - free-zone exit = stock orders × M3 free-zone exit of the warehouse country (free zone or bonded)
+  - loads = ceil(stock kg / load kg); replenishment = loads × (M2 price + M3 clearance + free-zone entry)
+  - devanning = loads × W07 (C20) or W08 (C40); inbound = loads × pallets × W06 (P1, P5)
+  - storage = W05 × average pallets × 12; carrying = carrying % × stock value
+  - fixed = W15 × 12 + (W16 + W17) / amortisation years (the time horizon books W16 + W17 in full in the one-off
+    year)
+  - minimum top-up = max(0, W19 × 12 − (storage + handling + devanning)); the 3PL minimum (W15 × 12 + W19 × 12, or
+    the dedicated-site amount) shows as its own line on the S3 card
+  Replenishment, devanning, storage and carrying spread over the served countries by kg; fixed and the minimum
+  top-up by orders.
+- S3 with "Dedicated site" on (formerly S3b): as S3 with (m2 × W20 × 12 + FTE × W21 × 12) × (1 + W22), m2 and FTE from S4 site 1, in
+  place of the handling, storage, fixed and minimum rates. Not configured without W20 and W21.
+- S4 own warehouse (M2 + M3 + M5 + own site costs, estimate), per site: delivery via the proxy's M5 prices for the countries it serves, replenishment as S3
+  (no devanning), free-zone exit, own fixed = rent per m2 × m2 + FTE × cost per FTE + (setup + licences) /
+  amortisation years + equipment × 12 + WMS × 12 + insurance and utilities + carrying cost. The rest goes direct.
+- M6 other solutions stay readable on Benchmarking (module table, provider detail, JSON export as M6 info): each M6
+  line priced per shipment or order (× shipments) or per kg (× kg) on the countries in O03 (`m6Solutions`). M6 is
+  not a scenario and is never ranked.
+- Volume sensitivity: S1, S3 and S4 at 0.5, 1, 1.5, 2 and 3 times the volume case (S2 loads stay as set); break-even
+  is the lowest multiplier between 0.25 and 5 (steps of 0.05) where S3 or S4 costs less than S1.
+- The provider filter is "best" (cheapest price per lane, band or load over all providers), one provider for every
+  module, or one per module.
+
+Internal revenue (`revenueSettings`, `revenueByCountry`, `revenueView`, `revenueAnswers` in `rfq_v30.js`, used by
+both tabs). Confidential: never in a downloadable RFQ template, a provider file or follow-up question text; the JSON
+export leaves it out unless "Include internal revenue data" is ticked in the export dialog (the file name then ends in
+`_INTERNAL`); stored in this browser under its own key `flexitog-internal-revenue-v1`, apart from the provider data,
+and written on Save.
+- Settings ("Revenue, internal only" on the internal settings panel): currency USD; USD to EUR 0.8607 (confirm with
+  Anna Murphy); last 12 months USD 514,000 (reference only); default distributor margin % per country (estimate,
+  default 0, used in S2 when no distributor is selected). Revenue per volume case, year and country sits in each
+  volume case on the Forecast tab: its base-year revenue grows with the case. The single-year view keeps the
+  reference revenue A USD 1,030,000 and B USD 2,400,000 (blank countries: the case total × the country's share of
+  shipments, with a warning).
+- Per scenario, volume case, region and country: revenue EUR = USD × rate; net revenue = revenue, and in S2
+  distributor countries revenue × (1 − the distributor's margin, else the default margin); logistics cost % of revenue = cost / net revenue EUR; cost per USD
+  1,000 of net revenue; contribution after logistics = net revenue EUR − cost (before product cost and other
+  overheads). A scenario that leaves shipments without a price shows its % as "covered shipments only".
+- Volume sensitivity: revenue scales with the volume multiplier.
+
+Scores 0 to 4, two roles per provider:
+- Forwarder: cost = 4 × lowest / this provider's, on the M1 lane-bands with volume that every forwarder prices
+  (shipments × price) plus one of each M2 lane-load every forwarder prices. Service: on-time share of its S1, Q10,
+  Q09, Q11, Q12.
+- 3PL: cost = 4 × lowest / this provider's S3 stock cost (total minus direct) on the countries every 3PL serves.
+  Service: on-time share of its M5 deliveries, then the same items. Options add M4 and M5 completeness and, for
+  v3.1 files, ease of working: W26 (API or EDI 4, Portal upload 2, E-mail 1, blank 0) and W24 (15:00 or later 4,
+  14:00 3, 12:00 2, earlier 1, blank 0), read from the S3 warehouse.
+- Both: quality Q13, Q14 (self-reported, × 0.75), Q15, Q16, Q17 (counted twice), Q18, Q19; options Q20 to Q26.
+  A missing answer scores 0 and is listed. Total = weighted average of cost, service, quality and options.
+
+Red flags F1 to F11 (key and reason each): validity before the volume year (F1), surcharges "Some" with a per-piece
+or 70 kg rule (F2), a volumetric rule stricter than 1:6000 (F3), fuel % blank or for one month (F4), next-day GCC
+claimed but nothing reaches 2 days (F5), a lane without any M1 price when M1 is offered (F6), input check not clean
+(F7), damage 0% or on-time 100% (F8), a module offered without prices or marked No with prices (F9), warehouse stock
+duty paid (F10, duty not in the cost: get duty rates from Martin Remhof), minimum term above 12 months (F11).
+Follow-up questions per provider (copy button): missing scored answers, M1 bands with volume and no price, M2 gaps,
+the keys S3 still needs, each red flag.
+
+Screens on Benchmarking: the provider list with modules offered and share filled, both role scores and red flags;
+module comparison tables M1 to M6 side by side; the comparison against Helmond; the legacy v1 list. The provider
+detail has tabs for the profile, M1 to M6, questions, scores with a reason per item, and flags with follow-up
+questions. Export JSON writes the RFQ state, answers, scenarios for volume cases A and B, scores and settings;
+Import JSON reads that file back.
+
+M1 prices also become per-shipment quotes in Master Data > Quotes (QR-<provider>-<lane>-<band>), so Landed Cost and
+the Quote Benchmark read them, and the Route Dashboard offers them per order (M5 transit for delivery from stock).
+
+Comparison against Helmond, per test order: Helmond = what FlexiTog pays under DAP from Helmond in the route engine
+(`window.FlexiDash.helmond`). Provider = the M1 all-in price of the test shipment with the order's lane and weight
+band, as quoted. Columns: orders priced, cost per order, cost per unit, lead time in working days, and the
+difference to Helmond on the orders both price. Providers without an answer show "No RFQ answer yet", never a
+guessed cost; v1 answers show "Legacy v1, not comparable".
+
+Tests: `tests/test_rfq_v30.py`.
+- Test 1 runs on `tests/fixtures/rfq_v30_dummy_reconstructed.xlsx`, a dummy fill of the bundled template made by
+  `tools/build_rfq_v30_fixtures.py` (filled through the template's input cells and recalculated with LibreOffice),
+  and on "FlexiTog RFQ MENA-TR v3.0 - Dummy provider test fill.xlsx" when it sits in `tests/fixtures/`: S1 EUR
+  97,000, S2 EUR 56,800, S3 EUR 98,210, S4 EUR 228,310 with their breakdowns, exactly the four scenarios S1 to S4, M6 info "Test consolidation hub" (EUR
+  21,438), the S3 floor EUR 18,000, S3 with "Dedicated site" on not configured, every breakdown summing to its total.
+- Test 2 runs when "FlexiTog RFQ MENA-TR v3.0 - Aramex test fill.xlsx" is in `tests/fixtures/` (S1 EUR 188,208.28
+  with 12 not covered, m1.T05, m2.B01, m3.L01, S2 at 4 × P5 EUR 96,428.18, S2 with C20 incomplete, S3 incomplete
+  with F9, M6 info "On-board courier").
+- Test 3 (blank template), Test 4 (`tests/fixtures/rfq_v30_input_errors.xlsx`, and the Aramex copy when present),
+  Test 5 (the v2.3 Aramex file, or its saved Export values `aramex_v23_values.json`, as "v2.3, M1 only" with the same
+  S1; the v1 dummy as legacy), module flags and the provider filter always run.
+- RFQ v3.1: `rfq_v31_dummy_reconstructed.xlsx` (the dummy on the v3.1 template with W24 15:00, W25 EUR 0.50, W26 API):
+  S3 EUR 98,210 unchanged with handling 800 and minimum top-up 7,900, next-day yes (no at a 16:00 release time), S1,
+  S2 and S4 unchanged; `rfq_v31_warehouse_reconstructed.xlsx` (warehouse only, Aramex identity): no M1, M2 or M6 flags
+  or follow-ups, m3.L01 EUR 103.20, warehouse A Dubai, UAE, free zone, B Saudi Arabia, free zone, S3 incomplete with M4
+  rates and M5 prices missing, next-day unconfirmed; the blank v3.1 files import without errors; the M2 fallback; v3.0
+  files keep their next-day and scores. The provider's own v3.1 files run when they sit in `tests/fixtures/` under
+  their names.
+- Internal revenue: with the defaults, revenue A EUR 886,521.00 and B EUR 2,065,680.00, S1 21.23% and 21.60% of
+  revenue (covered shipments only), USD 7,304.96 and 7,294.83 per shipment, Saudi Arabia A USD 365,248.23, GCC A
+  EUR 679,037.36 at 24.17% and B 24.71% (on the Aramex v3.0 file when present, else the v2.3 Aramex values with the
+  same S1); the dummy at S1 10.94% and S3 11.08%; a 20% default margin in L01 lowers its net revenue by 20% and raises the
+  S2 %; templates and settings carry no revenue.
+
+Time horizon and volume cases: `tests/test_horizon.py`, on the dummy with Prompt 3 Test 1 settings and volume case
+A (2 × history: 141 orders, 25,835 kg in 2027).
+- Year 1, low escalation: S1 EUR 97,000, S2 56,800, S3 101,210, S4 268,310; one-offs S3 4,500 and S4 60,000 in
+  full (the single-year view amortises them: S3 98,210 − 1,500 + 4,500, S4 228,310 − 20,000 + 60,000); S3 floor
+  18,000; cheapest S2.
+- 0% escalation and constant volume: the recurring cost is the same every year and the total from year 2 (S3 96,710,
+  S4 208,310).
+- Escalation: S1 base × 1.03^(y − 1) × 1.02^(y − 1) at the base setting.
+- Growth path +50%, +25%, +10%: orders and kg per year from the base year (70.5 orders).
+- Extrapolated years use the last growth rate and are tagged; case E reaches EUR 5,000,000 (USD 5,000,000 / 0.8607)
+  in 2031.
+- Switch points: S2 in 2027, S3 in 2028 at 141 orders; recommended S3 (48 hours; S1 takes 3 days, S2 has no
+  distributor lead time).
+- Distributor terms: the S2 cost does not move, net revenue × 0.75 with a 25% distributor, × 0.90 with a 10% default
+  margin, "no distributor data" without one.
+- Revenue only when asked for (withRevenue).
+
+Old lists: a Benchmarking provider list saved before this change moves into Master Data once, with its
+uploads (old types: 3PL / contract logistics to 3PL; freight forwarder, carrier, courier, customs broker
+and 4PL to Freight forwarder; distributors stay outside Benchmarking).
+
+Storage: every Benchmarking file goes through `DataStore` in `workspace.js`, the same layer as Master Data
+(artifact database when published, this browser otherwise). RFQ state under `rfqstate`, parsed values and
+rates under `rfqvalues`, original files and a replaced template in IndexedDB `flexitog-bench`. No
+Benchmarking file calls localStorage directly. Logic without DOM: `flexitog/assets/rfq_v30.js` (modular RFQ v3.0)
+and `flexitog/assets/rfq_core.js` (`window.FlexiRFQ`: the Export sheet reader, the prefill and the v1 parser,
+tested in `tests/test_rfq.py` against `tests/fixtures/Sample_RFQ_Response_DUMMY.xlsx`).
+JSZip 3.10.1 (MIT) is inlined from `flexitog/assets/vendor/`.
+
+Storage follows the master data: saved with the dashboard when published, in this browser (localStorage,
+prefix `flexitog-bench-v1:`) when opened as a file. The logic without DOM is
+`flexitog/assets/bench_core.js` (tested in `tests/test_benchmark.py`), the screens are
+`benchmark.js` and `benchmark.css`. PDF uses jsPDF 4.2.1 with AutoTable 5.0.8, Word uses docx 9.9.0
+(all MIT), inlined from `flexitog/assets/vendor/` like SheetJS.
+
+The browser engine (`flexitog/assets/engine.js`) is a port of `engine.py`/`batch.py`.
+`tests/test_dashboard_engine.py` runs both on the same batch and requires identical results, so change
+both together. Issues are in `flexitog/issues.py` (briefing notes to verify) plus rules computed in the
+page. The basemap is Natural Earth 1:50m, rebuilt with `tools/build_basemap.mjs`.
