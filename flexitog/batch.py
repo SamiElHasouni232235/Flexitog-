@@ -17,7 +17,7 @@ from .engine import CUSTOMER, FLEXITOG, PARTNER, SCENARIO_LABELS, Data, Route, e
 from .schema import region_for
 
 STUDY_REGIONS = ["Türkiye", "North Africa", "Gulf/GCC"]
-REGION_CODE = {"Türkiye": "TR", "North Africa": "NAF", "Gulf/GCC": "GCC", "Middle East (other)": "ME"}
+REGION_CODE = {"Türkiye": "TR", "North Africa": "NAF", "Gulf/GCC": "GCC", "Middle East": "ME", "Middle East (other)": "ME"}
 IN_SCOPE = ["distributor", "3pl", "owned_warehouse"]
 
 # Order size mix for synthetic batches: (label, pallet range, share of orders).

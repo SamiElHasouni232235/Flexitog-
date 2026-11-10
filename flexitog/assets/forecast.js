@@ -13,7 +13,7 @@
 "use strict";
 const FC = window.ForecastCore, CH = window.FlexCharts;
 const KEY = "flexitog-forecast-v1";                     // per-viewer settings in this browser
-const rc = r => ({"Türkiye": "TR", "North Africa": "NAF", "Gulf/GCC": "GCC"})[r] || "OTH";
+const rc = r => ({"Türkiye": "TR", "North Africa": "NAF", "Gulf/GCC": "GCC", "Middle East": "ME"})[r] || "OTH";
 const regionColor = (pal, c) => pal[rc(regionOf(c))] || pal.OTH;
 const CUR_SYM = {USD: "$", EUR: "€", GBP: "£"};
 const money = (v, cur) => (CUR_SYM[cur] || cur + " ") + fmt(v);

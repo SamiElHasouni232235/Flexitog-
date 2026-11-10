@@ -6,10 +6,10 @@
 (function (root) {
 "use strict";
 const PAL = {
-  screen: {ink: "var(--ink)", muted: "var(--muted)", rule: "var(--rule)", TR: "var(--r-TR)", NAF: "var(--r-NAF)", GCC: "var(--r-GCC)", OTH: "var(--r-OTH)",
+  screen: {ink: "var(--ink)", muted: "var(--muted)", rule: "var(--rule)", TR: "var(--r-TR)", NAF: "var(--r-NAF)", GCC: "var(--r-GCC)", ME: "var(--r-ME)", OTH: "var(--r-OTH)",
            q: ["var(--q1)", "var(--q2)", "var(--q3)", "var(--q4)", "var(--q5)"], accent: "var(--accent)", font: "var(--mono)", bg: null, band: "color-mix(in srgb,var(--accent) 22%,transparent)"},
   // Print charts render to PNG for PDF and Word: the --print-* tokens of theme.css, always light.
-  get print(){ const t = n => tok("--print-" + n); return {ink: t("ink"), muted: t("muted"), rule: t("rule"), TR: t("r-TR"), NAF: t("r-NAF"), GCC: t("r-GCC"), OTH: t("r-OTH"),
+  get print(){ const t = n => tok("--print-" + n); return {ink: t("ink"), muted: t("muted"), rule: t("rule"), TR: t("r-TR"), NAF: t("r-NAF"), GCC: t("r-GCC"), ME: t("r-ME"), OTH: t("r-OTH"),
     q: [1, 2, 3, 4, 5].map(i => t("q" + i)), accent: t("accent"), font: "Arial, Helvetica, sans-serif", bg: t("bg"), band: t("band")}; },
 };
 function sfmt(v){ const a = Math.abs(v); return a >= 1e6 ? (v / 1e6).toFixed(a >= 1e7 ? 0 : 1) + "M" : a >= 1e4 ? Math.round(v / 1e3) + "k" : a >= 1e3 ? (v / 1e3).toFixed(1) + "k" : String(Math.round(v * 10) / 10); }

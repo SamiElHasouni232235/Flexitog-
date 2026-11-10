@@ -750,7 +750,11 @@ const pct = v => v == null ? "n/a" : Math.round(v * 100) + "%";
 const clone = o => JSON.parse(JSON.stringify(o));
 const SC = E.SCENARIOS, INS = E.IN_SCOPE;
 const SHORT = {cif_baseline: "Baseline DAP", distributor: "Distributor", "3pl": "3PL", owned_warehouse: "Owned WH"};
-const REGIONS = E.STUDY_REGIONS;
+// REGIONS: the study regions every view loops over. The three built-in ones always; applyCountries() adds a region from
+// Master Data > Countries when a target country sits in it (same array as the engine's, changed in place).
+const REGIONS = E.STUDY_REGIONS, BASE_REGIONS = REGIONS.slice();
+const REGION_CHOICES = ((PAYLOAD.schema.countries.fields.find(f => f.name === "region") || {}).allowed || BASE_REGIONS).slice();
+const normRegion = r => (r === "Middle East (other)" ? "Middle East" : r);
 const CNAME = c => PAYLOAD.names.countries[c] || c;
 const GCC = ["SA", "AE", "QA", "KW", "BH", "OM"];
 const STORE_KEY = "flexitog-dashboard-v1";
@@ -819,11 +823,15 @@ function applyCountries(){
   const cr = Object.assign({}, BUILTIN_REGION), on = new Set(), off = new Set();
   (MD.t.countries || []).forEach(r => {
     const c = String(r.country || "").toUpperCase(); if (!c) return;
-    if (r.region && REGIONS.includes(r.region)) cr[c] = r.region;
+    const rg = normRegion(r.region);
+    if (rg && REGION_CHOICES.includes(rg)) cr[c] = rg;
     (r.target === false || String(r.target).toLowerCase() === "false" ? off : on).add(c);
   });
   PAYLOAD.data.country_region = cr;
-  STUDY = new Set(Object.keys(BUILTIN_REGION).filter(c => REGIONS.includes(BUILTIN_REGION[c]) && !off.has(c)).concat([...on].filter(c => REGIONS.includes(cr[c]))));
+  const extra = REGION_CHOICES.filter(rg => !BASE_REGIONS.includes(rg) && [...on].some(c => cr[c] === rg));
+  REGIONS.splice(0, REGIONS.length, ...BASE_REGIONS, ...extra);
+  // Built-in countries join through the three study regions; a country in another region only through its own target row.
+  STUDY = new Set(Object.keys(BUILTIN_REGION).filter(c => BASE_REGIONS.includes(BUILTIN_REGION[c]) && !off.has(c)).concat([...on].filter(c => REGIONS.includes(cr[c]))));
 }
 applyCountries();
 // The one settings row (EUR/USD, insurance, margin, shipment size) and the country rows, for every view.
@@ -949,7 +957,9 @@ const BM = PAYLOAD.geo.basemap;
 const MAPW = BM.width, MAPH = BM.height;
 const rad = d => d * Math.PI / 180;
 function proj(lat, lon){ return [BM.k * rad(lon - BM.view.lonMin), BM.k * (BM.yTop - Math.log(Math.tan(Math.PI / 4 + rad(Math.max(-80, Math.min(80, lat))) / 2)))]; }
-const REGION_BOX = {All: [-14, 62, 12, 56], "Türkiye": [14, 46, 33, 52.5], "North Africa": [-14, 36, 20, 43], "Gulf/GCC": [32, 62, 12, 33]};
+const REGION_BOX = {All: [-14, 62, 12, 56], "Türkiye": [14, 46, 33, 52.5], "North Africa": [-18, 40, 14, 43], "Gulf/GCC": [32, 62, 12, 33],
+  "Middle East": [30, 64, 11, 41], "Caucasus and Central Asia": [36, 90, 34, 56], "Sub-Saharan Africa": [-20, 54, -36, 20],
+  "South Asia": [58, 98, 4, 38], "East and Southeast Asia": [92, 146, -12, 46]};
 let LOCS = {};
 function loc(kind, id){
   const k = kind + ":" + id;
@@ -1067,7 +1077,7 @@ function metricDefs(){
 }
 
 // ---- view geometry
-function regionBox(r){ const [lo0, lo1, la0, la1] = REGION_BOX[r]; const [x0, y1] = proj(la0, lo0), [x1, y0] = proj(la1, lo1); return [x0, y0, x1 - x0, y1 - y0]; }
+function regionBox(r){ const [lo0, lo1, la0, la1] = REGION_BOX[r] || REGION_BOX.All; const [x0, y1] = proj(la0, lo0), [x1, y0] = proj(la1, lo1); return [x0, y0, x1 - x0, y1 - y0]; }
 function ratio(){ const b = svgEl.getBoundingClientRect(); return b.width > 0 && b.height > 0 ? b.width / b.height : 1000 / 620; }
 function clampView(v){
   let [x, y, w, h] = v; const R = w / h;

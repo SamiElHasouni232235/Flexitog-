@@ -19,7 +19,7 @@ from flexitog.dashboard import apply_changes as apply_dashboard_changes
 from flexitog.dashboard import build_html as dashboard_html
 from flexitog.orders import order_values, summarise
 from flexitog.schema import (
-    DC_TYPE_LABELS, DTYPES, ENTITIES, IMPORTED_PREFIX, MANUAL, PLACEHOLDER, PRIMARY_IMPORTS, SOURCE_COL,
+    DC_TYPE_LABELS, DTYPES, ENTITIES, IMPORTED_PREFIX, MANUAL, PLACEHOLDER, PRIMARY_IMPORTS, REGIONS, SOURCE_COL,
 )
 from flexitog.store import Workspace
 
@@ -571,7 +571,7 @@ def scorecard_chart(sc: pd.DataFrame, metric: str) -> alt.Chart:
                         legend=alt.Legend(orient="top")))
     text = base.mark_text(align="left", dx=4, fontSize=11).encode(text=alt.Text("value:Q", format=",.2f"))
     return (bars + text).properties(width=260, height=alt.Step(24)).facet(
-        column=alt.Column("region:N", title=None, sort=B.STUDY_REGIONS + ["Middle East (other)", "Other"]))
+        column=alt.Column("region:N", title=None, sort=B.STUDY_REGIONS + [r for r in REGIONS if r not in B.STUDY_REGIONS] + ["Other"]))
 
 
 def page_batch():

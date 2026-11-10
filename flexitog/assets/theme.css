@@ -17,7 +17,7 @@
   --s-cif_baseline:#8a8984; --s-distributor:#b8329b; --s-3pl:#eb6834; --s-owned_warehouse:#1baf7a;
   --p-flexitog:#4a3aa7; --p-partner:#eda100; --p-customer:#e87ba4;
   --lc1:#2a78d6; --lc2:#eb6834; --lc3:#1baf7a; --lc4:#eda100; --lc5:#e87ba4; --lc6:#008300;
-  --r-TR:#2a78d6; --r-NAF:#eb6834; --r-GCC:#1baf7a; --r-OTH:#8a8984;
+  --r-TR:#2a78d6; --r-NAF:#eb6834; --r-GCC:#1baf7a; --r-ME:#eda100; --r-OTH:#8a8984;
   --supplier:#2a78d6; --supplier-land:#86b6ef; --supplier-mark:#0d366b;
   --q1:#8070d6; --q2:#6553c7; --q3:#4f3db0; --q4:#3b2c8f; --q5:#281d66;
   /* map */
@@ -39,7 +39,7 @@
   --print-ink:#0F1B2D; --print-muted:#5B6678; --print-rule:#D5DCE6; --print-bg:#FFFFFF; --print-head:#EDF1F6;
   --print-accent:#13294B; --print-band:#E0EFFA; --print-warn-bg:#FBF0CF; --print-warn:#B88600;
   --print-critical:#C8333B; --print-serious:#E07A4F; --print-warning:#E8B321; --print-info:#7B8597;
-  --print-r-TR:#2a78d6; --print-r-NAF:#eb6834; --print-r-GCC:#1baf7a; --print-r-OTH:#8a8984;
+  --print-r-TR:#2a78d6; --print-r-NAF:#eb6834; --print-r-GCC:#1baf7a; --print-r-ME:#eda100; --print-r-OTH:#8a8984;
   --print-q1:#b9b0ea; --print-q2:#8070d6; --print-q3:#6553c7; --print-q4:#4f3db0; --print-q5:#281d66;
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
@@ -51,7 +51,7 @@
   --s-cif_baseline:#8f8e89; --s-distributor:#c94fb0; --s-3pl:#d95926; --s-owned_warehouse:#199e70;
   --p-flexitog:#9085e9; --p-partner:#c98500; --p-customer:#d55181;
   --lc1:#3987e5; --lc2:#d95926; --lc3:#199e70; --lc4:#c98500; --lc5:#d55181; --lc6:#008300;
-  --r-TR:#3987e5; --r-NAF:#d95926; --r-GCC:#199e70; --r-OTH:#8f8e89;
+  --r-TR:#3987e5; --r-NAF:#d95926; --r-GCC:#199e70; --r-ME:#c98500; --r-OTH:#8f8e89;
   --supplier:#3987e5; --supplier-land:#104281; --supplier-mark:#cde2fb;
   --q1:#6e5fd0; --q2:#8d80e2; --q3:#aaa0ee; --q4:#c6bff5; --q5:#e2defb;
   --land-study:#34425A; --marker-edge:var(--bg);
@@ -67,7 +67,7 @@
   --s-cif_baseline:#8f8e89; --s-distributor:#c94fb0; --s-3pl:#d95926; --s-owned_warehouse:#199e70;
   --p-flexitog:#9085e9; --p-partner:#c98500; --p-customer:#d55181;
   --lc1:#3987e5; --lc2:#d95926; --lc3:#199e70; --lc4:#c98500; --lc5:#d55181; --lc6:#008300;
-  --r-TR:#3987e5; --r-NAF:#d95926; --r-GCC:#199e70; --r-OTH:#8f8e89;
+  --r-TR:#3987e5; --r-NAF:#d95926; --r-GCC:#199e70; --r-ME:#c98500; --r-OTH:#8f8e89;
   --supplier:#3987e5; --supplier-land:#104281; --supplier-mark:#cde2fb;
   --q1:#6e5fd0; --q2:#8d80e2; --q3:#aaa0ee; --q4:#c6bff5; --q5:#e2defb;
   --land-study:#34425A; --marker-edge:var(--bg);

@@ -322,8 +322,13 @@ Single sources:
   engine (they replace the duties parameter row of that country). Cargo insurance comes from Settings.
 - USD conversion everywhere uses Settings `eur_usd_rate` (USD per 1 EUR) with its date.
 - Target countries are the Countries rows with target = true. Add a row to onboard a country: it shows in
-  Landed Cost, the coverage indicator, the quote filters and, with a region (Türkiye, North Africa,
-  Gulf/GCC), on the map and in the region cards. target = false takes a built-in study country out.
+  Landed Cost, the coverage indicator, the quote filters, the map and the region cards. target = false takes a
+  built-in study country out.
+- Region choices: Türkiye, North Africa (Morocco, Algeria, Tunisia, Egypt, Libya, Sudan, Mauritania), Gulf/GCC (Saudi
+  Arabia, UAE, Qatar, Kuwait, Bahrain, Oman), Middle East (Jordan, Lebanon, Iraq, Israel, Palestine, Syria, Yemen,
+  Iran), Caucasus and Central Asia, Sub-Saharan Africa, South Asia, East and Southeast Asia. Blank = the built-in
+  region of the country. The three study regions are always on; a target country in another region adds that region
+  to the region cards, the filters, the report and the Benchmarking test orders. The RFQ lanes stay L01 to L09.
 
 Provenance: every row carries `source_ref`, `source_date` and `data_status` (confirmed or estimate). Built-in
 data is "estimate". A cell edited in Master Data records who and when; a template upload fills blanks with

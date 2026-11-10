@@ -145,7 +145,7 @@ def test_below_mov_excluded_from_recommendation(ws):
 def test_country_without_rates_is_infeasible(ws):
     customers = ws.load("customers")
     customers = pd.concat([customers, pd.DataFrame([{"customer_id": "C-JO", "name": "x", "country": "JO",
-                                                     "city": "Amman", "region": "Middle East (other)",
+                                                     "city": "Amman", "region": "Middle East",
                                                      "data_source": "manual"}])], ignore_index=True)
     ws.save("customers", customers)
     order, lines = order_for(ws, "T-SA-001")
@@ -290,3 +290,15 @@ def test_air_export_only_when_allowed(ws):
     _set_modes(ws, "export", allowed_modes="sea;road;air")
     base = evaluate({**order, "customer_id": "C-JO"}, lines, Data.from_workspace(ws)).baseline
     assert base.mode_mix["main"] == {"air": order["pallet_count"]}
+
+
+def test_region_choices_and_country_map():
+    from flexitog import batch
+    from flexitog.schema import ENTITIES, REGIONS, region_for
+    allowed = ENTITIES["countries"].get("region").allowed
+    assert allowed == REGIONS and len(allowed) == 8 and allowed[:3] == batch.STUDY_REGIONS
+    assert {"Middle East", "Caucasus and Central Asia", "Sub-Saharan Africa", "South Asia", "East and Southeast Asia"} <= set(allowed)
+    assert [region_for(c) for c in ("JO", "IQ", "YE", "SD", "SA", "KE", "ZA", "AZ", "IN", "SG")] == [
+        "Middle East", "Middle East", "Middle East", "North Africa", "Gulf/GCC", "Sub-Saharan Africa", "Sub-Saharan Africa",
+        "Caucasus and Central Asia", "South Asia", "East and Southeast Asia"]
+    assert batch.STUDY_REGIONS == ["Türkiye", "North Africa", "Gulf/GCC"]   # the study stays on the three regions by default

@@ -50,26 +50,42 @@ class Entity:
         return [f.name for f in self.fields if f.required]
 
 
-# Regions in scope. Everything outside these maps to "Other".
-REGIONS = ["Türkiye", "North Africa", "Gulf/GCC", "Middle East (other)"]
+# Regions. The study regions (Türkiye, North Africa, Gulf/GCC) drive the route views; the others are choices for
+# Master Data > Countries. A target country in another region adds that region to the study views. Everything
+# outside these maps to "Other".
+REGIONS = ["Türkiye", "North Africa", "Gulf/GCC", "Middle East", "Caucasus and Central Asia", "Sub-Saharan Africa",
+           "South Asia", "East and Southeast Asia"]
 
-COUNTRY_REGION = {
-    "TR": "Türkiye",
-    "MA": "North Africa", "DZ": "North Africa", "TN": "North Africa",
-    "EG": "North Africa", "LY": "North Africa",
-    "SA": "Gulf/GCC", "AE": "Gulf/GCC", "QA": "Gulf/GCC", "KW": "Gulf/GCC",
-    "BH": "Gulf/GCC", "OM": "Gulf/GCC",
-    "JO": "Middle East (other)", "LB": "Middle East (other)",
-    "IQ": "Middle East (other)", "IL": "Middle East (other)",
-    "NL": "EU",
+_REGION_COUNTRIES = {
+    "Türkiye": ["TR"],
+    "North Africa": ["MA", "DZ", "TN", "EG", "LY", "SD", "MR"],
+    "Gulf/GCC": ["SA", "AE", "QA", "KW", "BH", "OM"],
+    "Middle East": ["JO", "LB", "IQ", "IL", "PS", "SY", "YE", "IR"],
+    "Caucasus and Central Asia": ["GE", "AM", "AZ", "KZ", "UZ", "TM", "KG", "TJ"],
+    "Sub-Saharan Africa": ["NG", "GH", "CI", "SN", "CM", "KE", "ET", "TZ", "UG", "RW", "DJ", "SO", "ER", "SS", "AO",
+                           "MZ", "ZA", "NA", "BW", "ZM", "ZW", "MG", "MU"],
+    "South Asia": ["IN", "PK", "BD", "LK", "NP", "AF", "MV"],
+    "East and Southeast Asia": ["CN", "HK", "TW", "JP", "KR", "SG", "MY", "ID", "TH", "VN", "PH", "KH", "MM"],
 }
+COUNTRY_REGION = {c: r for r, cs in _REGION_COUNTRIES.items() for c in cs}
+COUNTRY_REGION["NL"] = "EU"
 
 COUNTRY_NAMES = {
     "TR": "Türkiye", "MA": "Morocco", "DZ": "Algeria", "TN": "Tunisia",
-    "EG": "Egypt", "LY": "Libya", "SA": "Saudi Arabia",
+    "EG": "Egypt", "LY": "Libya", "SD": "Sudan", "MR": "Mauritania", "SA": "Saudi Arabia",
     "AE": "United Arab Emirates", "QA": "Qatar", "KW": "Kuwait",
     "BH": "Bahrain", "OM": "Oman", "JO": "Jordan", "LB": "Lebanon",
-    "IQ": "Iraq", "IL": "Israel", "NL": "Netherlands",
+    "IQ": "Iraq", "IL": "Israel", "PS": "Palestine", "SY": "Syria", "YE": "Yemen", "IR": "Iran",
+    "GE": "Georgia", "AM": "Armenia", "AZ": "Azerbaijan", "KZ": "Kazakhstan", "UZ": "Uzbekistan",
+    "TM": "Turkmenistan", "KG": "Kyrgyzstan", "TJ": "Tajikistan",
+    "NG": "Nigeria", "GH": "Ghana", "CI": "Côte d'Ivoire", "SN": "Senegal", "CM": "Cameroon", "KE": "Kenya",
+    "ET": "Ethiopia", "TZ": "Tanzania", "UG": "Uganda", "RW": "Rwanda", "DJ": "Djibouti", "SO": "Somalia",
+    "ER": "Eritrea", "SS": "South Sudan", "AO": "Angola", "MZ": "Mozambique", "ZA": "South Africa", "NA": "Namibia",
+    "BW": "Botswana", "ZM": "Zambia", "ZW": "Zimbabwe", "MG": "Madagascar", "MU": "Mauritius",
+    "LK": "Sri Lanka", "NP": "Nepal", "AF": "Afghanistan", "MV": "Maldives",
+    "HK": "Hong Kong", "TW": "Taiwan", "JP": "Japan", "KR": "South Korea", "SG": "Singapore", "MY": "Malaysia",
+    "ID": "Indonesia", "TH": "Thailand", "PH": "Philippines", "KH": "Cambodia", "MM": "Myanmar",
+    "NL": "Netherlands",
     # sourcing countries
     "CN": "China", "BD": "Bangladesh", "RS": "Serbia", "AL": "Albania", "PK": "Pakistan", "IN": "India",
     "VN": "Vietnam", "PT": "Portugal",
@@ -102,6 +118,15 @@ COUNTRY_ALIASES = {
     "albania": "AL", "alb": "AL", "shqiperia": "AL", "albanie": "AL", "albanië": "AL",
     "pakistan": "PK", "pak": "PK", "india": "IN", "ind": "IN", "vietnam": "VN", "vnm": "VN",
     "portugal": "PT", "prt": "PT",
+    "sdn": "SD", "mrt": "MR", "pse": "PS", "palestinianterritories": "PS", "stateofpalestine": "PS",
+    "syr": "SY", "syrianarabrepublic": "SY", "yem": "YE", "irn": "IR", "islamicrepublicofiran": "IR",
+    "geo": "GE", "arm": "AM", "aze": "AZ", "kaz": "KZ", "uzb": "UZ", "tkm": "TM", "kgz": "KG", "tjk": "TJ",
+    "nga": "NG", "gha": "GH", "civ": "CI", "ivorycoast": "CI", "cotedivoire": "CI", "sen": "SN", "cmr": "CM",
+    "ken": "KE", "eth": "ET", "tza": "TZ", "uga": "UG", "rwa": "RW", "dji": "DJ", "som": "SO", "eri": "ER",
+    "ssd": "SS", "ago": "AO", "moz": "MZ", "zaf": "ZA", "rsa": "ZA", "nam": "NA", "bwa": "BW", "zmb": "ZM",
+    "zwe": "ZW", "mdg": "MG", "mus": "MU", "lka": "LK", "npl": "NP", "afg": "AF", "mdv": "MV",
+    "hkg": "HK", "twn": "TW", "jpn": "JP", "kor": "KR", "korea": "KR", "republicofkorea": "KR", "sgp": "SG",
+    "mys": "MY", "idn": "ID", "tha": "TH", "phl": "PH", "khm": "KH", "mmr": "MM", "burma": "MM",
 }
 
 EU27 = {"AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IE", "IT", "LV",
@@ -416,7 +441,9 @@ ENTITIES: dict[str, Entity] = {
         fields=[
             Field("country", required=True, description="ISO2 code or country name", aliases=["name", "code", "iso2"]),
             Field("target", dtype="bool", description="A target country of the study. Blank = yes", aliases=["targetcountry"]),
-            Field("region", allowed=STUDY_REGIONS, description="Türkiye, North Africa or Gulf/GCC. Blank = built-in region"),
+            Field("region", allowed=REGIONS,
+                  description=("Türkiye, North Africa, Gulf/GCC, Middle East, Caucasus and Central Asia, Sub-Saharan "
+                               "Africa, South Asia or East and Southeast Asia. Blank = built-in region")),
             Field("duty_rate_pct", dtype="float", required=True,
                   description="Import duty you pay, % of CIF, with the preference certificate where one applies",
                   aliases=["dutyrate", "duty"]),

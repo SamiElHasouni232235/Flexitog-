@@ -10,7 +10,7 @@
   const MONTHS_LONG = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
   const CATEGORIES = ["jackets", "trousers", "coveralls", "other"];
   const CATEGORY_LABELS = { jackets: "Jackets", trousers: "Trousers", coveralls: "Coveralls", other: "Other items (gloves, headwear, footwear, socks)" };
-  const REGION_CODES = { "Türkiye": "TR", "North Africa": "NAF", "Gulf/GCC": "GCC" };
+  const REGION_CODES = { "Türkiye": "TR", "North Africa": "NAF", "Gulf/GCC": "GCC", "Middle East": "ME" };
   // Main port or gateway per target country, used when a customer has no city or port on file.
   const DEFAULT_PORTS = { TR: "Istanbul (Ambarlı)", MA: "Casablanca", DZ: "Algiers", TN: "Radès", EG: "Alexandria", LY: "Tripoli",
     SA: "Dammam", AE: "Jebel Ali", QA: "Hamad", KW: "Shuwaikh", BH: "Khalifa Bin Salman", OM: "Sohar" };
